@@ -1,7 +1,9 @@
 "use client";
 
+import type { JobBoardSource } from "@/lib/api/boards";
+
 interface SystemStatusBarProps {
-  apiSource?: "GREENHOUSE" | "LEVER" | "—";
+  apiSource?: JobBoardSource | "—";
   latencyMs?: number | null;
   cached?: boolean;
   inline?: boolean;

@@ -9,7 +9,7 @@ import type { Job } from "@/lib/api/boards";
 export interface StratumAnalysisResult {
   hiringVelocity: string;   // e.g. "High", "Moderate", "Low"
   strategicVerdict: string; // e.g. "Aggressive Expansion", "R&D Pivot", "Maintenance Mode"
-  engineeringVsSalesRatio: string;
+  // engineeringVsSalesRatio removed - now calculated deterministically in StratumInvestigator
   keywordFindings: string[];  // AI, Crypto, Enterprise, etc.
   notableRoles?: string[];    // 3–5 role titles that best illustrate strategic focus
   summary: string;
@@ -17,7 +17,7 @@ export interface StratumAnalysisResult {
 }
 
 const systemInstruction = `You are Stratum, a Corporate Strategy Analyst. Analyze this list of open jobs.
-- Calculate the ratio of Engineering vs. Sales roles.
+- Note: Engineering vs Sales ratio is calculated deterministically by the system (do not calculate it).
 - Detect keywords like 'AI', 'Crypto', or 'Enterprise' in job titles and departments.
 - Output a verdict on the company's strategic focus (e.g., 'Aggressive Expansion', 'R&D Pivot', 'Maintenance Mode').
 - Assess hiring velocity based on total open roles and recency of postings.
@@ -26,7 +26,6 @@ Respond with ONLY valid JSON in this exact format:
 {
   "hiringVelocity": "<High|Moderate|Low>",
   "strategicVerdict": "<e.g. Aggressive Expansion, R&D Pivot, Maintenance Mode>",
-  "engineeringVsSalesRatio": "<e.g. 3:1 or 1:2>",
   "keywordFindings": ["<keyword> - <count or context>", ...],
   "strategic_highlights": ["<job title 1>", "<job title 2>", ...],
   "summary": "<2-3 sentence strategic summary>"
@@ -47,7 +46,6 @@ function parseStratumResponse(text: string): StratumAnalysisResult | null {
     return {
       hiringVelocity: p.hiringVelocity ?? "Unknown",
       strategicVerdict: p.strategicVerdict ?? "Unknown",
-      engineeringVsSalesRatio: p.engineeringVsSalesRatio ?? "—",
       keywordFindings: Array.isArray(p.keywordFindings) ? p.keywordFindings : [],
       notableRoles: Array.isArray(p.strategic_highlights) ? p.strategic_highlights.filter(Boolean) : (Array.isArray(p.notableRoles) ? p.notableRoles.filter(Boolean) : undefined),
       summary: p.summary ?? "Analysis complete.",
