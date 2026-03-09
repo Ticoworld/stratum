@@ -1,198 +1,172 @@
-# VERITAS
+# Stratum
 
-> **Trust no one. Verify everything.**
+Stratum is a Next.js application that analyzes company hiring strategy from public job board data.  
+The repository also includes an MCP server exposing the same analysis as a tool (`analyze_company`).
 
-AI-powered crypto scam detection for Solana, built with Google Gemini 3.
+## Project Summary
 
-![Veritas Screenshot](./docs/screenshot.png)
+- User enters a company name in the UI.
+- Backend fetches open roles from supported ATS APIs (Greenhouse, Lever, Ashby, Workable).
+- The system derives structured strategy outputs:
+  - `strategicVerdict`
+  - `hiringVelocity`
+  - deterministic `engineeringVsSalesRatio`
+  - `keywordFindings`
+  - `notableRoles`
+  - `summary`
 
-## 🎯 What It Does
+## Problem Solved
 
-Paste any Solana token address → Get an instant AI verdict on whether it's safe or a scam.
+Public job postings are noisy and hard to interpret quickly.  
+Stratum converts posting data into a compact strategic readout so users can infer hiring direction from one request.
 
-**VERITAS analyzes:**
+## Features
 
-- 📊 On-chain data (liquidity, market cap, volume, token age)
-- 🔍 Contract risks (RugCheck audit score)
-- 📸 Visual evidence (website & Twitter screenshots)
-- 🧠 AI reasoning (Gemini 3 multimodal analysis)
+- Unified analysis API route: `POST /api/analyze-unified`
+- Multi-source job board fetch with priority/fallback logic:
+  - Greenhouse
+  - Lever
+  - Ashby
+  - Workable
+- Company alias and fallback token handling (for known slug mismatches)
+- Deterministic engineering vs sales ratio calculation (not AI-generated)
+- AI analysis through Google Gemini (`gemini-3-flash-preview`) with JSON parsing/normalization
+- In-memory cache with configurable TTL (`STRATUM_CACHE_TTL_HOURS`, default 24h)
+- Per-IP rate limiting (5 requests/minute, sliding window)
+- Retry logic for network/timeout failures on outbound ATS calls
+- Error handling UX:
+  - rate-limit handling (429)
+  - service interruption modal
+  - empty result state for unsupported/no-board companies
+- Optional MCP server (`npm run mcp`) with `analyze_company` tool over stdio
 
-## ✨ Key Features
+## Tech Stack
 
-### 🐘 Elephant Memory
+- Framework: Next.js 16 (App Router)
+- UI: React 19 + TypeScript
+- Styling: Tailwind CSS 4
+- AI: `@google/genai`
+- Tool protocol: `@modelcontextprotocol/sdk` + `zod`
+- Utility libs used in source: `clsx`, `tailwind-merge`, `lucide-react`, `dotenv` (MCP boot)
 
-Known scammer deployers are instantly blocked. Once flagged, any new token from that wallet triggers an **INSTANT BLOCK** in milliseconds.
+## Setup
 
-### 🧠 Multimodal AI Analysis
-
-Gemini 3 analyzes text data AND screenshots simultaneously, detecting lies like:
-
-- "LP Locked" but RugCheck shows unlocked
-- "Active community" but Twitter is deleted
-- Claims vs. reality mismatches
-
-### 🎭 Identity-Aware Judgments
-
-Veritas knows the difference:
-
-- **Meme Coins** → Judged on vibes, community, art
-- **Utility Tokens** → Judged on professionalism, execution
-
-### ⚡ Context-Aware Rules
-
-- New tokens (< 2 hours) with low LP = normal, not red flag
-- Old tokens (> 1 month) with $10M+ MC = survived the rug test
-- Guest Blindness: Ignores Twitter login walls
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         USER INPUT                               │
-│                    (Solana Token Address)                        │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      ELEPHANT MEMORY                             │
-│              MongoDB - Known Scammer Database                    │
-│    ┌──────────────────────────────────────────────────────┐     │
-│    │  Check deployer → Match? → INSTANT BLOCK (5ms)       │     │
-│    └──────────────────────────────────────────────────────┘     │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ (No match)
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       TRUTH ENGINE                               │
-│              Parallel Data Aggregation                           │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
-│  │  DexScreener │  │   RugCheck   │  │   Microlink  │          │
-│  │  Market Data │  │ Contract Audit│  │  Screenshots │          │
-│  └──────────────┘  └──────────────┘  └──────────────┘          │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       VERITAS AI                                 │
-│                   Gemini 3 Multimodal                            │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │  System Prompt (Degen Brain)                             │   │
-│  │  + On-chain data                                         │   │
-│  │  + RugCheck risks                                        │   │
-│  │  + Website screenshot (vision)                           │   │
-│  │  + Twitter screenshot (vision)                           │   │
-│  │  = VERDICT + ANALYSIS                                    │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                        OUTPUT                                    │
-│  ┌──────────┐  ┌─────────────────────────────────────────────┐  │
-│  │  VERDICT │  │  SAFE | CAUTION | DANGER | SCAM             │  │
-│  └──────────┘  └─────────────────────────────────────────────┘  │
-│  ┌──────────┐  ┌─────────────────────────────────────────────┐  │
-│  │ HEADLINE │  │  "This whale is swimming in clean water"    │  │
-│  └──────────┘  └─────────────────────────────────────────────┘  │
-│  ┌──────────┐  ┌─────────────────────────────────────────────┐  │
-│  │  DEGEN   │  │  "Clean code. Ape with confidence. 🦧💎"   │  │
-│  │ COMMENT  │  └─────────────────────────────────────────────┘  │
-│  └──────────┘                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## 🛠️ Tech Stack
-
-| Layer    | Technology                                   |
-| -------- | -------------------------------------------- |
-| AI       | **Google Gemini 3** (gemini-3-flash-preview) |
-| Frontend | Next.js 16, React, TypeScript                |
-| Styling  | Tailwind CSS                                 |
-| Database | MongoDB Atlas (Elephant Memory)              |
-| APIs     | DexScreener, RugCheck, Microlink             |
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Node.js 18+
-- Gemini API key
-- MongoDB Atlas URI (optional, for Elephant Memory)
-
-### Installation
+1. Install dependencies:
 
 ```bash
-# Clone the repo
-git clone https://github.com/yourusername/veritas.git
-cd veritas
-
-# Install dependencies
 npm install
+```
 
-# Set up environment
+2. Configure environment:
+
+```bash
 cp .env.example .env.local
-# Add your GEMINI_API_KEY and MONGODB_URI
+```
 
-# Run development server
+Minimum required:
+
+```env
+GEMINI_API_KEY=your_key
+```
+
+Optional:
+
+```env
+STRATUM_CACHE_TTL_HOURS=24
+NEXT_PUBLIC_SITE_URL=https://your-domain.example
+```
+
+3. Run the app:
+
+```bash
 npm run dev
 ```
 
-### Environment Variables
+4. Production commands:
 
-```env
-GEMINI_API_KEY=your_gemini_api_key
-MONGODB_URI=your_mongodb_connection_string
+```bash
+npm run build
+npm run start
 ```
 
-## 📁 Project Structure
+5. Optional MCP server:
 
+```bash
+npm run mcp
 ```
+
+## Project Structure
+
+```text
 src/
-├── app/
-│   ├── page.tsx              # Main UI
-│   └── api/scan/route.ts     # Scan API endpoint
-├── components/
-│   ├── truth/TruthConsole.tsx    # Scanner UI
-│   └── ui/CryptoLoader.tsx       # Loading animation
-├── lib/
-│   ├── ai/veritas.ts         # Gemini AI logic
-│   ├── api/
-│   │   ├── truth.ts          # Data aggregation
-│   │   ├── market.ts         # DexScreener
-│   │   └── rugcheck.ts       # Contract audit
-│   └── db/
-│       ├── mongodb.ts        # DB connection
-│       └── elephant.ts       # Scammer database
+  app/
+    api/analyze-unified/route.ts     # main analysis endpoint
+    globals.css
+    layout.tsx
+    page.tsx                         # renders TruthConsole
+  components/
+    truth/TruthConsole.tsx           # primary UI and user flow
+    ui/                              # status bar, modal, skeleton, shared UI components
+  lib/
+    ai/unified-analyzer.ts           # Gemini prompt, call, response parsing
+    api/                             # Greenhouse/Lever/Ashby/Workable adapters + retry
+    cache/stratum-cache.ts           # in-memory TTL cache
+    security/RateLimiter.ts          # per-IP rate limiter
+    services/StratumInvestigator.ts  # orchestration layer
+    gemini.ts                        # Gemini client bootstrap
+  mcp-server.ts                      # MCP stdio server
+scripts/
+  test-new-boards.ts                 # ATS integration smoke script
+  probe-company-slug.ts              # slug discovery helper
+  list_models.js                     # local model-list script
+docs/
+  STRATUM_CONTEXT.md
+  MARKET_READY.md
+  PRODUCTION_AUDIT.md
+public/
+  images/, data/, debug-screenshots/
 ```
 
-## 🎬 Demo
+## Architecture Overview
 
-[Watch the demo video](https://youtube.com/your-demo-link)
+### Web request flow
 
-## 📝 Gemini 3 Integration
+1. UI submits company name to `/api/analyze-unified`.
+2. API applies IP rate limit and input validation/sanitization.
+3. API checks in-memory cache.
+4. On cache miss, `StratumInvestigator`:
+   - fetches jobs from ATS sources via `fetchCompanyJobs`
+   - returns an explicit no-jobs result if none found
+   - computes deterministic eng:sales ratio
+   - runs Gemini analysis if jobs exist
+5. API returns normalized JSON payload for UI rendering.
 
-Veritas uses **Gemini 3 Flash** (`gemini-3-flash-preview`) for:
+### MCP flow
 
-1. **Multimodal Analysis** - Processes text data AND images simultaneously
-2. **Vision AI** - Analyzes website and Twitter screenshots for red flags
-3. **Contextual Reasoning** - Applies crypto-specific knowledge to detect scams
-4. **Structured Output** - Returns JSON verdicts for consistent UI rendering
+1. `src/mcp-server.ts` starts stdio MCP transport.
+2. Tool `analyze_company` invokes `StratumInvestigator`.
+3. Tool returns JSON result as text content.
 
-**Key Gemini 3 Features Used:**
+## Deployment and Runtime Notes (Confirmed)
 
-- Multimodal input (text + images)
-- System prompts for persona (Degen Brain)
-- Low temperature (0.3) for consistent judgments
-- Large context window for comprehensive analysis
+- This is a standard Next.js app with `dev`, `build`, and `start` scripts.
+- Security headers are configured in `next.config.ts`:
+  - `X-Content-Type-Options: nosniff`
+  - `X-Frame-Options: DENY`
+  - `Referrer-Policy: strict-origin-when-cross-origin`
+- The only app API route in the current codebase is `/api/analyze-unified`.
+- No Dockerfile or platform manifest (for example `vercel.json`, `railway.json`, `Procfile`) is present in the repository.
+- [Partially inferred] Hosting target is not fixed by code; docs mention platforms like Vercel/Railway as options.
 
-## 🏆 Hackathon
+## Limitations
 
-Built for the **Google Gemini 3 Hackathon** (December 2025 - February 2026)
+- Coverage is limited to companies discoverable through the implemented ATS APIs and token mapping logic.
+- No persistent cache/database is wired into the active request path; cache is in-memory and resets on process restart.
+- No authentication/authorization layer is present in the analysis API route.
+- Some repository artifacts are legacy or not wired into the current UI/API path (for example old sentinel data/images).
+- `scripts/list_models.js` currently contains a hardcoded API key and fails lint under current ESLint rules.
+- `package.json` defines `generate:sentinel`, but `scripts/generate_sentinel.ts` is not present.
 
-## 📄 License
+## Partial Inference Index
 
-MIT
-
----
-
-**VERITAS** - _Trust no one. Verify everything._
+- "Hosting target is not fixed by code; docs mention platforms like Vercel/Railway as options."
