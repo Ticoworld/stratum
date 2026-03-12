@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireTenantRole } from "@/lib/auth/requireTenantRole";
 import { getReportVersion } from "@/lib/reports/getReportVersion";
@@ -21,6 +22,12 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
   }
 
   const report = reportVersion.report;
+  const htmlAvailable = reportVersion.artifacts.some(
+    (artifact) => artifact.artifactType === "html" && artifact.status === "available"
+  );
+  const pdfAvailable = reportVersion.artifacts.some(
+    (artifact) => artifact.artifactType === "pdf" && artifact.status === "available"
+  );
 
   return (
     <main className="min-h-screen bg-neutral-950 px-6 py-10 text-neutral-100">
@@ -34,6 +41,8 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
             <p>Generated at: {report.generatedAt}</p>
             <p>Published at: {report.publishedAt ?? "Unpublished"}</p>
             <p>Providers: {report.snapshot.providersSucceeded.join(", ") || "None"}</p>
+            <p>HTML artifact: {htmlAvailable ? "available" : "unavailable"}</p>
+            <p>PDF artifact: {pdfAvailable ? "available" : "unavailable"}</p>
             <p>
               Data mode:{" "}
               {report.snapshot.zeroData
@@ -42,6 +51,24 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
                   ? "partial"
                   : "full"}
             </p>
+          </div>
+          <div className="mt-4 flex gap-3 text-sm">
+            {htmlAvailable ? (
+              <Link
+                className="rounded-full border border-neutral-700 px-4 py-2 text-neutral-100"
+                href={`/api/reports/${reportVersion.id}/artifacts/html`}
+              >
+                Open HTML artifact
+              </Link>
+            ) : null}
+            {pdfAvailable ? (
+              <Link
+                className="rounded-full border border-neutral-700 px-4 py-2 text-neutral-100"
+                href={`/api/reports/${reportVersion.id}/artifacts/pdf`}
+              >
+                Download PDF artifact
+              </Link>
+            ) : null}
           </div>
         </header>
 

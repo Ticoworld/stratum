@@ -1,7 +1,7 @@
 {
-  "current_phase": "Phase 5",
+  "current_phase": "Phase 6",
   "phase_status": "completed",
-  "product_truth": "Stratum still exposes the legacy live ATS-to-LLM dashboard path, but Phases 1 through 5 of the migration are complete. The system now has foundation infra, frozen provider capture, report-run worker orchestration, structured analysis with claims and citations, and report publication with a stored read path. It must still become an immutable point-in-time intelligence report system through later phases.",
+  "product_truth": "Stratum still exposes the legacy live ATS-to-LLM dashboard path, but Phases 1 through 6 of the migration are complete. The system now has foundation infra, frozen provider capture, report-run worker orchestration, structured analysis with claims and citations, report publication with a stored read path, and HTML/PDF artifact generation with protected retrieval. It must still become an immutable point-in-time intelligence report system through later phases.",
   "chosen_stack": {
     "web_framework": "Next.js App Router",
     "database": "PostgreSQL",
@@ -35,9 +35,17 @@
     "Report versions persistence added",
     "Canonical report.json generation added",
     "Publication validation added",
-    "Stored published report read path added"
+    "Stored published report read path added",
+    "Artifacts table and migration added",
+    "HTML artifact generation added from stored report.json",
+    "PDF artifact generation added from stored report data",
+    "Artifact metadata persistence added",
+    "Protected artifact retrieval routes added",
+    "Protected PDF ensure route added",
+    "Worker artifact rendering after publication added",
+    "Phase 6 runtime verification completed for artifact generation and retrieval"
   ],
-  "next_phase": "Phase 6 - Artifacts",
+  "next_phase": "Phase 7 - UI cutover",
   "critical_rules": [
     "Do not redesign the system",
     "Do not continue beyond the next approved phase",
@@ -47,8 +55,8 @@
     "Keep legacy env usage isolated until later phases explicitly replace it"
   ],
   "forbidden_scope": [
-    "Do not skip ahead beyond Phase 6",
-    "Do not implement HTML/PDF artifacts outside the approved artifact phase",
+    "Do not skip ahead beyond Phase 7",
+    "Do not jump to Phase 8 cleanup",
     "Do not refactor unrelated UI for polish"
   ],
   "key_paths": {

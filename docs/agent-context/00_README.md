@@ -18,7 +18,7 @@ Read every file in this folder before making design or implementation decisions.
 - `10_MACHINE_SUMMARY.json`: machine-readable summary for automation or fast session bootstrapping.
 
 ## Current repo status
-- Phases 1 through 5 are complete.
+- Phases 1 through 6 are complete.
 - Central env handling exists in `src/lib/env.ts`.
 - PostgreSQL + Drizzle foundation exists.
 - Minimal auth foundation exists with Auth.js + Google OIDC.
@@ -28,5 +28,5 @@ Read every file in this folder before making design or implementation decisions.
 - Claims and citations exist as part of the structured analysis phase.
 - The original ATS-to-LLM dashboard behavior is still the product path.
 - A published immutable report read path exists.
-- No HTML or PDF artifact system exists yet.
-- The next approved phase is Phase 6 only.
+- HTML and PDF artifact generation and protected retrieval now exist.
+- The next approved phase is Phase 7 only.

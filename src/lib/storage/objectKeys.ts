@@ -27,3 +27,11 @@ export function buildAnalysisOutputObjectKey(params: AnalysisObjectKeyParams): s
 export function buildReportObjectKey(reportVersionId: string): string {
   return `reports/${reportVersionId}/report.json`;
 }
+
+export function buildReportHtmlObjectKey(reportVersionId: string): string {
+  return `reports/${reportVersionId}/report.html`;
+}
+
+export function buildReportPdfObjectKey(reportVersionId: string): string {
+  return `reports/${reportVersionId}/report.pdf`;
+}

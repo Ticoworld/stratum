@@ -1,4 +1,5 @@
 export * from "@/db/schema/analysisRuns";
+export * from "@/db/schema/artifacts";
 export * from "@/db/schema/citations";
 export * from "@/db/schema/claims";
 export * from "@/db/schema/companies";

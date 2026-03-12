@@ -17,6 +17,7 @@ import { gzipJson, sha256Hex } from "@/lib/storage/checksums";
 import { isS3Configured, putObject, s3Bucket } from "@/lib/storage/s3";
 import { publishReportVersion } from "@/lib/reports/publishReportVersion";
 import { analyzeFrozenData } from "@/worker/steps/analyzeFrozenData";
+import { renderArtifacts } from "@/worker/steps/renderArtifacts";
 
 async function updateRun(
   reportRunId: string,
@@ -256,6 +257,12 @@ export async function executeReportRun(
       });
 
       const published = await publishReportVersion(claimedRun.id);
+      await renderArtifacts(published.reportVersionId).catch((error) => {
+        console.error(
+          `[worker] Failed to render artifacts for zero-data report ${published.reportVersionId}:`,
+          error
+        );
+      });
 
       return {
         reportRunId: claimedRun.id,
@@ -287,6 +294,12 @@ export async function executeReportRun(
     });
 
     const published = await publishReportVersion(claimedRun.id);
+    await renderArtifacts(published.reportVersionId).catch((error) => {
+      console.error(
+        `[worker] Failed to render artifacts for report ${published.reportVersionId}:`,
+        error
+      );
+    });
 
     return {
       reportRunId: claimedRun.id,

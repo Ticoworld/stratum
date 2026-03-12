@@ -189,10 +189,58 @@ Phase 5 scope was limited to publication:
 
 No HTML rendering, PDF generation, artifact storage, share links, or UI cutover were added in Phase 5.
 
+## Phase 6 status
+Completed and runtime-verified.
+
+Phase 6 scope was limited to artifacts:
+- HTML generation from stored canonical `report.json`
+- PDF generation from stored canonical report data
+- artifact persistence to object storage
+- artifact metadata persistence
+- protected artifact retrieval routes
+- protected PDF ensure route
+- worker connection from published `report_versions` into artifact generation
+
+No share links, recurring monitoring, broad UI cutover, collaborative features, analytics dashboards, provider fetches in artifact read paths, AI calls in artifact read paths, or later-phase cleanup were added in Phase 6.
+
+## Phase 6 validation outcomes
+- `npm run db:generate`: passed
+- `npm run db:migrate`: passed
+- `npx tsc --noEmit`: passed
+- `npm run lint`: passed with one pre-existing warning in `src/components/ui/ServiceInterruptionModal.tsx`
+- `npm run build`: passed
+- direct object storage `put/get/delete`: passed
+- HTML artifact generation from stored `report.json`: passed
+- PDF artifact generation from stored canonical report data: passed
+- artifact metadata persistence in `artifacts`: passed
+- artifact blob persistence and reload from object storage: passed
+- tenant-scoped published report load with correct tenant: passed
+- tenant-scoped published report load with wrong tenant: denied as expected
+- unauthenticated artifact GET routes: returned `401` as expected
+- unauthenticated PDF ensure route: returned `401` as expected
+
+## What Phase 6 changed architecturally
+- Added the `artifacts` table and migration.
+- Added deterministic object keys for `report.html` and `report.pdf`.
+- Added persisted HTML and PDF artifact generation from stored report payloads only.
+- Added artifact persistence in object storage plus metadata persistence in Postgres.
+- Added worker-side artifact rendering after Phase 5 publication.
+- Added protected artifact retrieval routes and protected PDF ensure flow.
+- Exposed real artifact availability on the stored report read path.
+
+## What Phase 6 explicitly did not touch
+- share links
+- recurring monitoring
+- broad UI cutover
+- cleanup of the legacy dashboard path
+- provider fetches in artifact read paths
+- AI calls in artifact read paths
+
 ## Current phase boundary
 - Phase 1: complete
 - Phase 2: complete
 - Phase 3: complete
 - Phase 4: complete
 - Phase 5: complete
-- Next approved phase: Phase 6
+- Phase 6: complete
+- Next approved phase: Phase 7

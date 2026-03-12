@@ -31,8 +31,12 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       generatedAt: reportVersion.generatedAt,
       publishedAt: reportVersion.publishedAt,
       artifactAvailability: {
-        html: false,
-        pdf: false,
+        html: reportVersion.artifacts.some(
+          (artifact) => artifact.artifactType === "html" && artifact.status === "available"
+        ),
+        pdf: reportVersion.artifacts.some(
+          (artifact) => artifact.artifactType === "pdf" && artifact.status === "available"
+        ),
       },
       report: reportVersion.report,
     });
