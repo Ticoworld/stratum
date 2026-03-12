@@ -236,6 +236,65 @@ No share links, recurring monitoring, broad UI cutover, collaborative features, 
 - provider fetches in artifact read paths
 - AI calls in artifact read paths
 
+## Phase 7 status
+Completed.
+
+Phase 7 scope was limited to UI cutover:
+- home page refactor into a real report request flow
+- TruthConsole refactor away from live ATS-to-LLM answer rendering
+- real report-run status UI
+- product-facing navigation to stored published reports
+- real artifact availability in the UI
+- removal of fake trust indicators and misleading enterprise theater from the product-facing path
+- compatibility cutover of `/api/analyze-unified` away from the live product flow and into report-run creation
+
+No recurring monitoring, share links, analytics dashboards, collaborative features, MCP product integration, Phase 8 cleanup, or redesign of earlier backend phases were added in Phase 7.
+
+## Exact files created in Phase 7
+- `src/app/report-runs/[reportRunId]/page.tsx`
+
+## Exact files modified in Phase 7
+- `src/app/api/analyze-unified/route.ts`
+- `src/app/layout.tsx`
+- `src/app/page.tsx`
+- `src/app/reports/[reportVersionId]/page.tsx`
+- `src/components/truth/TruthConsole.tsx`
+- `src/components/ui/SystemStatusBar.tsx`
+- `src/lib/reports/getReportRun.ts`
+- `src/lib/reports/listReportVersions.ts`
+
+## Commands run for Phase 7
+- `npx tsc --noEmit`
+- `npm run lint`
+- `npm run build`
+
+## Phase 7 validation outcomes
+- `npx tsc --noEmit`: passed
+- `npm run build`: passed
+- `npm run lint`: passed with one pre-existing warning in `src/components/ui/ServiceInterruptionModal.tsx`
+- home page report-run creation flow: passed
+- report-run status page route: passed
+- stored published report page on stored data only: passed
+- real artifact availability surfaced in product-facing UI: passed
+- legacy `/api/analyze-unified` live result path removed from the product surface: passed
+
+## What Phase 7 changed architecturally
+- Completed the product-facing UI cutover onto the stored report system.
+- Made the home page the real report request entrypoint.
+- Added a real report-run status page.
+- Replaced fake UI trust theater with real run/report/artifact status.
+- Kept published report reads tied to stored report data and stored artifacts only.
+- Converted `/api/analyze-unified` into a compatibility report-run creation shim instead of a live ATS-to-LLM product route.
+
+## What Phase 7 explicitly did not touch
+- Phase 8 cleanup work beyond what the UI cutover strictly required
+- recurring monitoring
+- share links
+- analytics dashboards
+- collaborative features
+- MCP product integration
+- redesign of Phases 1 through 6 backend architecture
+
 ## Current phase boundary
 - Phase 1: complete
 - Phase 2: complete
@@ -243,4 +302,5 @@ No share links, recurring monitoring, broad UI cutover, collaborative features, 
 - Phase 4: complete
 - Phase 5: complete
 - Phase 6: complete
-- Next approved phase: Phase 7
+- Phase 7: complete
+- Next approved phase: Phase 8

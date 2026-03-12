@@ -18,7 +18,7 @@ Read every file in this folder before making design or implementation decisions.
 - `10_MACHINE_SUMMARY.json`: machine-readable summary for automation or fast session bootstrapping.
 
 ## Current repo status
-- Phases 1 through 6 are complete.
+- Phases 1 through 7 are complete.
 - Central env handling exists in `src/lib/env.ts`.
 - PostgreSQL + Drizzle foundation exists.
 - Minimal auth foundation exists with Auth.js + Google OIDC.
@@ -26,7 +26,8 @@ Read every file in this folder before making design or implementation decisions.
 - Report-run orchestration and worker snapshot execution exist.
 - Structured analysis exists for frozen-input report runs.
 - Claims and citations exist as part of the structured analysis phase.
-- The original ATS-to-LLM dashboard behavior is still the product path.
+- The product-facing UI now follows the stored report system path instead of the old live ATS-to-LLM demo flow.
 - A published immutable report read path exists.
 - HTML and PDF artifact generation and protected retrieval now exist.
-- The next approved phase is Phase 7 only.
+- A real report-run status page now exists.
+- The next approved phase is Phase 8 only.
