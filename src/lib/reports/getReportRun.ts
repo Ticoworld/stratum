@@ -1,6 +1,13 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { companies, normalizedJobs, reportRuns, reportVersions, sourceSnapshots } from "@/db/schema";
+import {
+  artifacts,
+  companies,
+  normalizedJobs,
+  reportRuns,
+  reportVersions,
+  sourceSnapshots,
+} from "@/db/schema";
 
 export async function getReportRun(params: { reportRunId: string; tenantId: string }) {
   const [run] = await db
@@ -66,11 +73,25 @@ export async function getReportRun(params: { reportRunId: string; tenantId: stri
   const [publishedVersion] = await db
     .select({
       id: reportVersions.id,
+      status: reportVersions.status,
+      versionNumber: reportVersions.versionNumber,
+      generatedAt: reportVersions.generatedAt,
+      publishedAt: reportVersions.publishedAt,
     })
     .from(reportVersions)
     .where(eq(reportVersions.reportRunId, params.reportRunId))
     .orderBy(desc(reportVersions.publishedAt), desc(reportVersions.generatedAt))
     .limit(1);
+
+  const publishedArtifacts = publishedVersion
+    ? await db
+        .select({
+          artifactType: artifacts.artifactType,
+          status: artifacts.status,
+        })
+        .from(artifacts)
+        .where(eq(artifacts.reportVersionId, publishedVersion.id))
+    : [];
 
   return {
     ...run,
@@ -78,5 +99,22 @@ export async function getReportRun(params: { reportRunId: string; tenantId: stri
     normalizedJobs: jobs,
     normalizedJobCount: jobs.length,
     reportVersionId: publishedVersion?.id ?? null,
+    reportVersion: publishedVersion
+      ? {
+          id: publishedVersion.id,
+          status: publishedVersion.status,
+          versionNumber: publishedVersion.versionNumber,
+          generatedAt: publishedVersion.generatedAt,
+          publishedAt: publishedVersion.publishedAt,
+          artifactAvailability: {
+            html: publishedArtifacts.some(
+              (artifact) => artifact.artifactType === "html" && artifact.status === "available"
+            ),
+            pdf: publishedArtifacts.some(
+              (artifact) => artifact.artifactType === "pdf" && artifact.status === "available"
+            ),
+          },
+        }
+      : null,
   };
 }

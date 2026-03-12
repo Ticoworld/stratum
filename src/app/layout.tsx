@@ -16,24 +16,24 @@ const jetbrainsMono = JetBrains_Mono({
 const siteUrl = phase1Env.NEXT_PUBLIC_SITE_URL;
 
 export const metadata: Metadata = {
-  title: "Stratum | Corporate Intelligence",
-  description: "Institutional-grade corporate strategy analysis from job board data. Hiring velocity, strategic verdict, and keyword signals.",
-  keywords: ["stratum", "corporate intelligence", "job boards", "hiring strategy", "greenhouse", "lever", "gemini", "ai"],
+  title: "Stratum | Immutable Hiring Reports",
+  description: "Request report runs, review frozen hiring snapshots, and open stored HTML and PDF report artifacts.",
+  keywords: ["stratum", "hiring reports", "report runs", "job boards", "published reports", "artifacts"],
   icons: {
     icon: "/images/logo.png",
     apple: "/images/logo.png",
   },
   openGraph: {
-    title: "Stratum | Corporate Intelligence",
-    description: "Institutional-grade corporate strategy analysis from job board data.",
+    title: "Stratum | Immutable Hiring Reports",
+    description: "Request report runs and open stored report versions and artifacts.",
     url: siteUrl,
     siteName: "Stratum",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Stratum | Corporate Intelligence",
-    description: "Institutional-grade corporate strategy analysis from job board data.",
+    title: "Stratum | Immutable Hiring Reports",
+    description: "Request report runs and open stored report versions and artifacts.",
   },
   robots: {
     index: true,

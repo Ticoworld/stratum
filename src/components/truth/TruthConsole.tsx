@@ -1,506 +1,913 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowLeft, Loader2, Search } from "lucide-react";
-import { AnalysisSkeleton } from "@/components/ui/AnalysisSkeleton";
-import { ServiceInterruptionModal } from "@/components/ui/ServiceInterruptionModal";
+import Link from "next/link";
+import { type FormEvent, useEffect, useEffectEvent, useState } from "react";
+import {
+  ArrowRight,
+  Clock3,
+  Database,
+  ExternalLink,
+  FileDown,
+  FileText,
+  Loader2,
+  RefreshCcw,
+  Search,
+  TriangleAlert,
+} from "lucide-react";
 import { SystemStatusBar } from "@/components/ui/SystemStatusBar";
-import type { JobBoardSource } from "@/lib/api/boards";
 
-interface StratumResult {
-  companyName: string;
-  jobs: { title: string; location: string; department: string; updated_at: string }[];
-  hiringVelocity: string;
-  strategicVerdict: string;
-  engineeringVsSalesRatio: string;
-  keywordFindings: string[];
-  notableRoles?: string[];
-  summary: string;
-  thoughtSummary?: string;
-  analyzedAt: string;
-  analysisTimeMs: number;
-  apiSource?: JobBoardSource | null;
-  matchedAs?: string;
-}
+type SessionSummary = {
+  name?: string | null;
+  email: string;
+  role: string;
+  tenantId: string;
+};
 
-function hiringVelocityToProgress(v: string): number {
-  const lower = (v ?? "").toLowerCase().trim();
-  if (!lower || lower === "—" || lower === "unknown") return 0;
-  if (lower === "high") return 1;
-  if (lower === "moderate" || lower === "medium") return 0.5;
-  return 0.2;
-}
+type ReportRunStatus =
+  | "queued"
+  | "resolving"
+  | "fetching"
+  | "normalizing"
+  | "analyzing"
+  | "validating"
+  | "publishing"
+  | "completed"
+  | "completed_partial"
+  | "completed_zero_data"
+  | "failed"
+  | "needs_resolution";
 
-function toTitleCase(s: string): string {
-  return s
-    .trim()
-    .split(/\s+/)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(" ");
-}
+type ReportRunResponse = {
+  id: string;
+  companyId: string;
+  requestedCompanyName: string;
+  companyDisplayName: string;
+  companyCanonicalName: string;
+  companyResolutionStatus: string;
+  status: ReportRunStatus;
+  attemptCount: number;
+  asOfTime: string;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  failureCode: string | null;
+  failureMessage: string | null;
+  normalizedJobCount: number;
+  sourceSnapshots: Array<{
+    id: string;
+    provider: string;
+    providerToken: string;
+    status: string;
+    httpStatus: number | null;
+    fetchedAt: string | null;
+    recordCount: number;
+    errorCode: string | null;
+    errorMessage: string | null;
+  }>;
+  normalizedJobs: Array<{
+    id: string;
+    provider: string;
+    title: string;
+    department: string | null;
+    location: string | null;
+    providerJobId: string | null;
+    jobUrl: string | null;
+    updatedAt: string | null;
+  }>;
+  reportVersionId: string | null;
+  reportVersion: {
+    id: string;
+    status: string;
+    versionNumber: number;
+    generatedAt: string;
+    publishedAt: string | null;
+    artifactAvailability: {
+      html: boolean;
+      pdf: boolean;
+    };
+  } | null;
+};
 
-const EXAMPLE_COMPANIES = ["Airbnb", "Stripe", "XAI"];
-
-export function TruthConsole() {
-  const [companyName, setCompanyName] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<StratumResult | null>(null);
-  const [cachedAt, setCachedAt] = useState<string | null>(null);
-  const [serviceInterruption, setServiceInterruption] = useState(false);
-  const [errorInfo, setErrorInfo] = useState<{ title?: string; message?: string } | null>(null);
-
-  const fetchWithRetry = async (url: string, init: RequestInit, maxAttempts = 3): Promise<Response> => {
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        return await fetch(url, init);
-      } catch (e) {
-        lastError = e;
-        if (attempt < maxAttempts) {
-          await new Promise((r) => setTimeout(r, 1000));
-        } else {
-          throw lastError;
-        }
-      }
-    }
-    throw lastError;
+type ReportListItem = {
+  reportVersionId: string;
+  reportRunId: string;
+  companyId: string;
+  companyDisplayName: string;
+  companyCanonicalName: string;
+  status: string;
+  versionNumber: number;
+  templateVersion: string;
+  generatedAt: string;
+  publishedAt: string | null;
+  runStatus: string;
+  dataMode: "completed" | "partial-data" | "zero-data";
+  artifactAvailability: {
+    html: boolean;
+    pdf: boolean;
   };
+};
 
-  const handleAnalyze = async (overrideCompany?: string) => {
-    const name = (overrideCompany ?? companyName).trim();
-    if (!name) return;
+type TruthConsoleProps = {
+  session: SessionSummary;
+  initialReportRunId?: string;
+  statusOnly?: boolean;
+};
 
-    if (overrideCompany) setCompanyName(overrideCompany);
-    setLoading(true);
-    setServiceInterruption(false);
-    setErrorInfo(null);
-    setResult(null);
-    setCachedAt(null);
+const TERMINAL_RUN_STATUSES = new Set<ReportRunStatus>([
+  "completed",
+  "completed_partial",
+  "completed_zero_data",
+  "failed",
+  "needs_resolution",
+]);
+
+const STATUS_LABELS: Record<ReportRunStatus, string> = {
+  queued: "Queued",
+  resolving: "Resolving company",
+  fetching: "Fetching ATS snapshot",
+  normalizing: "Normalizing jobs",
+  analyzing: "Analyzing frozen input",
+  validating: "Validating citations",
+  publishing: "Publishing report",
+  completed: "Completed",
+  completed_partial: "Partial-data",
+  completed_zero_data: "Zero-data",
+  failed: "Failed",
+  needs_resolution: "Needs resolution",
+};
+
+function formatDate(value: string | null) {
+  if (!value) {
+    return "Not available";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function formatRelativeStatus(run: ReportRunResponse | null) {
+  if (!run) {
+    return "No report run selected";
+  }
+
+  if (run.status === "completed_partial") {
+    return "Completed with partial provider coverage";
+  }
+
+  if (run.status === "completed_zero_data") {
+    return "Completed with zero normalized jobs";
+  }
+
+  if (run.status === "needs_resolution") {
+    return "No supported provider snapshot could be captured";
+  }
+
+  return STATUS_LABELS[run.status] ?? run.status;
+}
+
+function getStatusTone(status: ReportRunStatus) {
+  if (status === "completed" || status === "completed_partial" || status === "completed_zero_data") {
+    return {
+      border: "rgba(59,130,246,0.35)",
+      background: "rgba(59,130,246,0.14)",
+      color: "#bfdbfe",
+    };
+  }
+
+  if (status === "failed" || status === "needs_resolution") {
+    return {
+      border: "rgba(248,113,113,0.35)",
+      background: "rgba(127,29,29,0.35)",
+      color: "#fecaca",
+    };
+  }
+
+  return {
+    border: "var(--border)",
+    background: "rgba(255,255,255,0.03)",
+    color: "var(--foreground)",
+  };
+}
+
+async function parseJsonResponse<T>(response: Response): Promise<T> {
+  const payload = (await response.json().catch(() => null)) as
+    | T
+    | {
+        error?: string;
+      }
+    | null;
+
+  if (!response.ok) {
+    const message =
+      payload && typeof payload === "object" && "error" in payload && payload.error
+        ? payload.error
+        : "Request failed.";
+    throw new Error(message);
+  }
+
+  return payload as T;
+}
+
+export function TruthConsole({
+  session,
+  initialReportRunId,
+  statusOnly = false,
+}: TruthConsoleProps) {
+  const [companyName, setCompanyName] = useState("");
+  const [websiteDomain, setWebsiteDomain] = useState("");
+  const [createLoading, setCreateLoading] = useState(false);
+  const [runLoading, setRunLoading] = useState(Boolean(initialReportRunId));
+  const [reportsLoading, setReportsLoading] = useState(!statusOnly);
+  const [activeRunId, setActiveRunId] = useState<string | null>(initialReportRunId ?? null);
+  const [activeRun, setActiveRun] = useState<ReportRunResponse | null>(null);
+  const [recentReports, setRecentReports] = useState<ReportListItem[]>([]);
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const [ensurePdfState, setEnsurePdfState] = useState<{
+    reportVersionId: string;
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
+
+  async function refreshReports() {
+    if (statusOnly) {
+      return;
+    }
+
+    setReportsLoading(true);
 
     try {
-      const response = await fetchWithRetry(
-        "/api/analyze-unified",
+      const response = await fetch("/api/reports", { cache: "no-store" });
+      const payload = await parseJsonResponse<{ reports: ReportListItem[] }>(response);
+      setRecentReports(payload.reports);
+    } catch (error) {
+      setRequestError(error instanceof Error ? error.message : "Failed to load reports.");
+    } finally {
+      setReportsLoading(false);
+    }
+  }
+
+  const refreshReportsEvent = useEffectEvent(async () => {
+    await refreshReports();
+  });
+
+  async function refreshRun(runId: string, preserveLoading = false) {
+    if (!preserveLoading) {
+      setRunLoading(true);
+    }
+
+    try {
+      const response = await fetch(`/api/report-runs/${runId}`, { cache: "no-store" });
+      const payload = await parseJsonResponse<ReportRunResponse>(response);
+      setActiveRun(payload);
+      setRequestError(null);
+      return payload;
+    } catch (error) {
+      setRequestError(error instanceof Error ? error.message : "Failed to load report run.");
+      return null;
+    } finally {
+      if (!preserveLoading) {
+        setRunLoading(false);
+      }
+    }
+  }
+
+  async function handleCreateReportRun(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+
+    const trimmedName = companyName.trim();
+
+    if (!trimmedName) {
+      setRequestError("Company name is required.");
+      return;
+    }
+
+    setCreateLoading(true);
+    setRequestError(null);
+
+    try {
+      const response = await fetch("/api/report-runs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          companyName: trimmedName,
+          websiteDomain: websiteDomain.trim() || undefined,
+        }),
+      });
+
+      const payload = await parseJsonResponse<{
+        reportRunId: string;
+      }>(response);
+
+      setActiveRunId(payload.reportRunId);
+      await refreshRun(payload.reportRunId);
+      await refreshReports();
+    } catch (error) {
+      setRequestError(error instanceof Error ? error.message : "Failed to create report run.");
+    } finally {
+      setCreateLoading(false);
+    }
+  }
+
+  async function handleEnsurePdf(reportVersionId: string) {
+    setEnsurePdfState({
+      reportVersionId,
+      loading: true,
+      error: null,
+    });
+
+    try {
+      const response = await fetch(
+        `/api/reports/${reportVersionId}/artifacts/pdf/ensure`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ companyName: name }),
-        },
-        3
+        }
       );
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        if (response.status === 429) {
-          setErrorInfo({
-            title: "Rate Limit",
-            message: data.error ?? "Too many requests. Please wait a minute and try again.",
-          });
-        } else {
-          setErrorInfo({
-            title: "Analysis Failed",
-            message: data.error ?? "Analysis failed. Please try again.",
-          });
-        }
-        setServiceInterruption(true);
-        return;
-      }
-
-      setResult(data.data);
-      setCachedAt(data.cached ? data.cachedAt ?? null : null);
-    } catch {
-      setErrorInfo(null);
-      setServiceInterruption(true);
-    } finally {
-      setLoading(false);
+      await parseJsonResponse(response);
+      await Promise.all([refreshReports(), activeRunId ? refreshRun(activeRunId, true) : Promise.resolve(null)]);
+      setEnsurePdfState({
+        reportVersionId,
+        loading: false,
+        error: null,
+      });
+    } catch (error) {
+      setEnsurePdfState({
+        reportVersionId,
+        loading: false,
+        error: error instanceof Error ? error.message : "Failed to ensure PDF artifact.",
+      });
     }
-  };
+  }
 
-  const handleReconnect = () => {
-    setServiceInterruption(false);
-    if (companyName.trim()) handleAnalyze();
-  };
+  useEffect(() => {
+    if (!statusOnly) {
+      void refreshReportsEvent();
+    }
+  }, [statusOnly]);
 
-  const handleReset = () => {
-    setCompanyName("");
-    setResult(null);
-    setCachedAt(null);
-    setServiceInterruption(false);
-  };
+  useEffect(() => {
+    if (!activeRunId) {
+      return;
+    }
 
-  const handleExampleClick = (name: string) => handleAnalyze(name);
+    void refreshRun(activeRunId);
+  }, [activeRunId]);
+
+  useEffect(() => {
+    if (!activeRunId || !activeRun || TERMINAL_RUN_STATUSES.has(activeRun.status)) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshRun(activeRunId, true);
+    }, 4000);
+
+    return () => window.clearInterval(interval);
+  }, [activeRun, activeRunId]);
+
+  useEffect(() => {
+    if (!activeRun || !TERMINAL_RUN_STATUSES.has(activeRun.status)) {
+      return;
+    }
+
+    if (!statusOnly) {
+      void refreshReportsEvent();
+    }
+  }, [activeRun, statusOnly]);
+
+  const activeDataMode =
+    activeRun?.status === "completed_zero_data"
+      ? "zero-data"
+      : activeRun?.status === "completed_partial"
+        ? "partial-data"
+        : activeRun?.status === "completed"
+          ? "completed"
+          : null;
+
+  const activeTone = activeRun ? getStatusTone(activeRun.status) : null;
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden" style={{ background: "var(--background)" }}>
-      {/* Top bar — search + brand */}
-      <header
-        className="shrink-0 flex items-center justify-between gap-4 px-6 py-4 border-b"
-        style={{
-          background: "var(--surface)",
-          borderColor: "var(--border)",
-          borderWidth: "1px",
-        }}
-      >
-        <div className="flex items-center gap-6">
-          <h1
-            className="text-base font-semibold tracking-tight shrink-0 font-data"
-            style={{ color: "var(--foreground)" }}
-          >
-            STRATUM
-          </h1>
-          <span
-            className="text-[10px] hidden sm:inline font-data uppercase tracking-wider"
-            style={{ color: "var(--foreground-muted)" }}
-          >
-            Corporate Intelligence
-          </span>
-        </div>
-
-        <div className="flex-1 max-w-md mx-4 sm:mx-8 flex gap-2 items-end">
-          <div className="relative flex-1 flex flex-col gap-1">
-            {!result && !loading && (
-              <label
-                htmlFor="company-search"
-                className="text-[10px] font-data uppercase tracking-wider shrink-0"
+    <div className="min-h-screen" style={{ background: "var(--background)" }}>
+      <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-8">
+        <header className="border-b pb-6" style={{ borderColor: "var(--border)" }}>
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <p
+                className="font-data text-[11px] uppercase tracking-[0.24em]"
                 style={{ color: "var(--accent)" }}
               >
-                Type company name here
-              </label>
-            )}
-            <div className="relative">
-            <Search
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
-              style={{ color: "var(--foreground-muted)" }}
-            />
-            <input
-              id="company-search"
-              type="text"
-              value={companyName}
-              onChange={(e) => setCompanyName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
-              placeholder={!result && !loading ? "Type company name (e.g. Airbnb, Stripe)" : "Company (e.g. Airbnb, Stripe)"}
-              disabled={loading}
-              aria-label="Company name to analyze"
-              className="w-full pl-9 pr-4 py-2 rounded border text-sm font-data
-                         focus:outline-none focus:ring-1 focus:ring-[var(--accent)] transition-colors disabled:opacity-50"
-              style={{
-                background: "var(--background)",
-                borderColor: "var(--border)",
-                color: "var(--foreground)",
-              }}
-            />
+                Immutable hiring reports
+              </p>
+              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">
+                Request a report run, wait for the stored version, then open published artifacts.
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
+                The product path now centers on queued report runs, frozen provider snapshots, stored publication,
+                and artifact retrieval. Live ATS fetches and live model output are not rendered in the UI.
+              </p>
+            </div>
+
+            <div
+              className="rounded-2xl border px-4 py-3 text-sm"
+              style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+            >
+              <p style={{ color: "var(--foreground-secondary)" }}>Signed in as</p>
+              <p className="mt-1 font-medium text-white">{session.name ?? session.email}</p>
+              <p className="font-data text-[11px] uppercase tracking-[0.18em]" style={{ color: "var(--foreground-muted)" }}>
+                {session.role} · tenant {session.tenantId.slice(0, 8)}
+              </p>
             </div>
           </div>
-          <button
-            onClick={() => handleAnalyze()}
-            disabled={loading || !companyName.trim()}
-            aria-busy={loading}
-            aria-label={loading ? "Analyzing" : "Reveal analysis"}
-            className="px-4 py-2 rounded text-sm font-data font-medium shrink-0 flex items-center gap-2
-                       cursor-pointer transition-all duration-200
-                       hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40"
+        </header>
+
+        {requestError ? (
+          <div
+            className="mt-6 flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm"
             style={{
-              background: "var(--accent)",
-              color: "white",
+              borderColor: "rgba(248,113,113,0.35)",
+              background: "rgba(127,29,29,0.2)",
+              color: "#fecaca",
             }}
           >
-            {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Analyzing…
-              </>
-            ) : (
-              "REVEAL"
-            )}
-          </button>
-        </div>
-      </header>
-
-      {/* Main HUD — Bento Grid, no scroll */}
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {loading && (
-          <div className="h-full p-6">
-            <AnalysisSkeleton />
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>{requestError}</p>
           </div>
-        )}
+        ) : null}
 
-        {result && !loading && (
-          <div className="h-full grid grid-cols-1 lg:grid-cols-3 gap-4 p-6 pb-4">
-            {/* Zone A — VERDICT (dominant, top left) */}
-            <div
-              className="lg:col-span-2 flex flex-col rounded border overflow-hidden min-h-0"
-              style={{
-                background: "var(--surface)",
-                borderColor: "var(--border)",
-                borderWidth: "1px",
-              }}
+        <div className={`mt-8 grid gap-6 ${statusOnly ? "grid-cols-1" : "lg:grid-cols-[1.1fr_0.9fr]"}`}>
+          {!statusOnly ? (
+            <section
+              className="rounded-3xl border p-6"
+              style={{ borderColor: "var(--border)", background: "var(--surface)" }}
             >
-              <div className="p-6 flex flex-col flex-1 min-h-0 pl-7" style={{ borderLeft: "3px solid var(--accent)" }}>
-                {/* 1. Company — anchor: "what am I looking at" */}
-                <div className="flex items-center justify-between gap-4 mb-3">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span
-                      className="text-xl font-data font-bold tracking-tight"
-                      style={{ color: "var(--accent)" }}
-                    >
-                      {toTitleCase(result.companyName)}
-                    </span>
-                    {cachedAt && (
-                      <span
-                        className="text-[10px] font-data px-2 py-0.5 rounded"
-                        style={{
-                          background: "var(--accent)",
-                          color: "white",
-                          opacity: 0.9,
-                        }}
-                        title="Cached result"
-                      >
-                        Cached
-                      </span>
-                    )}
-                    {result.matchedAs && (
-                      <span
-                        className="text-[10px] font-data px-2 py-0.5 rounded"
-                        style={{
-                          background: "var(--border)",
-                          color: "var(--foreground-muted)",
-                        }}
-                        title="Resolved via alias"
-                      >
-                        Matched as: {result.matchedAs}
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    onClick={handleReset}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-data uppercase tracking-wider
-                               transition-all duration-200 cursor-pointer border shrink-0
-                               hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                    style={{
-                      color: "var(--foreground-muted)",
-                      borderColor: "var(--border)",
-                    }}
-                  >
-                    <ArrowLeft className="w-3 h-3" />
-                    New search
-                  </button>
-                </div>
-                {/* 2. Verdict — main insight */}
-                <h2
-                  className="text-3xl lg:text-4xl font-data font-bold tracking-tight mb-4"
-                  style={{ color: result.jobs.length === 0 ? "var(--foreground-muted)" : "var(--foreground)" }}
-                >
-                  {result.strategicVerdict}
-                </h2>
-                {/* 3. Summary — why */}
-                <p
-                  className="text-base font-data leading-relaxed overflow-y-auto"
-                  style={{ color: "var(--foreground-secondary)" }}
-                >
-                  {result.summary}
-                </p>
-              </div>
-            </div>
-
-            {/* Zone C — Evidence column (right) */}
-            <div
-              className="flex flex-col gap-4 min-h-0 overflow-hidden"
-            >
-              {/* Unsupported / 0-jobs: show try-again hint */}
-              {result.jobs.length === 0 && (
-                <div
-                  className="rounded border p-6 flex flex-col items-center justify-center min-h-[140px]"
-                  style={{
-                    background: "var(--surface)",
-                    borderColor: "var(--border)",
-                    borderWidth: "1px",
-                  }}
-                >
-                  <p className="text-xs font-data uppercase tracking-wider mb-3" style={{ color: "var(--foreground-muted)" }}>
-                    Try a supported company
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="font-data text-[11px] uppercase tracking-[0.2em]" style={{ color: "var(--accent)" }}>
+                    Create report run
                   </p>
-                  <div className="flex flex-wrap gap-2 justify-center">
-                    {EXAMPLE_COMPANIES.map((name) => (
-                      <button
-                        key={name}
-                        onClick={() => handleExampleClick(name)}
-                        className="px-3 py-1.5 rounded text-xs font-data cursor-pointer transition-all duration-200
-                                   hover:bg-[var(--accent)] hover:text-white"
-                        style={{
-                          background: "var(--border)",
-                          color: "var(--foreground-secondary)",
-                        }}
-                      >
-                        {name}
-                      </button>
-                    ))}
-                  </div>
+                  <h2 className="mt-2 text-xl font-semibold text-white">Queue a point-in-time report request</h2>
                 </div>
-              )}
-              {/* Strategic Signals */}
-              {result.keywordFindings.length > 0 && (
-                <div
-                  className="rounded border flex flex-col min-h-0 overflow-hidden shrink-0"
-                  style={{
-                    background: "var(--surface)",
-                    borderColor: "var(--border)",
-                    borderWidth: "1px",
-                  }}
-                >
-                  <div className="px-4 py-3 border-b shrink-0" style={{ borderColor: "var(--border)" }}>
-                    <span className="text-xs font-data uppercase tracking-wider" style={{ color: "var(--foreground-muted)" }}>
-                      Strategic Signals
-                    </span>
-                  </div>
-                  <ul className="p-4 space-y-2 overflow-y-auto flex-1 min-h-0">
-                    {result.keywordFindings.map((finding, i) => (
-                      <li key={i} className="text-sm font-data flex items-start gap-2" style={{ color: "var(--foreground-secondary)" }}>
-                        <span style={{ color: "var(--accent)" }}>•</span>
-                        {finding}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+                <Database className="h-5 w-5" style={{ color: "var(--foreground-muted)" }} />
+              </div>
 
-              {/* Highlights (proof roles) */}
-              {result.notableRoles && result.notableRoles.length > 0 && (
-                <div
-                  className="rounded border flex flex-col min-h-0 overflow-hidden flex-1"
-                  style={{
-                    background: "var(--surface)",
-                    borderColor: "var(--border)",
-                    borderWidth: "1px",
-                  }}
-                >
-                  <div className="px-4 py-3 border-b shrink-0" style={{ borderColor: "var(--border)" }}>
-                    <span className="text-xs font-data uppercase tracking-wider" style={{ color: "var(--foreground-muted)" }}>
-                      Highlights
-                    </span>
+              <form className="mt-6 space-y-4" onSubmit={handleCreateReportRun}>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-white">Company name</span>
+                  <div className="relative">
+                    <Search
+                      className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
+                      style={{ color: "var(--foreground-muted)" }}
+                    />
+                    <input
+                      value={companyName}
+                      onChange={(event) => setCompanyName(event.target.value)}
+                      placeholder="Airbnb"
+                      className="w-full rounded-2xl border px-10 py-3 text-sm outline-none"
+                      style={{
+                        borderColor: "var(--border)",
+                        background: "var(--background)",
+                        color: "var(--foreground)",
+                      }}
+                    />
                   </div>
-                  <ul className="p-4 space-y-2 overflow-y-auto flex-1 min-h-0">
-                    {result.notableRoles.map((role, i) => (
-                      <li key={i} className="text-sm font-data" style={{ color: "var(--foreground-secondary)" }}>{role}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
+                </label>
 
-            {/* Zone B — Metrics (bottom left, full width on mobile) */}
-            <div
-              className="lg:col-span-2 lg:col-start-1 rounded border p-6 flex flex-col sm:flex-row gap-6 shrink-0"
-              style={{
-                background: "var(--surface)",
-                borderColor: "var(--border)",
-                borderWidth: "1px",
-              }}
-            >
-              <div className="flex-1">
-                <div className="text-xs font-data uppercase tracking-wider mb-2" style={{ color: "var(--foreground-muted)" }}>
-                  Hiring Velocity
-                </div>
-                <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
-                  <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{ width: `${Math.round(hiringVelocityToProgress(result.hiringVelocity) * 100)}%`, background: "var(--accent)" }}
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-white">Website domain (optional)</span>
+                  <input
+                    value={websiteDomain}
+                    onChange={(event) => setWebsiteDomain(event.target.value)}
+                    placeholder="airbnb.com"
+                    className="w-full rounded-2xl border px-4 py-3 text-sm outline-none"
+                    style={{
+                      borderColor: "var(--border)",
+                      background: "var(--background)",
+                      color: "var(--foreground)",
+                    }}
                   />
-                </div>
-                <div className="flex justify-between mt-1">
-                  <span className="text-xs font-data" style={{ color: "var(--foreground-muted)" }}>Low</span>
-                  <span className="text-xs font-data tabular-nums" style={{ color: "var(--foreground)" }}>
-                    {result.hiringVelocity || "—"}
-                  </span>
-                  <span className="text-xs font-data" style={{ color: "var(--foreground-muted)" }}>High</span>
-                </div>
-              </div>
-              <div
-                className="sm:border-l sm:pl-6"
-                style={{ borderColor: "var(--border)" }}
-                title="Engineering vs Sales ratio — e.g. 2:1 means 2 engineers per 1 sales role"
-              >
-                <div className="text-xs font-data uppercase tracking-wider mb-1" style={{ color: "var(--foreground-muted)" }}>
-                  Eng:Sales
-                </div>
-                <div className="text-3xl font-data tabular-nums" style={{ color: "var(--accent)" }}>
-                  {result.jobs.length === 0 ? "—" : result.engineeringVsSalesRatio}
-                </div>
-              </div>
-              <div className="sm:border-l sm:pl-6" style={{ borderColor: "var(--border)" }}>
-                <div className="text-xs font-data uppercase tracking-wider mb-1" style={{ color: "var(--foreground-muted)" }}>
-                  Open Roles
-                </div>
-                <div className="text-3xl font-data tabular-nums" style={{ color: "var(--accent)" }}>
-                  {result.jobs.length}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+                </label>
 
-        {/* Empty state */}
-        {!result && !loading && (
-          <div className="h-full flex flex-col items-center justify-center p-6 gap-6">
-            <p className="text-sm font-data max-w-md text-center" style={{ color: "var(--foreground-secondary)" }}>
-              Use the search bar above to enter a company name, then click Reveal.
-            </p>
-            <p className="text-xs font-data uppercase tracking-wider" style={{ color: "var(--foreground-muted)" }}>Or try one:</p>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {EXAMPLE_COMPANIES.map((name) => (
                 <button
-                  key={name}
-                  onClick={() => handleExampleClick(name)}
-                  className="px-4 py-2 rounded text-sm font-data transition-all duration-200 cursor-pointer
-                             hover:bg-[var(--accent)] hover:text-white hover:border-[var(--accent)]"
+                  type="submit"
+                  disabled={createLoading}
+                  className="inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{ background: "var(--accent)", color: "white" }}
+                >
+                  {createLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+                  Create report run
+                </button>
+              </form>
+
+              <div className="mt-6 grid gap-3 text-sm md:grid-cols-3">
+                {[
+                  "Queued runs are executed by the worker against frozen provider inputs.",
+                  "Published reports are opened from stored report versions only.",
+                  "HTML and PDF availability reflect real artifact state, not placeholders.",
+                ].map((item) => (
+                  <div
+                    key={item}
+                    className="rounded-2xl border p-4 leading-6"
+                    style={{ borderColor: "var(--border)", background: "rgba(255,255,255,0.02)" }}
+                  >
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          <section
+            className="rounded-3xl border p-6"
+            style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="font-data text-[11px] uppercase tracking-[0.2em]" style={{ color: "var(--accent)" }}>
+                  Active status
+                </p>
+                <h2 className="mt-2 text-xl font-semibold text-white">
+                  {activeRun ? activeRun.companyDisplayName : "Select or create a report run"}
+                </h2>
+              </div>
+              {activeRunId ? (
+                <button
+                  type="button"
+                  onClick={() => void refreshRun(activeRunId)}
+                  className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm"
+                  style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
+                >
+                  <RefreshCcw className="h-4 w-4" />
+                  Refresh
+                </button>
+              ) : null}
+            </div>
+
+            {!activeRunId ? (
+              <div
+                className="mt-6 rounded-2xl border p-5 text-sm leading-6"
+                style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
+              >
+                No report run is active yet. Create one from the home page form to follow queue, fetch,
+                analysis, publication, and artifact status in one place.
+              </div>
+            ) : runLoading && !activeRun ? (
+              <div className="mt-6 flex items-center gap-3 text-sm" style={{ color: "var(--foreground-secondary)" }}>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading report run status…
+              </div>
+            ) : activeRun ? (
+              <div className="mt-6 space-y-6">
+                <div
+                  className="rounded-2xl border p-5"
                   style={{
-                    background: "var(--surface)",
-                    border: "1px solid var(--border)",
-                    color: "var(--foreground-secondary)",
+                    borderColor: activeTone?.border ?? "var(--border)",
+                    background: activeTone?.background ?? "var(--surface)",
                   }}
                 >
-                  {name}
-                </button>
-              ))}
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <p className="font-data text-[11px] uppercase tracking-[0.2em]" style={{ color: activeTone?.color }}>
+                        {STATUS_LABELS[activeRun.status]}
+                      </p>
+                      <p className="mt-2 text-lg font-semibold text-white">{formatRelativeStatus(activeRun)}</p>
+                      <p className="mt-2 text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
+                        Requested {formatDate(activeRun.createdAt)} · as of {formatDate(activeRun.asOfTime)}
+                      </p>
+                    </div>
+
+                    <div className="grid gap-2 text-sm md:text-right" style={{ color: "var(--foreground-secondary)" }}>
+                      <p>Run ID: {activeRun.id}</p>
+                      <p>Attempts: {activeRun.attemptCount}</p>
+                      <p>Normalized jobs: {activeRun.normalizedJobCount}</p>
+                      <p>Data mode: {activeDataMode ?? "in-progress"}</p>
+                    </div>
+                  </div>
+
+                  {activeRun.failureMessage ? (
+                    <p className="mt-4 text-sm leading-6" style={{ color: "#fecaca" }}>
+                      {activeRun.failureMessage}
+                    </p>
+                  ) : null}
+
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <Link
+                      className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm text-white"
+                      style={{ borderColor: "var(--border)" }}
+                      href={`/report-runs/${activeRun.id}`}
+                    >
+                      Open status page
+                      <ExternalLink className="h-4 w-4" />
+                    </Link>
+
+                    {activeRun.reportVersion ? (
+                      <Link
+                        className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm text-white"
+                        style={{ background: "var(--accent)" }}
+                        href={`/reports/${activeRun.reportVersion.id}`}
+                      >
+                        Open published report
+                        <FileText className="h-4 w-4" />
+                      </Link>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-3">
+                  {[
+                    { label: "Started", value: formatDate(activeRun.startedAt) },
+                    { label: "Completed", value: formatDate(activeRun.completedAt) },
+                    { label: "Company resolution", value: activeRun.companyResolutionStatus },
+                  ].map((item) => (
+                    <div
+                      key={item.label}
+                      className="rounded-2xl border p-4"
+                      style={{ borderColor: "var(--border)", background: "rgba(255,255,255,0.02)" }}
+                    >
+                      <p className="font-data text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--foreground-muted)" }}>
+                        {item.label}
+                      </p>
+                      <p className="mt-2 text-sm text-white">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div
+                  className="rounded-2xl border p-5"
+                  style={{ borderColor: "var(--border)", background: "rgba(255,255,255,0.02)" }}
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-base font-semibold text-white">Artifacts</h3>
+                      <p className="mt-1 text-sm" style={{ color: "var(--foreground-secondary)" }}>
+                        Artifact state is read from the stored published report version.
+                      </p>
+                    </div>
+                    {activeRun.reportVersion ? (
+                      <p className="text-sm" style={{ color: "var(--foreground-secondary)" }}>
+                        Version {activeRun.reportVersion.versionNumber}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  {activeRun.reportVersion ? (
+                    <div className="mt-4 space-y-4">
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <ArtifactCard
+                          available={activeRun.reportVersion.artifactAvailability.html}
+                          href={`/api/reports/${activeRun.reportVersion.id}/artifacts/html`}
+                          label="HTML artifact"
+                        />
+                        <ArtifactCard
+                          available={activeRun.reportVersion.artifactAvailability.pdf}
+                          href={`/api/reports/${activeRun.reportVersion.id}/artifacts/pdf`}
+                          label="PDF artifact"
+                        />
+                      </div>
+
+                      {!activeRun.reportVersion.artifactAvailability.pdf ? (
+                        <div className="flex flex-wrap items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => void handleEnsurePdf(activeRun.reportVersion!.id)}
+                            disabled={ensurePdfState?.loading && ensurePdfState.reportVersionId === activeRun.reportVersion.id}
+                            className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm text-white disabled:opacity-50"
+                            style={{ borderColor: "var(--border)" }}
+                          >
+                            {ensurePdfState?.loading && ensurePdfState.reportVersionId === activeRun.reportVersion.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <FileDown className="h-4 w-4" />
+                            )}
+                            Ensure PDF
+                          </button>
+                          {ensurePdfState?.reportVersionId === activeRun.reportVersion.id && ensurePdfState.error ? (
+                            <p className="text-sm" style={{ color: "#fecaca" }}>
+                              {ensurePdfState.error}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
+                      No published report version exists yet for this run.
+                    </p>
+                  )}
+                </div>
+
+                <div
+                  className="rounded-2xl border p-5"
+                  style={{ borderColor: "var(--border)", background: "rgba(255,255,255,0.02)" }}
+                >
+                  <h3 className="text-base font-semibold text-white">Source snapshots</h3>
+                  {activeRun.sourceSnapshots.length > 0 ? (
+                    <div className="mt-4 space-y-3">
+                      {activeRun.sourceSnapshots.map((snapshot) => (
+                        <div
+                          key={snapshot.id}
+                          className="rounded-2xl border px-4 py-3 text-sm"
+                          style={{ borderColor: "var(--border)", background: "rgba(0,0,0,0.14)" }}
+                        >
+                          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                            <p className="font-medium text-white">
+                              {snapshot.provider} · {snapshot.providerToken}
+                            </p>
+                            <p style={{ color: "var(--foreground-secondary)" }}>
+                              {snapshot.status} · {snapshot.recordCount} records
+                            </p>
+                          </div>
+                          <p className="mt-2 leading-6" style={{ color: "var(--foreground-secondary)" }}>
+                            Fetched {formatDate(snapshot.fetchedAt)}
+                            {snapshot.httpStatus ? ` · HTTP ${snapshot.httpStatus}` : ""}
+                            {snapshot.errorMessage ? ` · ${snapshot.errorMessage}` : ""}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
+                      No provider snapshot records have been persisted for this run yet.
+                    </p>
+                  )}
+                </div>
+
+                <div
+                  className="rounded-2xl border p-5"
+                  style={{ borderColor: "var(--border)", background: "rgba(255,255,255,0.02)" }}
+                >
+                  <h3 className="text-base font-semibold text-white">Normalized jobs</h3>
+                  {activeRun.normalizedJobs.length > 0 ? (
+                    <div className="mt-4 space-y-3">
+                      {activeRun.normalizedJobs.slice(0, 5).map((job) => (
+                        <div
+                          key={job.id}
+                          className="rounded-2xl border px-4 py-3 text-sm"
+                          style={{ borderColor: "var(--border)", background: "rgba(0,0,0,0.14)" }}
+                        >
+                          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                            <p className="font-medium text-white">{job.title}</p>
+                            <p style={{ color: "var(--foreground-secondary)" }}>{job.provider}</p>
+                          </div>
+                          <p className="mt-2 leading-6" style={{ color: "var(--foreground-secondary)" }}>
+                            {(job.department ?? "Unknown department") + " · " + (job.location ?? "Unknown location")}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
+                      No normalized jobs have been persisted for this run yet.
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </section>
+        </div>
+
+        {!statusOnly ? (
+          <section className="mt-6 rounded-3xl border p-6" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="font-data text-[11px] uppercase tracking-[0.2em]" style={{ color: "var(--accent)" }}>
+                  Published reports
+                </p>
+                <h2 className="mt-2 text-xl font-semibold text-white">Stored report versions</h2>
+              </div>
+              {reportsLoading ? (
+                <div className="flex items-center gap-2 text-sm" style={{ color: "var(--foreground-secondary)" }}>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading
+                </div>
+              ) : null}
             </div>
-          </div>
+
+            {recentReports.length > 0 ? (
+              <div className="mt-6 overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead style={{ color: "var(--foreground-muted)" }}>
+                    <tr>
+                      <th className="pb-3 pr-6 font-medium">Company</th>
+                      <th className="pb-3 pr-6 font-medium">Published</th>
+                      <th className="pb-3 pr-6 font-medium">Data mode</th>
+                      <th className="pb-3 pr-6 font-medium">Artifacts</th>
+                      <th className="pb-3 font-medium">Open</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentReports.map((report) => (
+                      <tr key={report.reportVersionId} className="border-t" style={{ borderColor: "var(--border)" }}>
+                        <td className="py-4 pr-6">
+                          <p className="font-medium text-white">{report.companyDisplayName}</p>
+                          <p style={{ color: "var(--foreground-secondary)" }}>Run {report.reportRunId}</p>
+                        </td>
+                        <td className="py-4 pr-6" style={{ color: "var(--foreground-secondary)" }}>
+                          {formatDate(report.publishedAt ?? report.generatedAt)}
+                        </td>
+                        <td className="py-4 pr-6">
+                          <span
+                            className="rounded-full border px-3 py-1 text-xs uppercase tracking-[0.16em]"
+                            style={{
+                              borderColor: "var(--border)",
+                              color: report.dataMode === "completed" ? "#bfdbfe" : "var(--foreground-secondary)",
+                            }}
+                          >
+                            {report.dataMode}
+                          </span>
+                        </td>
+                        <td className="py-4 pr-6" style={{ color: "var(--foreground-secondary)" }}>
+                          HTML {report.artifactAvailability.html ? "available" : "missing"} · PDF{" "}
+                          {report.artifactAvailability.pdf ? "available" : "missing"}
+                        </td>
+                        <td className="py-4">
+                          <div className="flex flex-wrap gap-3">
+                            <Link className="text-white underline underline-offset-4" href={`/reports/${report.reportVersionId}`}>
+                              Report
+                            </Link>
+                            {report.artifactAvailability.html ? (
+                              <Link
+                                className="underline underline-offset-4"
+                                style={{ color: "var(--foreground-secondary)" }}
+                                href={`/api/reports/${report.reportVersionId}/artifacts/html`}
+                              >
+                                HTML
+                              </Link>
+                            ) : null}
+                            {report.artifactAvailability.pdf ? (
+                              <Link
+                                className="underline underline-offset-4"
+                                style={{ color: "var(--foreground-secondary)" }}
+                                href={`/api/reports/${report.reportVersionId}/artifacts/pdf`}
+                              >
+                                PDF
+                              </Link>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div
+                className="mt-6 rounded-2xl border p-5 text-sm leading-6"
+                style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
+              >
+                No published report versions exist yet for this tenant.
+              </div>
+            )}
+          </section>
+        ) : null}
+
+        <SystemStatusBar
+          reportRunId={activeRun?.id ?? null}
+          reportVersionId={activeRun?.reportVersion?.id ?? null}
+          reportStatus={activeRun ? STATUS_LABELS[activeRun.status] : null}
+          dataMode={activeDataMode}
+          htmlAvailable={activeRun?.reportVersion?.artifactAvailability.html ?? null}
+          pdfAvailable={activeRun?.reportVersion?.artifactAvailability.pdf ?? null}
+          inline={false}
+        />
+      </main>
+    </div>
+  );
+}
+
+function ArtifactCard({
+  available,
+  href,
+  label,
+}: {
+  available: boolean;
+  href: string;
+  label: string;
+}) {
+  return (
+    <div
+      className="rounded-2xl border p-4"
+      style={{ borderColor: "var(--border)", background: "rgba(0,0,0,0.14)" }}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="font-medium text-white">{label}</p>
+          <p className="mt-1 text-sm" style={{ color: "var(--foreground-secondary)" }}>
+            {available ? "Available" : "Not generated yet"}
+          </p>
+        </div>
+        {available ? (
+          <Link className="inline-flex items-center gap-2 text-sm text-white underline underline-offset-4" href={href}>
+            Open
+            <ExternalLink className="h-4 w-4" />
+          </Link>
+        ) : (
+          <Clock3 className="h-4 w-4" style={{ color: "var(--foreground-muted)" }} />
         )}
       </div>
-
-      {/* Footer — data source, status */}
-      <footer className="shrink-0 border-t" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
-        <div className="px-6 py-2 flex items-center justify-between gap-4 flex-wrap">
-          <span className="text-xs font-data" style={{ color: "var(--foreground-muted)" }}>
-            {result
-              ? result.jobs.length === 0
-                ? result.summary
-                : `System Analysis based on ${result.jobs.length} active roles.`
-              : "Data from Greenhouse & Lever. Apple, Google, Microsoft use different systems."}
-            {result && (
-              <span className="ml-1 opacity-80">
-                · Data from Greenhouse & Lever
-              </span>
-            )}
-          </span>
-          <SystemStatusBar
-            apiSource={result?.apiSource ?? undefined}
-            latencyMs={result?.analysisTimeMs ?? null}
-            cached={!!cachedAt}
-            inline
-          />
-        </div>
-      </footer>
-
-      {serviceInterruption && (
-        <ServiceInterruptionModal
-          onReconnect={handleReconnect}
-          onClose={() => {
-            setServiceInterruption(false);
-            setErrorInfo(null);
-          }}
-          title={errorInfo?.title}
-          message={errorInfo?.message}
-        />
-      )}
     </div>
   );
 }

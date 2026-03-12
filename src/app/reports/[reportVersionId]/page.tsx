@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { SystemStatusBar } from "@/components/ui/SystemStatusBar";
 import { requireTenantRole } from "@/lib/auth/requireTenantRole";
 import { getReportVersion } from "@/lib/reports/getReportVersion";
 
@@ -8,6 +9,17 @@ type ReportPageProps = {
     reportVersionId: string;
   }>;
 };
+
+function formatDate(value: string | Date | null) {
+  if (!value) {
+    return "Not available";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
 
 export default async function ReportVersionPage({ params }: ReportPageProps) {
   const session = await requireTenantRole("viewer");
@@ -28,112 +40,204 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
   const pdfAvailable = reportVersion.artifacts.some(
     (artifact) => artifact.artifactType === "pdf" && artifact.status === "available"
   );
+  const dataMode = report.snapshot.zeroData
+    ? "zero-data"
+    : report.snapshot.partialData
+      ? "partial-data"
+      : "completed";
 
   return (
-    <main className="min-h-screen bg-neutral-950 px-6 py-10 text-neutral-100">
-      <div className="mx-auto flex max-w-5xl flex-col gap-8">
-        <header className="rounded-2xl border border-neutral-800 bg-neutral-900/80 p-6">
-          <p className="text-sm uppercase tracking-[0.2em] text-neutral-400">Published Report</p>
-          <h1 className="mt-3 text-3xl font-semibold">{report.company.displayName}</h1>
-          <div className="mt-4 grid gap-2 text-sm text-neutral-300 md:grid-cols-2">
-            <p>Report version: {report.reportVersionId}</p>
-            <p>Report run: {report.reportRunId}</p>
-            <p>Generated at: {report.generatedAt}</p>
-            <p>Published at: {report.publishedAt ?? "Unpublished"}</p>
-            <p>Providers: {report.snapshot.providersSucceeded.join(", ") || "None"}</p>
-            <p>HTML artifact: {htmlAvailable ? "available" : "unavailable"}</p>
-            <p>PDF artifact: {pdfAvailable ? "available" : "unavailable"}</p>
-            <p>
-              Data mode:{" "}
-              {report.snapshot.zeroData
-                ? "zero-data"
-                : report.snapshot.partialData
-                  ? "partial"
-                  : "full"}
-            </p>
-          </div>
-          <div className="mt-4 flex gap-3 text-sm">
-            {htmlAvailable ? (
-              <Link
-                className="rounded-full border border-neutral-700 px-4 py-2 text-neutral-100"
-                href={`/api/reports/${reportVersion.id}/artifacts/html`}
-              >
-                Open HTML artifact
+    <main className="min-h-screen px-6 py-8" style={{ background: "var(--background)" }}>
+      <div className="mx-auto max-w-6xl">
+        <header className="border-b pb-6" style={{ borderColor: "var(--border)" }}>
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="font-data text-[11px] uppercase tracking-[0.24em]" style={{ color: "var(--accent)" }}>
+                Published report
+              </p>
+              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">
+                {report.company.displayName}
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
+                This page reads from a stored published report version and its persisted artifacts only. No live
+                ATS fetches or live model calls occur on this read path.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-3 text-sm">
+              <Link className="rounded-full border px-4 py-2 text-white" style={{ borderColor: "var(--border)" }} href="/">
+                Back to home
               </Link>
-            ) : null}
-            {pdfAvailable ? (
-              <Link
-                className="rounded-full border border-neutral-700 px-4 py-2 text-neutral-100"
-                href={`/api/reports/${reportVersion.id}/artifacts/pdf`}
-              >
-                Download PDF artifact
-              </Link>
-            ) : null}
+              {htmlAvailable ? (
+                <Link
+                  className="rounded-full border px-4 py-2 text-white"
+                  style={{ borderColor: "var(--border)" }}
+                  href={`/api/reports/${reportVersion.id}/artifacts/html`}
+                >
+                  Open HTML
+                </Link>
+              ) : null}
+              {pdfAvailable ? (
+                <Link
+                  className="rounded-full px-4 py-2 text-white"
+                  style={{ background: "var(--accent)" }}
+                  href={`/api/reports/${reportVersion.id}/artifacts/pdf`}
+                >
+                  Download PDF
+                </Link>
+              ) : null}
+            </div>
           </div>
         </header>
 
-        <section className="rounded-2xl border border-neutral-800 bg-neutral-900/80 p-6">
-          <h2 className="text-xl font-semibold">Executive Summary</h2>
-          <ol className="mt-4 space-y-3 text-neutral-200">
-            {report.executiveSummary.map((item) => (
-              <li key={item.order}>
-                {item.text}
-                {item.claimRefs.length > 0 ? ` [${item.claimRefs.join(", ")}]` : null}
-              </li>
-            ))}
-          </ol>
+        <SystemStatusBar
+          dataMode={dataMode}
+          htmlAvailable={htmlAvailable}
+          inline
+          pdfAvailable={pdfAvailable}
+          reportRunId={report.reportRunId}
+          reportStatus="Published"
+          reportVersionId={report.reportVersionId}
+        />
+
+        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {[
+            { label: "Published at", value: formatDate(report.publishedAt) },
+            { label: "Generated at", value: formatDate(report.generatedAt) },
+            { label: "Providers succeeded", value: report.snapshot.providersSucceeded.join(", ") || "None" },
+            { label: "Total normalized jobs", value: String(report.metrics.totalJobs) },
+          ].map((item) => (
+            <div
+              key={item.label}
+              className="rounded-2xl border p-5"
+              style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+            >
+              <p className="font-data text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--foreground-muted)" }}>
+                {item.label}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-white">{item.value}</p>
+            </div>
+          ))}
         </section>
 
-        <section className="rounded-2xl border border-neutral-800 bg-neutral-900/80 p-6">
-          <h2 className="text-xl font-semibold">Claims</h2>
-          <div className="mt-4 space-y-4">
-            {report.claims.map((claim) => (
-              <article key={claim.claimId} className="rounded-xl border border-neutral-800 p-4">
-                <p className="text-sm uppercase tracking-[0.15em] text-neutral-400">
-                  {claim.section} · {claim.claimType} · {claim.confidence}
-                </p>
-                <h3 className="mt-2 text-lg font-medium">{claim.statement}</h3>
-                <p className="mt-2 text-sm text-neutral-300">{claim.whyItMatters}</p>
-                <p className="mt-2 text-xs text-neutral-400">
-                  Citations: {claim.citationRefs.join(", ")}
-                </p>
-              </article>
-            ))}
-            {report.claims.length === 0 ? (
-              <p className="text-sm text-neutral-400">No claims were published for this report.</p>
-            ) : null}
-          </div>
+        <section className="mt-6 rounded-3xl border p-6" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+          <h2 className="text-xl font-semibold text-white">Executive summary</h2>
+          {report.executiveSummary.length > 0 ? (
+            <ol className="mt-4 space-y-3 text-sm leading-7" style={{ color: "var(--foreground-secondary)" }}>
+              {report.executiveSummary.map((item) => (
+                <li key={item.order}>
+                  {item.text}
+                  {item.claimRefs.length > 0 ? ` [${item.claimRefs.join(", ")}]` : null}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="mt-4 text-sm" style={{ color: "var(--foreground-secondary)" }}>
+              No executive summary entries were published for this report.
+            </p>
+          )}
         </section>
 
-        <section className="rounded-2xl border border-neutral-800 bg-neutral-900/80 p-6">
-          <h2 className="text-xl font-semibold">Evidence Appendix</h2>
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full text-left text-sm text-neutral-200">
-              <thead className="text-neutral-400">
-                <tr>
-                  <th className="pb-3 pr-4">Title</th>
-                  <th className="pb-3 pr-4">Provider</th>
-                  <th className="pb-3 pr-4">Department</th>
-                  <th className="pb-3 pr-4">Location</th>
-                  <th className="pb-3 pr-4">Claims</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.evidenceAppendix.map((evidence) => (
-                  <tr key={evidence.normalizedJobId} className="border-t border-neutral-800">
-                    <td className="py-3 pr-4">{evidence.jobTitle}</td>
-                    <td className="py-3 pr-4">{evidence.provider}</td>
-                    <td className="py-3 pr-4">{evidence.department ?? "Unknown"}</td>
-                    <td className="py-3 pr-4">{evidence.location ?? "Unknown"}</td>
-                    <td className="py-3 pr-4">{evidence.citedByClaimIds.join(", ")}</td>
+        <div className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+          <section className="rounded-3xl border p-6" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+            <h2 className="text-xl font-semibold text-white">Claims</h2>
+            <div className="mt-4 space-y-4">
+              {report.claims.map((claim) => (
+                <article
+                  key={claim.claimId}
+                  className="rounded-2xl border p-4"
+                  style={{ borderColor: "var(--border)", background: "rgba(255,255,255,0.02)" }}
+                >
+                  <p className="font-data text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--foreground-muted)" }}>
+                    {claim.section} · {claim.claimType} · {claim.confidence}
+                  </p>
+                  <h3 className="mt-2 text-base font-semibold text-white">{claim.statement}</h3>
+                  <p className="mt-2 text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
+                    {claim.whyItMatters}
+                  </p>
+                  <p className="mt-2 text-xs" style={{ color: "var(--foreground-muted)" }}>
+                    Citations: {claim.citationRefs.join(", ")}
+                  </p>
+                </article>
+              ))}
+              {report.claims.length === 0 ? (
+                <p className="text-sm" style={{ color: "var(--foreground-secondary)" }}>
+                  No claims were published for this report.
+                </p>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="space-y-6">
+            <div className="rounded-3xl border p-6" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+              <h2 className="text-xl font-semibold text-white">Methodology</h2>
+              <div className="mt-4 space-y-4 text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
+                <p>Providers queried: {report.snapshot.providersQueried.join(", ") || "None"}</p>
+                <p>Snapshot window start: {formatDate(report.snapshot.snapshotWindowStart)}</p>
+                <p>Snapshot window end: {formatDate(report.snapshot.snapshotWindowEnd)}</p>
+                <p>Prompt version: {report.model.promptVersion ?? "Not recorded"}</p>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border p-6" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+              <h2 className="text-xl font-semibold text-white">Caveats</h2>
+              {report.caveats.length > 0 ? (
+                <ul className="mt-4 space-y-3 text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
+                  {report.caveats.map((caveat, index) => (
+                    <li key={`${caveat.type}-${index}`}>
+                      <span className="font-medium text-white">{caveat.type}:</span> {caveat.text}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-4 text-sm" style={{ color: "var(--foreground-secondary)" }}>
+                  No caveats were published for this report.
+                </p>
+              )}
+            </div>
+          </section>
+        </div>
+
+        <section className="mt-6 rounded-3xl border p-6" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+          <h2 className="text-xl font-semibold text-white">Evidence appendix</h2>
+          {report.evidenceAppendix.length > 0 ? (
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead style={{ color: "var(--foreground-muted)" }}>
+                  <tr>
+                    <th className="pb-3 pr-4 font-medium">Title</th>
+                    <th className="pb-3 pr-4 font-medium">Provider</th>
+                    <th className="pb-3 pr-4 font-medium">Department</th>
+                    <th className="pb-3 pr-4 font-medium">Location</th>
+                    <th className="pb-3 pr-4 font-medium">Claims</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {report.evidenceAppendix.length === 0 ? (
-              <p className="mt-4 text-sm text-neutral-400">No cited roles were published.</p>
-            ) : null}
-          </div>
+                </thead>
+                <tbody>
+                  {report.evidenceAppendix.map((evidence) => (
+                    <tr key={evidence.normalizedJobId} className="border-t" style={{ borderColor: "var(--border)" }}>
+                      <td className="py-3 pr-4 text-white">{evidence.jobTitle}</td>
+                      <td className="py-3 pr-4" style={{ color: "var(--foreground-secondary)" }}>
+                        {evidence.provider}
+                      </td>
+                      <td className="py-3 pr-4" style={{ color: "var(--foreground-secondary)" }}>
+                        {evidence.department ?? "Unknown"}
+                      </td>
+                      <td className="py-3 pr-4" style={{ color: "var(--foreground-secondary)" }}>
+                        {evidence.location ?? "Unknown"}
+                      </td>
+                      <td className="py-3 pr-4" style={{ color: "var(--foreground-secondary)" }}>
+                        {evidence.citedByClaimIds.join(", ")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="mt-4 text-sm" style={{ color: "var(--foreground-secondary)" }}>
+              No cited roles were published.
+            </p>
+          )}
         </section>
       </div>
     </main>
