@@ -1,0 +1,264 @@
+import { randomUUID } from "crypto";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import {
+  companies,
+  companyProviderAccounts,
+  normalizedJobs,
+  reportRuns,
+  sourceSnapshots,
+} from "@/db/schema";
+import { normalizeJobs } from "@/lib/normalize/normalizeJobs";
+import type { ClaimedReportRun } from "@/lib/reports/claimNextReportRun";
+import { fetchProviderSnapshotForResolvedCompany } from "@/lib/providers/ats/fetchProviderSnapshot";
+import { resolveCompany } from "@/lib/providers/ats/resolveCompany";
+import { buildRawSnapshotObjectKey } from "@/lib/storage/objectKeys";
+import { gzipJson, sha256Hex } from "@/lib/storage/checksums";
+import { isS3Configured, putObject, s3Bucket } from "@/lib/storage/s3";
+
+async function updateRun(
+  reportRunId: string,
+  lockToken: string | null,
+  values: Partial<typeof reportRuns.$inferInsert>
+) {
+  const whereClause = lockToken
+    ? and(eq(reportRuns.id, reportRunId), eq(reportRuns.lockToken, lockToken))
+    : eq(reportRuns.id, reportRunId);
+
+  await db.update(reportRuns).set(values).where(whereClause);
+}
+
+async function upsertProviderAccount(params: {
+  companyId: string;
+  provider: string;
+  providerToken: string;
+  verifiedAt: Date;
+}) {
+  const existing = await db.query.companyProviderAccounts.findFirst({
+    where: and(
+      eq(companyProviderAccounts.companyId, params.companyId),
+      eq(companyProviderAccounts.provider, params.provider),
+      eq(companyProviderAccounts.providerToken, params.providerToken)
+    ),
+  });
+
+  if (existing) {
+    await db
+      .update(companyProviderAccounts)
+      .set({
+        status: "verified",
+        resolutionSource: "worker_snapshot",
+        confidence: "1.00",
+        verifiedAt: params.verifiedAt,
+        lastSuccessAt: params.verifiedAt,
+        updatedAt: new Date(),
+      })
+      .where(eq(companyProviderAccounts.id, existing.id));
+
+    return;
+  }
+
+  await db.insert(companyProviderAccounts).values({
+    id: randomUUID(),
+    companyId: params.companyId,
+    provider: params.provider,
+    providerToken: params.providerToken,
+    status: "verified",
+    resolutionSource: "worker_snapshot",
+    confidence: "1.00",
+    verifiedAt: params.verifiedAt,
+    lastSuccessAt: params.verifiedAt,
+  });
+}
+
+async function markRunFailed(
+  claimedRun: ClaimedReportRun,
+  failureCode: string,
+  failureMessage: string,
+) {
+  await updateRun(claimedRun.id, claimedRun.lockToken, {
+    status: "failed",
+    failureCode,
+    failureMessage,
+    completedAt: new Date(),
+    lockToken: null,
+    lockedAt: null,
+  });
+}
+
+export interface ExecuteReportRunResult {
+  reportRunId: string;
+  companyId: string;
+  sourceSnapshotId: string | null;
+  status: string;
+  normalizedJobCount: number;
+}
+
+export async function executeReportRun(
+  claimedRun: ClaimedReportRun
+): Promise<ExecuteReportRunResult> {
+  if (!claimedRun.lockToken) {
+    throw new Error(`Report run ${claimedRun.id} does not have a lock token.`);
+  }
+
+  if (!isS3Configured() || !s3Bucket) {
+    await markRunFailed(
+      claimedRun,
+      "s3_not_configured",
+      "S3 is not configured. Phase 3 snapshot execution requires AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and STRATUM_S3_BUCKET."
+    );
+    throw new Error("S3 is not configured for Phase 3 snapshot execution.");
+  }
+
+  const [company] = await db
+    .select()
+    .from(companies)
+    .where(eq(companies.id, claimedRun.companyId))
+    .limit(1);
+
+  if (!company) {
+    await markRunFailed(claimedRun, "company_missing", "The queued report run references a missing company.");
+    throw new Error(`Report run ${claimedRun.id} references missing company ${claimedRun.companyId}.`);
+  }
+
+  try {
+    await updateRun(claimedRun.id, claimedRun.lockToken, {
+      status: "resolving",
+      failureCode: null,
+      failureMessage: null,
+    });
+
+    const resolvedCompany = resolveCompany(claimedRun.requestedCompanyName);
+
+    await db
+      .update(companies)
+      .set({
+        displayName: resolvedCompany.normalizedName,
+        canonicalName: resolvedCompany.canonicalName,
+        resolutionStatus: "resolving",
+        updatedAt: new Date(),
+      })
+      .where(eq(companies.id, company.id));
+
+    await updateRun(claimedRun.id, claimedRun.lockToken, {
+      status: "fetching",
+    });
+
+    const selection = await fetchProviderSnapshotForResolvedCompany(resolvedCompany);
+
+    if (!selection) {
+      await db
+        .update(companies)
+        .set({
+          resolutionStatus: "needs_resolution",
+          updatedAt: new Date(),
+        })
+        .where(eq(companies.id, company.id));
+
+      await updateRun(claimedRun.id, claimedRun.lockToken, {
+        status: "needs_resolution",
+        failureCode: "no_provider_snapshot",
+        failureMessage: `No supported ATS snapshot could be captured for "${claimedRun.requestedCompanyName}".`,
+        completedAt: new Date(),
+        lockToken: null,
+        lockedAt: null,
+      });
+
+      return {
+        reportRunId: claimedRun.id,
+        companyId: company.id,
+        sourceSnapshotId: null,
+        status: "needs_resolution",
+        normalizedJobCount: 0,
+      };
+    }
+
+    const fetchedAt = new Date(selection.snapshot.fetchedAt);
+    const sourceSnapshotId = randomUUID();
+
+    await db
+      .update(companies)
+      .set({
+        displayName: selection.resolvedCompany.normalizedName,
+        canonicalName: selection.resolvedCompany.canonicalName,
+        resolutionStatus: "resolved",
+        updatedAt: new Date(),
+      })
+      .where(eq(companies.id, company.id));
+
+    await upsertProviderAccount({
+      companyId: company.id,
+      provider: selection.snapshot.provider,
+      providerToken: selection.snapshot.providerToken,
+      verifiedAt: fetchedAt,
+    });
+
+    const payloadBuffer = gzipJson(selection.snapshot.payload);
+    const payloadSha256 = sha256Hex(payloadBuffer);
+    const objectKey = buildRawSnapshotObjectKey({
+      tenantId: claimedRun.tenantId,
+      companyId: company.id,
+      reportRunId: claimedRun.id,
+      provider: selection.snapshot.provider,
+      sourceSnapshotId,
+    });
+
+    await putObject({
+      key: objectKey,
+      body: payloadBuffer,
+      contentType: "application/json",
+      contentEncoding: "gzip",
+    });
+
+    await db.insert(sourceSnapshots).values({
+      id: sourceSnapshotId,
+      reportRunId: claimedRun.id,
+      companyId: company.id,
+      provider: selection.snapshot.provider,
+      providerToken: selection.snapshot.providerToken,
+      requestUrl: selection.snapshot.requestUrl,
+      status: "captured",
+      httpStatus: selection.snapshot.httpStatus,
+      fetchedAt,
+      payloadObjectKey: objectKey,
+      payloadSha256,
+      recordCount: selection.snapshot.rawJobs.length,
+    });
+
+    await updateRun(claimedRun.id, claimedRun.lockToken, {
+      status: "normalizing",
+    });
+
+    const jobRows = normalizeJobs({
+      reportRunId: claimedRun.id,
+      sourceSnapshotId,
+      provider: selection.snapshot.provider,
+      rawJobs: selection.snapshot.rawJobs,
+    });
+
+    if (jobRows.length > 0) {
+      await db.insert(normalizedJobs).values(jobRows);
+    }
+
+    const finalStatus = jobRows.length > 0 ? "completed_partial" : "completed_zero_data";
+
+    await updateRun(claimedRun.id, claimedRun.lockToken, {
+      status: finalStatus,
+      completedAt: new Date(),
+      lockToken: null,
+      lockedAt: null,
+    });
+
+    return {
+      reportRunId: claimedRun.id,
+      companyId: company.id,
+      sourceSnapshotId,
+      status: finalStatus,
+      normalizedJobCount: jobRows.length,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown report-run execution failure.";
+    await markRunFailed(claimedRun, "snapshot_execution_failed", message);
+    throw error;
+  }
+}

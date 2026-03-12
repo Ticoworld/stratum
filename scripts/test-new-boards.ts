@@ -1,58 +1,32 @@
 /**
- * Test script for Ashby and Workable integrations.
- * Uses verified companies: notion (Ashby), jobgether/supportyourapp/advisacare (Workable).
+ * Phase 2 capture smoke test.
  *
- * Run: npx tsx scripts/test-new-boards.ts
+ * Run:
+ *   npx tsx scripts/test-new-boards.ts <company-name> <tenant-id> [requested-by-user-id]
  */
 
-import { fetchCompanyJobs } from "../src/lib/api/boards";
+import { captureCompanySnapshot } from "../src/lib/capture/captureCompanySnapshot";
 
 async function main() {
-  console.log("=== Testing new job boards (Ashby & Workable) ===\n");
+  const [, , companyName, tenantId, requestedByUserId] = process.argv;
 
-  // Notion -> Ashby (verified)
-  console.log("--- notion (Ashby) ---");
-  const notion = await fetchCompanyJobs("notion");
-  console.log("Source:", notion.source);
-  console.log("Job count:", notion.jobs.length);
-  notion.jobs.slice(0, 3).forEach((job, i) => {
-    console.log(`  ${i + 1}. ${job.title} | ${job.location} | ${job.department} | ${job.updated_at}`);
-  });
-  console.log("");
+  if (!companyName || !tenantId) {
+    throw new Error(
+      "Usage: npx tsx scripts/test-new-boards.ts <company-name> <tenant-id> [requested-by-user-id]"
+    );
+  }
 
-  // jobgether -> Workable (verified)
-  console.log("--- jobgether (Workable) ---");
-  const jobgether = await fetchCompanyJobs("jobgether");
-  console.log("Source:", jobgether.source);
-  console.log("Job count:", jobgether.jobs.length);
-  jobgether.jobs.slice(0, 3).forEach((job, i) => {
-    console.log(`  ${i + 1}. ${job.title} | ${job.location} | ${job.department} | ${job.updated_at}`);
-  });
-  console.log("");
-
-  // supportyourapp -> Workable (verified)
-  console.log("--- supportyourapp (Workable) ---");
-  const supportyourapp = await fetchCompanyJobs("supportyourapp");
-  console.log("Source:", supportyourapp.source);
-  console.log("Job count:", supportyourapp.jobs.length);
-  supportyourapp.jobs.slice(0, 3).forEach((job, i) => {
-    console.log(`  ${i + 1}. ${job.title} | ${job.location} | ${job.department} | ${job.updated_at}`);
-  });
-  console.log("");
-
-  // advisacare -> Workable (verified)
-  console.log("--- advisacare (Workable) ---");
-  const advisacare = await fetchCompanyJobs("advisacare");
-  console.log("Source:", advisacare.source);
-  console.log("Job count:", advisacare.jobs.length);
-  advisacare.jobs.slice(0, 3).forEach((job, i) => {
-    console.log(`  ${i + 1}. ${job.title} | ${job.location} | ${job.department} | ${job.updated_at}`);
+  const result = await captureCompanySnapshot({
+    companyName,
+    tenantId,
+    requestedByUserId,
   });
 
-  console.log("\n=== Done ===");
+  console.log(JSON.stringify(result, null, 2));
+  process.exit(0);
 }
 
-main().catch((err) => {
-  console.error(err);
+main().catch((error) => {
+  console.error(error);
   process.exit(1);
 });

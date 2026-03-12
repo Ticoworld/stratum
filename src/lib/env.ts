@@ -32,6 +32,8 @@ const phase1EnvSchema = z.object({
   AWS_ACCESS_KEY_ID: optionalNonEmptyString,
   AWS_SECRET_ACCESS_KEY: optionalNonEmptyString,
   STRATUM_S3_BUCKET: optionalNonEmptyString,
+  STRATUM_S3_ENDPOINT: optionalNonEmptyString,
+  R2_ENDPOINT: optionalNonEmptyString,
 });
 
 const parsedPhase1Env = phase1EnvSchema.safeParse(process.env);
@@ -51,6 +53,7 @@ export type OptionalS3Config = {
   accessKeyId: string;
   secretAccessKey: string;
   bucket: string;
+  endpoint?: string;
 };
 
 export function getOptionalS3Config(): OptionalS3Config | null {
@@ -58,6 +61,7 @@ export function getOptionalS3Config(): OptionalS3Config | null {
   const accessKeyId = phase1Env.AWS_ACCESS_KEY_ID;
   const secretAccessKey = phase1Env.AWS_SECRET_ACCESS_KEY;
   const bucket = phase1Env.STRATUM_S3_BUCKET;
+  const endpoint = phase1Env.STRATUM_S3_ENDPOINT ?? phase1Env.R2_ENDPOINT;
 
   const values = [region, accessKeyId, secretAccessKey, bucket];
 
@@ -76,5 +80,6 @@ export function getOptionalS3Config(): OptionalS3Config | null {
     accessKeyId: accessKeyId as string,
     secretAccessKey: secretAccessKey as string,
     bucket: bucket as string,
+    endpoint: endpoint ?? undefined,
   };
 }
