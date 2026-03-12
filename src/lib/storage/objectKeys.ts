@@ -23,3 +23,7 @@ export function buildAnalysisInputObjectKey(params: AnalysisObjectKeyParams): st
 export function buildAnalysisOutputObjectKey(params: AnalysisObjectKeyParams): string {
   return `analysis-output/${params.reportRunId}/${params.analysisRunId}.json`;
 }
+
+export function buildReportObjectKey(reportVersionId: string): string {
+  return `reports/${reportVersionId}/report.json`;
+}

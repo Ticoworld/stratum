@@ -5,7 +5,9 @@ Status: completed. This file is retained as the historical Phase 2 brief only.
 Current planning note:
 - Do not execute Phase 2 again.
 - Phase 3 is complete.
-- The next approved phase is Phase 4.
+- Phase 4 is complete.
+- Phase 5 is complete.
+- The next approved phase is Phase 6.
 
 ## Goal of Phase 2
 Phase 2 is the provider freeze path.

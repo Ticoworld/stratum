@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { companies, normalizedJobs, reportRuns, sourceSnapshots } from "@/db/schema";
+import { companies, normalizedJobs, reportRuns, reportVersions, sourceSnapshots } from "@/db/schema";
 
 export async function getReportRun(params: { reportRunId: string; tenantId: string }) {
   const [run] = await db
@@ -63,10 +63,20 @@ export async function getReportRun(params: { reportRunId: string; tenantId: stri
     .where(eq(normalizedJobs.reportRunId, params.reportRunId))
     .orderBy(desc(normalizedJobs.createdAt));
 
+  const [publishedVersion] = await db
+    .select({
+      id: reportVersions.id,
+    })
+    .from(reportVersions)
+    .where(eq(reportVersions.reportRunId, params.reportRunId))
+    .orderBy(desc(reportVersions.publishedAt), desc(reportVersions.generatedAt))
+    .limit(1);
+
   return {
     ...run,
     sourceSnapshots: snapshots,
     normalizedJobs: jobs,
     normalizedJobCount: jobs.length,
+    reportVersionId: publishedVersion?.id ?? null,
   };
 }

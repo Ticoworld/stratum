@@ -22,10 +22,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Report run not found." }, { status: 404 });
     }
 
-    return NextResponse.json({
-      ...reportRun,
-      reportVersionId: null,
-    });
+    return NextResponse.json(reportRun);
   } catch (error) {
     if (error instanceof AuthorizationError) {
       return NextResponse.json({ error: error.message }, { status: 403 });

@@ -166,8 +166,33 @@ No structured analysis, claims, citations, report publication, report versions, 
 - report detail read path
 - UI cutover away from the legacy dashboard
 
+## Phase 4 status
+Completed.
+
+Phase 4 scope was limited to structured analysis:
+- structured analysis over frozen inputs
+- analysis validation
+- claims persistence
+- citations persistence
+
+No report publication, canonical `report.json`, report detail read path, HTML rendering, PDF generation, share links, or UI cutover were added in Phase 4.
+
+## Phase 5 status
+Completed.
+
+Phase 5 scope was limited to publication:
+- canonical `report.json` generation from persisted run and analysis data
+- publication validation
+- `report_versions` persistence
+- worker publication stage
+- minimal stored report read path
+
+No HTML rendering, PDF generation, artifact storage, share links, or UI cutover were added in Phase 5.
+
 ## Current phase boundary
 - Phase 1: complete
 - Phase 2: complete
 - Phase 3: complete
-- Next approved phase: Phase 4
+- Phase 4: complete
+- Phase 5: complete
+- Next approved phase: Phase 6

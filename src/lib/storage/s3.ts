@@ -1,4 +1,4 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getOptionalS3Config } from "@/lib/env";
 
 const s3Config = getOptionalS3Config();
@@ -57,4 +57,43 @@ export async function putObject(params: {
       ContentEncoding: params.contentEncoding,
     })
   );
+}
+
+async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks);
+}
+
+export async function getObjectBuffer(key: string): Promise<Buffer> {
+  if (!s3Bucket) {
+    throw new Error("S3 is not configured for this environment.");
+  }
+
+  const response = await getS3Client().send(
+    new GetObjectCommand({
+      Bucket: s3Bucket,
+      Key: key,
+    })
+  );
+
+  if (!response.Body) {
+    throw new Error(`S3 object "${key}" returned an empty body.`);
+  }
+
+  return streamToBuffer(response.Body as NodeJS.ReadableStream);
+}
+
+export async function getObjectText(key: string): Promise<string> {
+  const buffer = await getObjectBuffer(key);
+  return buffer.toString("utf8");
+}
+
+export async function getObjectJson<T>(key: string): Promise<T> {
+  const text = await getObjectText(key);
+  return JSON.parse(text) as T;
 }

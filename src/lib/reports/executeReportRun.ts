@@ -15,6 +15,7 @@ import { resolveCompany } from "@/lib/providers/ats/resolveCompany";
 import { buildRawSnapshotObjectKey } from "@/lib/storage/objectKeys";
 import { gzipJson, sha256Hex } from "@/lib/storage/checksums";
 import { isS3Configured, putObject, s3Bucket } from "@/lib/storage/s3";
+import { publishReportVersion } from "@/lib/reports/publishReportVersion";
 import { analyzeFrozenData } from "@/worker/steps/analyzeFrozenData";
 
 async function updateRun(
@@ -96,6 +97,7 @@ export interface ExecuteReportRunResult {
   analysisRunId: string | null;
   claimCount: number;
   citationCount: number;
+  reportVersionId: string | null;
 }
 
 export async function executeReportRun(
@@ -177,6 +179,7 @@ export async function executeReportRun(
         analysisRunId: null,
         claimCount: 0,
         citationCount: 0,
+        reportVersionId: null,
       };
     }
 
@@ -249,21 +252,21 @@ export async function executeReportRun(
 
     if (jobRows.length === 0) {
       await updateRun(claimedRun.id, claimedRun.lockToken, {
-        status: "completed_zero_data",
-        completedAt: new Date(),
-        lockToken: null,
-        lockedAt: null,
+        status: "publishing",
       });
+
+      const published = await publishReportVersion(claimedRun.id);
 
       return {
         reportRunId: claimedRun.id,
         companyId: company.id,
         sourceSnapshotId,
-        status: "completed_zero_data",
+        status: published.finalRunStatus,
         normalizedJobCount: 0,
         analysisRunId: null,
         claimCount: 0,
         citationCount: 0,
+        reportVersionId: published.reportVersionId,
       };
     }
 
@@ -280,25 +283,25 @@ export async function executeReportRun(
     });
 
     await updateRun(claimedRun.id, claimedRun.lockToken, {
-      status: "completed_partial",
-      completedAt: new Date(),
-      lockToken: null,
-      lockedAt: null,
+      status: "publishing",
     });
+
+    const published = await publishReportVersion(claimedRun.id);
 
     return {
       reportRunId: claimedRun.id,
       companyId: company.id,
       sourceSnapshotId,
-      status: "completed_partial",
+      status: published.finalRunStatus,
       normalizedJobCount: jobRows.length,
       analysisRunId: analysisResult.analysisRunId,
       claimCount: analysisResult.claimCount,
       citationCount: analysisResult.citationCount,
+      reportVersionId: published.reportVersionId,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown report-run execution failure.";
-    await markRunFailed(claimedRun, "snapshot_execution_failed", message);
+    await markRunFailed(claimedRun, "report_run_execution_failed", message);
     throw error;
   }
 }
