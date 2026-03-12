@@ -93,3 +93,81 @@ No ATS fetching, worker logic, AI redesign, reporting, citations, or artifacts w
 - HTML report rendering
 - PDF generation
 - executive sharing
+
+## Phase 3 status
+Completed and runtime-verified.
+
+Phase 3 scope was limited to report-run orchestration and worker foundation:
+- report-run creation flow
+- report-run status flow
+- worker entrypoint and loop
+- Postgres row claiming with `FOR UPDATE SKIP LOCKED`
+- worker execution of the frozen snapshot stage only
+- connection of the worker to the completed Phase 2 capture path
+- one-shot worker env bootstrapping and clean process exit
+
+No structured analysis, claims, citations, report publication, report versions, artifacts, HTML rendering, PDF generation, share links, or report detail read path were added in Phase 3.
+
+## Exact files created in Phase 3
+- `src/lib/auth/requireTenantRole.ts`
+- `src/lib/reports/createReportRun.ts`
+- `src/lib/reports/getReportRun.ts`
+- `src/lib/reports/claimNextReportRun.ts`
+- `src/lib/reports/executeReportRun.ts`
+- `src/app/api/report-runs/route.ts`
+- `src/app/api/report-runs/[reportRunId]/route.ts`
+- `src/worker/main.ts`
+- `src/worker/start.ts`
+- `src/worker/loop.ts`
+- `src/worker/steps/resolveCompany.ts`
+- `src/worker/steps/fetchSnapshots.ts`
+- `src/worker/steps/normalizeSnapshots.ts`
+
+## Exact files modified in Phase 3
+- `package.json`
+- `src/lib/capture/captureCompanySnapshot.ts`
+- `src/lib/providers/ats/fetchProviderSnapshot.ts`
+- `src/lib/storage/s3.ts`
+
+## Commands run for Phase 3
+- `npx tsc --noEmit`
+- `npm run lint`
+- `DOTENV_CONFIG_PATH=.env.local npx tsx -r dotenv/config --eval '...createReportRun...'`
+- `DOTENV_CONFIG_PATH=.env.local npx tsx -r dotenv/config --eval '...getReportRun...'`
+- `npm run worker:report-runs -- --once`
+
+## Phase 3 validation outcomes
+- `npx tsc --noEmit`: passed
+- `npm run lint`: passed with one pre-existing warning in `src/components/ui/ServiceInterruptionModal.tsx`
+- report-run creation: passed
+- worker claim and snapshot-stage execution: passed
+- report-run status fetch before and after worker execution: passed
+- `npm run worker:report-runs -- --once` env bootstrapping: passed after worker startup was changed to load `.env.local` then `.env`
+- `npm run worker:report-runs -- --once` clean exit after finishing a queued run: passed
+
+## What Phase 3 changed architecturally
+- Added the first real queued `report_runs` write path.
+- Added the first authenticated `report-runs` API surface.
+- Added worker claiming against Postgres rows with `FOR UPDATE SKIP LOCKED`.
+- Added worker execution for the snapshot stage only: resolve company, fetch provider snapshot, store raw blob, persist `source_snapshots`, persist `normalized_jobs`, and advance terminal Phase 3 run state.
+- Preserved the approved strangler path by reusing the completed Phase 2 provider freeze modules instead of inventing a parallel ingestion flow.
+- Added a worker bootstrap path that loads `.env.local` then `.env` for standalone execution.
+
+## What Phase 3 explicitly did not touch
+- structured analysis
+- claims
+- citations
+- report versions
+- canonical `report.json`
+- report publication
+- HTML report rendering
+- PDF generation
+- share links
+- report detail read path
+- UI cutover away from the legacy dashboard
+
+## Current phase boundary
+- Phase 1: complete
+- Phase 2: complete
+- Phase 3: complete
+- Next approved phase: Phase 4

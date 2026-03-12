@@ -1,7 +1,7 @@
 {
-  "current_phase": "Phase 1",
+  "current_phase": "Phase 3",
   "phase_status": "completed",
-  "product_truth": "Stratum is currently a live ATS-to-LLM dashboard with Phase 1 foundation infrastructure added. It must become an immutable point-in-time intelligence report system.",
+  "product_truth": "Stratum still exposes the legacy live ATS-to-LLM dashboard path, but Phases 1 through 3 of the migration are complete. The system now has foundation infra, frozen provider capture, and report-run worker orchestration. It must still become an immutable point-in-time intelligence report system through later phases.",
   "chosen_stack": {
     "web_framework": "Next.js App Router",
     "database": "PostgreSQL",
@@ -21,9 +21,16 @@
     "Optional S3 client scaffolding added",
     "Auth.js Google OIDC foundation added",
     "Minimal tenant/user/membership bootstrap implemented",
-    "Leaked scripts/list_models.js removed"
+    "Leaked scripts/list_models.js removed",
+    "Provider freeze path added for raw ATS payload capture and normalized job persistence",
+    "Report-run creation and status modules added",
+    "Report-runs API routes added",
+    "Postgres row claiming with FOR UPDATE SKIP LOCKED added",
+    "Standalone report-run worker added",
+    "Worker snapshot-stage execution verified in the local environment",
+    "Standalone worker now loads .env.local/.env and exits cleanly in --once mode"
   ],
-  "next_phase": "Phase 2 - Provider freeze path",
+  "next_phase": "Phase 4 - Structured analysis",
   "critical_rules": [
     "Do not redesign the system",
     "Do not continue beyond the next approved phase",
@@ -33,9 +40,9 @@
     "Keep legacy env usage isolated until later phases explicitly replace it"
   ],
   "forbidden_scope": [
-    "Do not implement worker orchestration in Phase 2 if it belongs to Phase 3",
-    "Do not implement AI analysis redesign until the approved analysis phase",
-    "Do not implement report publishing, claims, citations, HTML reports, or PDF artifacts in Phase 2",
+    "Do not skip ahead beyond Phase 4",
+    "Do not implement report publishing before the approved publication phase",
+    "Do not implement HTML/PDF artifacts before the approved artifact phase",
     "Do not refactor unrelated UI for polish"
   ],
   "key_paths": {
