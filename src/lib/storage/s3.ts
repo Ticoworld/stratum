@@ -2,6 +2,7 @@ import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getOptionalS3Config } from "@/lib/env";
 
 const s3Config = getOptionalS3Config();
+let s3Client: S3Client | null = null;
 
 export const s3Bucket = s3Config?.bucket ?? null;
 
@@ -14,14 +15,27 @@ export function getS3Client(): S3Client {
     throw new Error("S3 is not configured for this environment.");
   }
 
-  return new S3Client({
-    region: s3Config.region,
-    endpoint: s3Config.endpoint,
-    credentials: {
-      accessKeyId: s3Config.accessKeyId,
-      secretAccessKey: s3Config.secretAccessKey,
-    },
-  });
+  if (!s3Client) {
+    s3Client = new S3Client({
+      region: s3Config.region,
+      endpoint: s3Config.endpoint,
+      credentials: {
+        accessKeyId: s3Config.accessKeyId,
+        secretAccessKey: s3Config.secretAccessKey,
+      },
+    });
+  }
+
+  return s3Client;
+}
+
+export function closeS3Client() {
+  if (!s3Client) {
+    return;
+  }
+
+  s3Client.destroy();
+  s3Client = null;
 }
 
 export async function putObject(params: {

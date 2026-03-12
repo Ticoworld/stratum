@@ -1,11 +1,16 @@
+import { sql } from "@/db/client";
+import { closeS3Client } from "@/lib/storage/s3";
 import { runWorkerLoop } from "@/worker/loop";
 
-async function main() {
+export async function main() {
   const once = process.argv.includes("--once");
-  await runWorkerLoop({ once });
-}
 
-main().catch((error) => {
-  console.error("[worker] Report-run worker crashed:", error);
-  process.exit(1);
-});
+  try {
+    await runWorkerLoop({ once });
+  } finally {
+    if (once) {
+      closeS3Client();
+      await sql.end();
+    }
+  }
+}
