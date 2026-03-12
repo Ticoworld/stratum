@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, JetBrains_Mono } from "next/font/google";
+import { phase1Env } from "@/lib/env";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,7 +13,7 @@ const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
 });
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://stratum.example.com";
+const siteUrl = phase1Env.NEXT_PUBLIC_SITE_URL;
 
 export const metadata: Metadata = {
   title: "Stratum | Corporate Intelligence",

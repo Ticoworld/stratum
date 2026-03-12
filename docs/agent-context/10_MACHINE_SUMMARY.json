@@ -1,0 +1,59 @@
+{
+  "current_phase": "Phase 1",
+  "phase_status": "completed",
+  "product_truth": "Stratum is currently a live ATS-to-LLM dashboard with Phase 1 foundation infrastructure added. It must become an immutable point-in-time intelligence report system.",
+  "chosen_stack": {
+    "web_framework": "Next.js App Router",
+    "database": "PostgreSQL",
+    "query_layer": "Drizzle ORM",
+    "auth": "Auth.js with Google OIDC and JWT sessions",
+    "validation": "Zod",
+    "object_storage_target": "S3-compatible object storage",
+    "pdf_target": "Playwright",
+    "queue_target": "Postgres-backed row claiming"
+  },
+  "completed_work": [
+    "Central env handling added in src/lib/env.ts",
+    "Postgres connection setup added in src/db/client.ts",
+    "Drizzle schema scaffolding added for tenants, users, memberships",
+    "Drizzle migration config added",
+    "Initial migration generated and applied",
+    "Optional S3 client scaffolding added",
+    "Auth.js Google OIDC foundation added",
+    "Minimal tenant/user/membership bootstrap implemented",
+    "Leaked scripts/list_models.js removed"
+  ],
+  "next_phase": "Phase 2 - Provider freeze path",
+  "critical_rules": [
+    "Do not redesign the system",
+    "Do not continue beyond the next approved phase",
+    "No live ATS or AI calls on the future report read path",
+    "Immutable reports are the product",
+    "Citations are required for publication",
+    "Keep legacy env usage isolated until later phases explicitly replace it"
+  ],
+  "forbidden_scope": [
+    "Do not implement worker orchestration in Phase 2 if it belongs to Phase 3",
+    "Do not implement AI analysis redesign until the approved analysis phase",
+    "Do not implement report publishing, claims, citations, HTML reports, or PDF artifacts in Phase 2",
+    "Do not refactor unrelated UI for polish"
+  ],
+  "key_paths": {
+    "env": "src/lib/env.ts",
+    "db_client": "src/db/client.ts",
+    "db_schema_index": "src/db/schema/index.ts",
+    "auth": "src/auth.ts",
+    "auth_route": "src/app/api/auth/[...nextauth]/route.ts",
+    "auth_bootstrap": "src/lib/auth/bootstrapUser.ts",
+    "session_helper": "src/lib/auth/session.ts",
+    "s3": "src/lib/storage/s3.ts",
+    "phase_context_root": "docs/agent-context"
+  },
+  "known_risks": [
+    "The live ATS-to-LLM product path still exists and remains non-enterprise-safe",
+    "Auth foundation was built but not browser-verified end-to-end in this conversation",
+    "One unrelated lint warning remains in src/components/ui/ServiceInterruptionModal.tsx",
+    "AWS vars are optional now but become required when snapshot/artifact storage starts",
+    "A hosted Postgres vendor such as Neon was not actually established in the approved source truth"
+  ]
+}
