@@ -83,3 +83,17 @@ export function getOptionalS3Config(): OptionalS3Config | null {
     endpoint: endpoint ?? undefined,
   };
 }
+
+export function getGeminiApiKey(): string {
+  const parsed = z
+    .string()
+    .trim()
+    .min(1, "GEMINI_API_KEY is required for Phase 4 structured analysis.")
+    .safeParse(process.env.GEMINI_API_KEY);
+
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? "GEMINI_API_KEY is required.");
+  }
+
+  return parsed.data;
+}

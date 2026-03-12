@@ -15,6 +15,13 @@
       "when": 1773317038521,
       "tag": "0001_lying_slapstick",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773326075446,
+      "tag": "0002_useful_demogoblin",
+      "breakpoints": true
     }
   ]
 }

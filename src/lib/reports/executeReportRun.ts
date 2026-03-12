@@ -15,6 +15,7 @@ import { resolveCompany } from "@/lib/providers/ats/resolveCompany";
 import { buildRawSnapshotObjectKey } from "@/lib/storage/objectKeys";
 import { gzipJson, sha256Hex } from "@/lib/storage/checksums";
 import { isS3Configured, putObject, s3Bucket } from "@/lib/storage/s3";
+import { analyzeFrozenData } from "@/worker/steps/analyzeFrozenData";
 
 async function updateRun(
   reportRunId: string,
@@ -92,6 +93,9 @@ export interface ExecuteReportRunResult {
   sourceSnapshotId: string | null;
   status: string;
   normalizedJobCount: number;
+  analysisRunId: string | null;
+  claimCount: number;
+  citationCount: number;
 }
 
 export async function executeReportRun(
@@ -170,6 +174,9 @@ export async function executeReportRun(
         sourceSnapshotId: null,
         status: "needs_resolution",
         normalizedJobCount: 0,
+        analysisRunId: null,
+        claimCount: 0,
+        citationCount: 0,
       };
     }
 
@@ -240,10 +247,40 @@ export async function executeReportRun(
       await db.insert(normalizedJobs).values(jobRows);
     }
 
-    const finalStatus = jobRows.length > 0 ? "completed_partial" : "completed_zero_data";
+    if (jobRows.length === 0) {
+      await updateRun(claimedRun.id, claimedRun.lockToken, {
+        status: "completed_zero_data",
+        completedAt: new Date(),
+        lockToken: null,
+        lockedAt: null,
+      });
+
+      return {
+        reportRunId: claimedRun.id,
+        companyId: company.id,
+        sourceSnapshotId,
+        status: "completed_zero_data",
+        normalizedJobCount: 0,
+        analysisRunId: null,
+        claimCount: 0,
+        citationCount: 0,
+      };
+    }
 
     await updateRun(claimedRun.id, claimedRun.lockToken, {
-      status: finalStatus,
+      status: "analyzing",
+    });
+
+    const analysisResult = await analyzeFrozenData({
+      reportRunId: claimedRun.id,
+    });
+
+    await updateRun(claimedRun.id, claimedRun.lockToken, {
+      status: "validating",
+    });
+
+    await updateRun(claimedRun.id, claimedRun.lockToken, {
+      status: "completed_partial",
       completedAt: new Date(),
       lockToken: null,
       lockedAt: null,
@@ -253,8 +290,11 @@ export async function executeReportRun(
       reportRunId: claimedRun.id,
       companyId: company.id,
       sourceSnapshotId,
-      status: finalStatus,
+      status: "completed_partial",
       normalizedJobCount: jobRows.length,
+      analysisRunId: analysisResult.analysisRunId,
+      claimCount: analysisResult.claimCount,
+      citationCount: analysisResult.citationCount,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown report-run execution failure.";
