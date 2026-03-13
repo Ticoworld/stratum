@@ -1,0 +1,39 @@
+name: Report Worker
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
+
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run worker once
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          AUTH_GOOGLE_ID: ${{ secrets.AUTH_GOOGLE_ID }}
+          AUTH_GOOGLE_SECRET: ${{ secrets.AUTH_GOOGLE_SECRET }}
+          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          STRATUM_S3_BUCKET: ${{ secrets.STRATUM_S3_BUCKET }}
+          STRATUM_S3_ENDPOINT: ${{ secrets.STRATUM_S3_ENDPOINT }}
+        run: npm run worker:report-runs -- --once
