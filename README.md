@@ -169,9 +169,9 @@ These must match across web and worker:
 
 - Web app up: load `/` or call `/api/deployment/readiness`
 - Worker dependency configured: `/api/deployment/readiness` reports whether a recent `report-runs` heartbeat exists
-- Report creation will work: `/api/deployment/readiness` reports `reportCreation.ready`; if false, the web API returns `503` and explains why
+- Report creation will work: `/api/deployment/readiness` reports `reportCreation.ready` for infrastructure readiness, but the web API does not block report submission on worker heartbeat state
 
-If the web app is up but the worker heartbeat is missing or stale, Stratum is only partially deployed and report creation is intentionally blocked.
+If the web app is up but the worker heartbeat is missing or stale, Stratum may still be partially deployed, but report creation remains available and the warning is informational only.
 
 ## Main paths
 

@@ -13,8 +13,6 @@ import {
 const REPORT_RUN_WORKER_NAME = "report-runs";
 const WORKER_HEARTBEAT_STALE_AFTER_MS = 60_000;
 
-export class ReportCreationUnavailableError extends Error {}
-
 export interface WorkerHeartbeatStatus {
   workerName: string;
   status: "running" | "stale" | "missing";
@@ -156,13 +154,6 @@ export async function getDeploymentReadinessSummary(): Promise<DeploymentReadine
     ...(!database.reachable ? [`Database is unreachable: ${database.issues.join(" ")}`] : []),
     ...(!objectStorageStatus.ok ? objectStorageIssues.map((issue) => `Object storage: ${issue}`) : []),
     ...(!workerStatus.ok ? workerIssues.map((issue) => `Worker runtime: ${issue}`) : []),
-    ...(heartbeat.status === "running"
-      ? []
-      : [
-          heartbeat.status === "missing"
-            ? "Worker dependency is not configured. No report-run worker heartbeat has been recorded."
-            : `Worker dependency is stale. Last heartbeat was ${heartbeat.lastHeartbeatAt}.`,
-        ]),
   ];
 
   return {
@@ -194,18 +185,6 @@ export async function getDeploymentReadinessSummary(): Promise<DeploymentReadine
       issues: reportCreationIssues,
     },
   };
-}
-
-export async function assertReportCreationReady() {
-  const readiness = await getDeploymentReadinessSummary();
-
-  if (readiness.reportCreation.ready) {
-    return readiness;
-  }
-
-  throw new ReportCreationUnavailableError(
-    `Report creation is blocked.\n${readiness.reportCreation.issues.join("\n")}`
-  );
 }
 
 export function validateWorkerStartupEnv() {
