@@ -1,9 +1,9 @@
 # Env And Infra Decisions
 
 ## Current env decisions
-Phase 1 introduced a central env module at `src/lib/env.ts`. It validates only the new Phase 1 foundation variables and deliberately does not absorb the legacy ATS/AI env surface.
+Phase 1 introduced a central env module at `src/lib/env.ts`. It validates the infrastructure/report-system env surface and deliberately avoided destabilizing the legacy dashboard path during migration.
 
-That isolation was intentional. Existing non-Phase-1 code still reads `process.env` directly. The goal was to add foundation infrastructure without breaking the legacy live dashboard path.
+That isolation was intentional during migration. Phase 8 removed the remaining legacy cache-backed dashboard path, but the central env module remains the binding place for report-system env validation.
 
 ## PostgreSQL vendor note
 Approved and implemented: generic PostgreSQL via `DATABASE_URL`, accessed through Drizzle and `postgres`.
@@ -56,11 +56,11 @@ Future sessions must keep that contract until the storage-writing phase actually
 - `STRATUM_S3_BUCKET`
 
 ## Legacy env vars
-These exist because the old ATS-to-LLM product path still exists. They are not part of the Phase 1 foundation contract.
+The old cache-backed ATS-to-LLM product path has been removed.
 
-- `GEMINI_API_KEY`
-- `STRATUM_CACHE_TTL_HOURS`
-- `MONGODB_URI`
+Remaining non-foundation env items are:
+- `GEMINI_API_KEY` for structured analysis
+- `MONGODB_URI` as leftover legacy env surface not used by the report product path
 
 ## Later-phase env vars
 These become materially important in later phases but are not required to complete Phase 1.
@@ -73,12 +73,12 @@ These become materially important in later phases but are not required to comple
 
 Interpretation:
 - AWS values become effectively required once raw source snapshots and artifacts are written.
-- `GEMINI_API_KEY` becomes required when the new structured analysis phase is implemented.
+- `GEMINI_API_KEY` is required for the structured analysis path.
 
 ## Setup notes future Codex sessions must know
 - `drizzle.config.ts` loads `.env.local` first and `.env` second.
 - Next.js build also loads `.env.local`.
-- `src/lib/env.ts` validates only the Phase 1 foundation surface and leaves legacy env usage alone.
+- `src/lib/env.ts` remains the central env module for the report product path.
 - If AWS vars are set partially, `src/lib/env.ts` throws when S3 config is requested.
 - `npm run db:generate` and `npm run db:migrate` hit Windows sandbox `spawn EPERM` and may require escalation.
 - Google sign-in requires a valid Google OAuth app with callback URLs configured for the environment being tested.

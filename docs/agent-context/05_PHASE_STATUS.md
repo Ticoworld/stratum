@@ -303,4 +303,53 @@ No recurring monitoring, share links, analytics dashboards, collaborative featur
 - Phase 5: complete
 - Phase 6: complete
 - Phase 7: complete
-- Next approved phase: Phase 8
+- Phase 8: complete
+- Next approved phase: none recorded
+
+## Phase 8 status
+Completed.
+
+Phase 8 scope was limited to cleanup and retirement work:
+- removal of the leftover compatibility route after UI cutover
+- removal of the cache-backed demo orchestration path
+- retirement of `StratumInvestigator`
+- isolation/removal of the MCP entrypoint that still depended on the retired demo path
+- removal of dead package scripts tied to removed legacy tooling
+- context and repo documentation updates to reflect the post-migration state
+
+No Phase 9 work, recurring monitoring, share-link expansion, analytics dashboards, collaborative features, broad redesign, or backend redesign were added in Phase 8.
+
+## Exact files deleted in Phase 8
+- `src/app/api/analyze-unified/route.ts`
+- `src/lib/services/StratumInvestigator.ts`
+- `src/lib/ai/unified-analyzer.ts`
+- `src/lib/cache/stratum-cache.ts`
+- `src/lib/api/boards.ts`
+- `src/lib/gemini.ts`
+- `src/mcp-server.ts`
+
+## Exact files modified in Phase 8
+- `.env.example`
+- `README.md`
+- `package.json`
+- `docs/STRATUM_CONTEXT.md`
+- `docs/agent-context/00_README.md`
+- `docs/agent-context/05_PHASE_STATUS.md`
+- `docs/agent-context/06_ENV_AND_INFRA_DECISIONS.md`
+- `docs/agent-context/09_NEXT_CODEX_START_PROMPT.md`
+- `docs/agent-context/10_MACHINE_SUMMARY.json`
+
+## What Phase 8 changed architecturally
+- Deleted the obsolete `/api/analyze-unified` compatibility shim after Phase 7 made it unnecessary.
+- Removed the remaining cache-backed demo orchestration files from the repo.
+- Removed the obsolete MCP entrypoint that still invoked the retired live demo path.
+- Left the stored-report architecture as the only product-facing path in the repo.
+
+## What Phase 8 explicitly did not touch
+- recurring monitoring
+- share-link expansion
+- analytics dashboards
+- collaborative features
+- broad visual redesign
+- backend redesign
+- redesign of Phases 1 through 7

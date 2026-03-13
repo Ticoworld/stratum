@@ -1,172 +1,124 @@
 # Stratum
 
-Stratum is a Next.js application that analyzes company hiring strategy from public job board data.  
-The repository also includes an MCP server exposing the same analysis as a tool (`analyze_company`).
+Stratum is a Next.js application for generating immutable point-in-time hiring intelligence reports from ATS job data.
 
-## Project Summary
+The live ATS-to-LLM demo path has been retired. The product-facing system now creates queued `report_runs`, executes a frozen-input pipeline, publishes immutable `report_versions`, and serves stored HTML/PDF artifacts without live provider or AI calls on report read paths.
 
-- User enters a company name in the UI.
-- Backend fetches open roles from supported ATS APIs (Greenhouse, Lever, Ashby, Workable).
-- The system derives structured strategy outputs:
-  - `strategicVerdict`
-  - `hiringVelocity`
-  - deterministic `engineeringVsSalesRatio`
-  - `keywordFindings`
-  - `notableRoles`
-  - `summary`
+## Current system
 
-## Problem Solved
+- Authenticated report creation and tenant-scoped access control
+- Raw ATS payload capture for Greenhouse, Lever, Ashby, and Workable
+- Normalized job persistence with source anchors
+- Worker-based report execution over frozen inputs
+- Structured Gemini analysis with persisted claims and citations
+- Canonical `report.json` publication
+- Stored report read path
+- HTML and PDF artifact generation from stored report data only
 
-Public job postings are noisy and hard to interpret quickly.  
-Stratum converts posting data into a compact strategic readout so users can infer hiring direction from one request.
+## Tech stack
 
-## Features
-
-- Unified analysis API route: `POST /api/analyze-unified`
-- Multi-source job board fetch with priority/fallback logic:
-  - Greenhouse
-  - Lever
-  - Ashby
-  - Workable
-- Company alias and fallback token handling (for known slug mismatches)
-- Deterministic engineering vs sales ratio calculation (not AI-generated)
-- AI analysis through Google Gemini (`gemini-3-flash-preview`) with JSON parsing/normalization
-- In-memory cache with configurable TTL (`STRATUM_CACHE_TTL_HOURS`, default 24h)
-- Per-IP rate limiting (5 requests/minute, sliding window)
-- Retry logic for network/timeout failures on outbound ATS calls
-- Error handling UX:
-  - rate-limit handling (429)
-  - service interruption modal
-  - empty result state for unsupported/no-board companies
-- Optional MCP server (`npm run mcp`) with `analyze_company` tool over stdio
-
-## Tech Stack
-
-- Framework: Next.js 16 (App Router)
-- UI: React 19 + TypeScript
-- Styling: Tailwind CSS 4
-- AI: `@google/genai`
-- Tool protocol: `@modelcontextprotocol/sdk` + `zod`
-- Utility libs used in source: `clsx`, `tailwind-merge`, `lucide-react`, `dotenv` (MCP boot)
+- Next.js 16 App Router
+- React 19 + TypeScript
+- PostgreSQL + Drizzle ORM
+- Auth.js with Google OIDC
+- S3-compatible object storage
+- Playwright for PDF generation
+- Gemini via `@google/genai` for structured analysis
 
 ## Setup
 
-1. Install dependencies:
+1. Install dependencies.
 
 ```bash
 npm install
 ```
 
-2. Configure environment:
+2. Configure environment.
 
 ```bash
 cp .env.example .env.local
 ```
 
-Minimum required:
+Required foundation variables:
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/stratum
+AUTH_SECRET=replace_me
+AUTH_GOOGLE_ID=replace_me
+AUTH_GOOGLE_SECRET=replace_me
+```
+
+Required when the full report pipeline is exercised:
 
 ```env
 GEMINI_API_KEY=your_key
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+STRATUM_S3_BUCKET=...
 ```
 
-Optional:
-
-```env
-STRATUM_CACHE_TTL_HOURS=24
-NEXT_PUBLIC_SITE_URL=https://your-domain.example
-```
-
-3. Run the app:
+3. Run the app.
 
 ```bash
 npm run dev
 ```
 
-4. Production commands:
+4. Run the worker.
+
+```bash
+npm run worker:report-runs -- --once
+```
+
+5. Build for production.
 
 ```bash
 npm run build
 npm run start
 ```
 
-5. Optional MCP server:
+## Main paths
 
-```bash
-npm run mcp
-```
+- `/` creates report runs and lists recent reports
+- `/report-runs/[reportRunId]` shows run status
+- `/reports/[reportVersionId]` shows stored published reports
+- `/api/report-runs/*` manages report-run writes and reads
+- `/api/reports/*` serves stored reports and protected artifacts
 
-## Project Structure
+## Project structure
 
 ```text
 src/
   app/
-    api/analyze-unified/route.ts     # main analysis endpoint
-    globals.css
-    layout.tsx
-    page.tsx                         # renders TruthConsole
-  components/
-    truth/TruthConsole.tsx           # primary UI and user flow
-    ui/                              # status bar, modal, skeleton, shared UI components
+    api/report-runs/*
+    api/reports/*
+    report-runs/[reportRunId]/page.tsx
+    reports/[reportVersionId]/page.tsx
+  db/
+    client.ts
+    schema/*
+    migrations/*
   lib/
-    ai/unified-analyzer.ts           # Gemini prompt, call, response parsing
-    api/                             # Greenhouse/Lever/Ashby/Workable adapters + retry
-    cache/stratum-cache.ts           # in-memory TTL cache
-    security/RateLimiter.ts          # per-IP rate limiter
-    services/StratumInvestigator.ts  # orchestration layer
-    gemini.ts                        # Gemini client bootstrap
-  mcp-server.ts                      # MCP stdio server
+    analysis/*
+    artifacts/*
+    auth/*
+    capture/*
+    normalize/*
+    providers/ats/*
+    reports/*
+    storage/*
+  worker/
+    start.ts
+    loop.ts
+    steps/*
 scripts/
-  test-new-boards.ts                 # ATS integration smoke script
-  probe-company-slug.ts              # slug discovery helper
-  list_models.js                     # local model-list script
+  test-new-boards.ts
+  probe-company-slug.ts
 docs/
+  agent-context/*
   STRATUM_CONTEXT.md
-  MARKET_READY.md
-  PRODUCTION_AUDIT.md
-public/
-  images/, data/, debug-screenshots/
 ```
 
-## Architecture Overview
+## Historical note
 
-### Web request flow
-
-1. UI submits company name to `/api/analyze-unified`.
-2. API applies IP rate limit and input validation/sanitization.
-3. API checks in-memory cache.
-4. On cache miss, `StratumInvestigator`:
-   - fetches jobs from ATS sources via `fetchCompanyJobs`
-   - returns an explicit no-jobs result if none found
-   - computes deterministic eng:sales ratio
-   - runs Gemini analysis if jobs exist
-5. API returns normalized JSON payload for UI rendering.
-
-### MCP flow
-
-1. `src/mcp-server.ts` starts stdio MCP transport.
-2. Tool `analyze_company` invokes `StratumInvestigator`.
-3. Tool returns JSON result as text content.
-
-## Deployment and Runtime Notes (Confirmed)
-
-- This is a standard Next.js app with `dev`, `build`, and `start` scripts.
-- Security headers are configured in `next.config.ts`:
-  - `X-Content-Type-Options: nosniff`
-  - `X-Frame-Options: DENY`
-  - `Referrer-Policy: strict-origin-when-cross-origin`
-- The only app API route in the current codebase is `/api/analyze-unified`.
-- No Dockerfile or platform manifest (for example `vercel.json`, `railway.json`, `Procfile`) is present in the repository.
-- [Partially inferred] Hosting target is not fixed by code; docs mention platforms like Vercel/Railway as options.
-
-## Limitations
-
-- Coverage is limited to companies discoverable through the implemented ATS APIs and token mapping logic.
-- No persistent cache/database is wired into the active request path; cache is in-memory and resets on process restart.
-- No authentication/authorization layer is present in the analysis API route.
-- Some repository artifacts are legacy or not wired into the current UI/API path (for example old sentinel data/images).
-- `scripts/list_models.js` currently contains a hardcoded API key and fails lint under current ESLint rules.
-- `package.json` defines `generate:sentinel`, but `scripts/generate_sentinel.ts` is not present.
-
-## Partial Inference Index
-
-- "Hosting target is not fixed by code; docs mention platforms like Vercel/Railway as options."
+Older docs outside `docs/agent-context/` may describe the pre-migration live demo. The canonical source of truth for the migrated system is `docs/agent-context/`.

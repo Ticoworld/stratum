@@ -18,7 +18,7 @@ Read every file in this folder before making design or implementation decisions.
 - `10_MACHINE_SUMMARY.json`: machine-readable summary for automation or fast session bootstrapping.
 
 ## Current repo status
-- Phases 1 through 7 are complete.
+- Phases 1 through 8 are complete.
 - Central env handling exists in `src/lib/env.ts`.
 - PostgreSQL + Drizzle foundation exists.
 - Minimal auth foundation exists with Auth.js + Google OIDC.
@@ -30,4 +30,6 @@ Read every file in this folder before making design or implementation decisions.
 - A published immutable report read path exists.
 - HTML and PDF artifact generation and protected retrieval now exist.
 - A real report-run status page now exists.
-- The next approved phase is Phase 8 only.
+- The legacy compatibility shim and cache-backed demo orchestration path have been removed.
+- The legacy MCP entrypoint tied to the demo path has been removed from the repo.
+- No next phase is approved in this handoff pack.

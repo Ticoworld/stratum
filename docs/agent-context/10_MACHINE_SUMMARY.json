@@ -1,7 +1,7 @@
 {
-  "current_phase": "Phase 7",
+  "current_phase": "Phase 8",
   "phase_status": "completed",
-  "product_truth": "Stratum has completed Phases 1 through 7 of the migration. The product-facing UI now follows the stored report workflow: create a report run, track real run status, open stored published reports, and see real artifact availability. The system has foundation infra, frozen provider capture, report-run worker orchestration, structured analysis with claims and citations, report publication with a stored read path, HTML/PDF artifact generation with protected retrieval, and the UI cutover onto that stored-report architecture.",
+  "product_truth": "Stratum has completed Phases 1 through 8 of the migration. The product-facing system is now the stored report workflow only: create a report run, track real run status, open stored published reports, and access real artifact availability. The legacy compatibility shim, cache-backed ATS-to-LLM demo orchestration path, and obsolete MCP entrypoint have been removed.",
   "chosen_stack": {
     "web_framework": "Next.js App Router",
     "database": "PostgreSQL",
@@ -49,19 +49,23 @@
     "Real /report-runs/[reportRunId] status page added",
     "Published report page aligned with stored report/artifact data only",
     "Fake trust theater removed from the product-facing UI",
-    "/api/analyze-unified converted into a compatibility report-run creation shim"
+    "/api/analyze-unified converted into a compatibility report-run creation shim",
+    "Compatibility /api/analyze-unified shim removed after UI cutover",
+    "Legacy StratumInvestigator, unified analyzer, Gemini bootstrap, boards adapter, and cache-backed demo path removed",
+    "Legacy MCP entrypoint removed",
+    "Dead legacy package scripts removed",
+    "Repo and handoff docs updated to reflect the post-migration stored-report system"
   ],
-  "next_phase": "Phase 8 - cleanup",
+  "next_phase": null,
   "critical_rules": [
     "Do not redesign the system",
-    "Do not continue beyond the next approved phase",
+    "Do not invent work beyond the approved handoff scope",
     "No live ATS or AI calls on report read paths",
     "Immutable reports are the product",
     "Citations are required for publication",
-    "Keep legacy env usage isolated until later phases explicitly replace it"
+    "Keep the stored-report architecture as the only product-facing path"
   ],
   "forbidden_scope": [
-    "Do not skip ahead beyond Phase 8",
     "Do not re-open product-model invention work",
     "Do not refactor unrelated UI for polish"
   ],

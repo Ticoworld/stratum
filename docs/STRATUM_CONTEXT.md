@@ -1,71 +1,50 @@
-# Stratum – Full context for new chat
+# Stratum Context
 
-**What Stratum is**  
-Stratum is a "Growth Intelligence" web app that analyzes company hiring strategy from public job boards. User enters a company name → system fetches open jobs → AI turns them into a verdict, metrics, and highlights. Positioned as a portfolio/grant piece and "Growth Intelligence for Agents," not as broad "Corporate Intelligence" (no Workday/big tech).
+This file reflects the current post-migration product state.
 
-**APIs in use**  
-- **Greenhouse** – `https://boards-api.greenhouse.io/v1/boards/{token}/jobs` (primary).  
-- **Lever** – `https://api.lever.co/v0/postings/{site}?mode=json` (fallback on Greenhouse 404).  
-- **Google Gemini** – `gemini-3-flash-preview` for analysis (hiring velocity, strategic verdict, Eng:Sales ratio, keyword findings, notable roles, summary).
+For full source truth and phase history, use `docs/agent-context/`.
 
-**Core flow**  
-1. User types company → `POST /api/analyze-unified` with `{ companyName }`.  
-2. `boards.ts`: normalize name → try Greenhouse token (with alias/fallback), then Lever.  
-3. If 0 jobs: skip AI, return "No job board found for X on Greenhouse or Lever. Try another company (e.g. Airbnb, Stripe)."  
-4. If jobs: `StratumInvestigator` → `runStratumAnalysis` (Gemini) → cache (24h in-memory) → return result.  
-5. UI: TruthConsole (search, Bento layout: company + verdict, summary, Strategic Signals, Highlights, Hiring Velocity bar, Eng:Sales, Open Roles). Footer: "Data from Greenhouse & Lever" and coverage note.
+## What Stratum is
+Stratum is an immutable report system for point-in-time hiring intelligence.
 
-**Aliases / fallbacks**  
-- Aliases: `grok`/`x.ai` → `xai`, `twitter` → `x`.  
-- Fallback tokens when primary 404s (e.g. `twitter` → try `x`).  
-- No `KNOWN_UNSUPPORTED` list; one message for all 0-job cases.
+The product-facing flow is:
+1. An authenticated user creates a `report_run`.
+2. A worker captures raw ATS payloads and normalized jobs.
+3. Structured analysis runs only on frozen inputs.
+4. The system publishes an immutable `report_version` with claims and citations.
+5. HTML and PDF artifacts are generated from stored report data only.
+6. Users reopen stored reports without live ATS or live AI calls on the read path.
 
-**Security & robustness**  
-- Input: company name required, max 100 chars, strip `<>"'`.  
-- Rate limit: 5 req/min per IP (429 + Retry-After).  
-- Security headers: X-Content-Type-Options, X-Frame-Options, Referrer-Policy.  
-- Fetch retries (timeout/network), no AI call when 0 jobs.
+## Current architecture
+- Next.js App Router control plane
+- PostgreSQL + Drizzle as the system of record
+- S3-compatible object storage for raw payloads and report/artifact blobs
+- Auth.js with Google OIDC and tenant-scoped RBAC
+- Postgres-backed worker claiming for report execution
+- Gemini-based structured analysis over frozen inputs only
 
-**UI/UX**  
-- Empty state: "Use the search bar above…", "Or try one:" with clickable Airbnb, Stripe, XAI.  
-- Label "Type company name here" above search when no result.  
-- Loading: REVEAL shows "Analyzing…", AnalysisSkeleton for main area.  
-- Result: company name (accent, bold), left accent bar, verdict, summary; "Matched as: X" when alias used; "Cached" badge when cached.  
-- "New search" button; Eng:Sales tooltip ("Engineering vs Sales ratio — e.g. 2:1 means 2 engineers per 1 sales role").  
-- Error: ServiceInterruptionModal (network/500); 429 shows "Rate Limit" with message.  
-- Footer: data source + "Apple, Google, Microsoft use different systems" when no result.
+## Current product paths
+- `/` creates report runs and lists recent published reports
+- `/report-runs/[reportRunId]` shows real queued and terminal run states
+- `/reports/[reportVersionId]` reads stored published report content only
+- `/api/report-runs/*` manages queued run creation and status reads
+- `/api/reports/*` serves stored report data and protected artifacts
 
-**The Purge (Veritas/crypto removed)**  
-Removed: `dexscreener`, `pumpfun`, `market`, `scraper`, `screenshot`, `solscan`, `solana`, `db/elephant`, `db/mongodb`, `ai/analyst`, `app/actions/sherlock`, dashboard (Scanner, UnifiedResultCard), `useScanner`, `useScanHistory`, CryptoLoader, TerminalLogLoader, ThinkingStep. Types stripped to Stratum-only. Repo is Stratum-only; build passes.
+## Current guarantees
+- raw provider payloads are stored durably
+- normalized jobs retain source anchors
+- claims and citations are persisted before publication
+- report reads do not call live ATS providers
+- report reads do not call Gemini
+- HTML and PDF derive from canonical stored report data
 
-**Key files**  
-- `src/app/api/analyze-unified/route.ts` – API entry, validation, cache check, rate limit.  
-- `src/lib/api/boards.ts` – Greenhouse/Lever fetch, aliases, fallbacks.  
-- `src/lib/services/StratumInvestigator.ts` – fetch → 0-job early return or AI → result.  
-- `src/lib/ai/unified-analyzer.ts` – Gemini prompt and JSON parsing.  
-- `src/lib/cache/stratum-cache.ts` – in-memory cache, 24h TTL, `STRATUM_CACHE_TTL_HOURS`.  
-- `src/lib/security/RateLimiter.ts` – 5/min per IP.  
-- `src/components/truth/TruthConsole.tsx` – main UI.  
-- `src/mcp-server.ts` – MCP tool `analyze_company` for agents.  
-- `.env.example` – `GEMINI_API_KEY`, optional `STRATUM_CACHE_TTL_HOURS`.
+## Retired legacy paths
+- the old live `/api/analyze-unified` demo route is gone
+- the cache-backed ATS-to-LLM orchestration path is retired
+- `StratumInvestigator`, the in-memory cache, and the legacy freeform analyzer are removed
+- the old MCP entrypoint tied to the retired demo path is removed
 
-**Limitations**  
-- Only Greenhouse + Lever; no Apple, Google, Microsoft, Amazon, etc. (they use other ATS).  
-- In-memory cache (resets on restart).  
-- No persistent DB, no auth.
-
-**Decisions made**  
-- One generic message for all 0-job cases; no maintained "known unsupported" list.  
-- Skip AI when 0 jobs (cost and clarity).  
-- Be explicit: "Data from Greenhouse & Lever" and coverage note in footer.  
-- Repo cleaned of Veritas/crypto; positioned as "Growth Intelligence" / "Tech Sector Radar."
-
-**Current state**  
-- Build: `npm run build` succeeds.  
-- Pushed to GitHub (initial commit).  
-- Next: record demo (Stripe, Airbnb, XAI), submit to Context Protocol, optional founder DMs.
-
-**Env**  
-- Required: `GEMINI_API_KEY`.  
-- Optional: `STRATUM_CACHE_TTL_HOURS` (default 24).  
-- `NEXT_PUBLIC_SITE_URL` for metadata (optional).
+## Environment notes
+- `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOOGLE_ID`, and `AUTH_GOOGLE_SECRET` are required
+- S3 env vars are required once snapshot and artifact writes are exercised
+- `GEMINI_API_KEY` is required for the structured analysis path
