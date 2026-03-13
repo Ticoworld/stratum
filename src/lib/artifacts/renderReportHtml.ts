@@ -1,3 +1,4 @@
+import { presentReport } from "@/lib/reports/presentation";
 import { type ReportJson } from "@/lib/reports/reportJson";
 
 function escapeHtml(value: string): string {
@@ -9,49 +10,61 @@ function escapeHtml(value: string): string {
     .replaceAll("'", "&#39;");
 }
 
-function renderCitationRefs(citationRefs: string[]): string {
-  if (citationRefs.length === 0) {
+function renderCitationRefs(evidenceNumbers: number[]): string {
+  if (evidenceNumbers.length === 0) {
     return "";
   }
 
-  return ` <span class="muted">[${citationRefs.map(escapeHtml).join(", ")}]</span>`;
+  return evidenceNumbers
+    .map((evidenceNumber) => ` <a class="citation" href="#evidence-${evidenceNumber}">[${evidenceNumber}]</a>`)
+    .join("");
 }
 
 function renderRows(rows: string[]): string {
   return rows.join("\n");
 }
 
+function formatDate(value: string | null): string {
+  if (!value) {
+    return "Not available";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+  }).format(new Date(value));
+}
+
 export function renderReportHtml(report: ReportJson): string {
+  const presented = presentReport(report);
   const providerList =
     report.snapshot.providersSucceeded.length > 0
       ? report.snapshot.providersSucceeded.join(", ")
       : "None";
-  const dataMode = report.snapshot.zeroData
-    ? "zero-data"
+  const coverage = report.snapshot.zeroData
+    ? "No active roles observed"
     : report.snapshot.partialData
-      ? "partial"
-      : "full";
+      ? "Partial provider coverage"
+      : "Captured provider coverage";
 
   const executiveSummaryHtml =
-    report.executiveSummary.length > 0
+    presented.executiveSummary.length > 0
       ? `<ol>${renderRows(
-          report.executiveSummary.map(
-            (item) =>
-              `<li>${escapeHtml(item.text)}${renderCitationRefs(item.claimRefs)}</li>`
+          presented.executiveSummary.map(
+            (item) => `<li>${escapeHtml(item.text)}${renderCitationRefs(item.evidenceNumbers)}</li>`
           )
         )}</ol>`
       : `<p class="empty">No executive summary items were published.</p>`;
 
   const claimsHtml =
-    report.claims.length > 0
+    presented.claims.length > 0
       ? renderRows(
-          report.claims.map(
+          presented.claims.map(
             (claim) => `
               <article class="card">
-                <p class="eyebrow">${escapeHtml(claim.section)} · ${escapeHtml(claim.claimType)} · ${escapeHtml(claim.confidence)}</p>
+                <p class="eyebrow">Claim ${claim.claimNumber} · ${escapeHtml(claim.section)} · ${escapeHtml(claim.claimLabel)} · ${escapeHtml(claim.confidenceLabel)}</p>
                 <h3>${escapeHtml(claim.statement)}</h3>
                 <p>${escapeHtml(claim.whyItMatters)}</p>
-                <p class="muted">Citations: ${escapeHtml(claim.citationRefs.join(", "))}</p>
+                <p class="muted">Supporting evidence${renderCitationRefs(claim.evidenceNumbers)}</p>
               </article>
             `
           )
@@ -59,30 +72,41 @@ export function renderReportHtml(report: ReportJson): string {
       : `<p class="empty">No claims were published for this report.</p>`;
 
   const evidenceRows =
-    report.evidenceAppendix.length > 0
+    presented.evidenceAppendix.length > 0
       ? renderRows(
-          report.evidenceAppendix.map(
+          presented.evidenceAppendix.map(
             (evidence) => `
-              <tr>
-                <td>${escapeHtml(evidence.jobTitle)}</td>
+              <tr id="evidence-${evidence.evidenceNumber}">
+                <td>[${evidence.evidenceNumber}]</td>
+                <td>${
+                  evidence.jobUrl
+                    ? `<a href="${escapeHtml(evidence.jobUrl)}">${escapeHtml(evidence.jobTitle)}</a>`
+                    : escapeHtml(evidence.jobTitle)
+                }</td>
                 <td>${escapeHtml(evidence.provider)}</td>
                 <td>${escapeHtml(evidence.department ?? "Unknown")}</td>
                 <td>${escapeHtml(evidence.location ?? "Unknown")}</td>
-                <td>${escapeHtml(evidence.citedByClaimIds.join(", "))}</td>
+                <td>${escapeHtml(`${formatDate(evidence.sourcePostedAt)} / ${formatDate(evidence.sourceUpdatedAt)}`)}</td>
+                <td>${escapeHtml(evidence.claimNumbers.map((claimNumber) => `Claim ${claimNumber}`).join(", "))}</td>
               </tr>
             `
           )
         )
-      : `<tr><td colspan="5" class="empty">No cited roles were published.</td></tr>`;
+      : `<tr><td colspan="7" class="empty">No cited roles were published.</td></tr>`;
 
   const caveatsHtml =
-    report.caveats.length > 0
-      ? `<ul>${renderRows(
-          report.caveats.map(
-            (caveat) => `<li>${escapeHtml(caveat.type)}: ${escapeHtml(caveat.text)}</li>`
+    presented.caveatGroups.length > 0
+      ? renderRows(
+          presented.caveatGroups.map(
+            (group) => `
+              <div class="caveat-group">
+                <h3>${escapeHtml(group.title)}</h3>
+                <ul>${renderRows(group.items.map((item) => `<li>${escapeHtml(item)}</li>`))}</ul>
+              </div>
+            `
           )
-        )}</ul>`
-      : `<p class="empty">No caveats were recorded.</p>`;
+        )
+      : `<p class="empty">No material limitations were recorded.</p>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -138,6 +162,12 @@ export function renderReportHtml(report: ReportJson): string {
       }
       .card { padding: 16px; margin-top: 16px; }
       .muted, .empty { color: var(--muted); }
+      .citation {
+        color: var(--accent);
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .caveat-group + .caveat-group { margin-top: 18px; }
       table {
         width: 100%;
         border-collapse: collapse;
@@ -161,12 +191,10 @@ export function renderReportHtml(report: ReportJson): string {
         <p class="eyebrow">Published Report</p>
         <h1>${escapeHtml(report.company.displayName)}</h1>
         <div class="grid">
-          <p>Report version: ${escapeHtml(report.reportVersionId)}</p>
-          <p>Report run: ${escapeHtml(report.reportRunId)}</p>
-          <p>Generated at: ${escapeHtml(report.generatedAt)}</p>
-          <p>Published at: ${escapeHtml(report.publishedAt ?? "Unpublished")}</p>
-          <p>Providers: ${escapeHtml(providerList)}</p>
-          <p>Data mode: ${escapeHtml(dataMode)}</p>
+          <p>Published at: ${escapeHtml(formatDate(report.publishedAt))}</p>
+          <p>Generated at: ${escapeHtml(formatDate(report.generatedAt))}</p>
+          <p>Providers reviewed: ${escapeHtml(providerList)}</p>
+          <p>Coverage: ${escapeHtml(coverage)}</p>
         </div>
       </header>
 
@@ -176,7 +204,7 @@ export function renderReportHtml(report: ReportJson): string {
       </section>
 
       <section>
-        <h2>Claims</h2>
+        <h2>Findings</h2>
         ${claimsHtml}
       </section>
 
@@ -185,11 +213,13 @@ export function renderReportHtml(report: ReportJson): string {
         <table>
           <thead>
             <tr>
-              <th>Title</th>
+              <th>Ref.</th>
+              <th>Role title</th>
               <th>Provider</th>
               <th>Department</th>
               <th>Location</th>
-              <th>Claims</th>
+              <th>Posted / updated</th>
+              <th>Used in</th>
             </tr>
           </thead>
           <tbody>
@@ -199,12 +229,12 @@ export function renderReportHtml(report: ReportJson): string {
       </section>
 
       <section>
-        <h2>Caveats</h2>
+        <h2>Limits and Open Questions</h2>
         ${caveatsHtml}
       </section>
 
       <footer>
-        Integrity: report ${escapeHtml(report.integrity.reportSha256)}.
+        Evidence references map directly to the appendix entries in this report.
       </footer>
     </main>
   </body>

@@ -28,10 +28,10 @@ export default async function ReportRunPage({ params }: ReportRunPageProps) {
         <div className="mx-auto flex max-w-7xl items-center justify-between">
           <div>
             <p className="font-data text-[11px] uppercase tracking-[0.2em]" style={{ color: "var(--accent)" }}>
-              Report run status
+              Report status
             </p>
             <p className="mt-1 text-sm" style={{ color: "var(--foreground-secondary)" }}>
-              {reportRun.companyDisplayName} · {reportRun.id}
+              {reportRun.companyDisplayName}
             </p>
           </div>
           <Link className="text-sm text-white underline underline-offset-4" href="/">

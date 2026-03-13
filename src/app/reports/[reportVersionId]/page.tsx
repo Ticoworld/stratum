@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { SystemStatusBar } from "@/components/ui/SystemStatusBar";
 import { requireTenantRole } from "@/lib/auth/requireTenantRole";
 import { getReportVersion } from "@/lib/reports/getReportVersion";
+import { presentReport } from "@/lib/reports/presentation";
 
 type ReportPageProps = {
   params: Promise<{
@@ -34,6 +35,7 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
   }
 
   const report = reportVersion.report;
+  const presented = presentReport(report);
   const htmlAvailable = reportVersion.artifacts.some(
     (artifact) => artifact.artifactType === "html" && artifact.status === "available"
   );
@@ -59,8 +61,8 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
                 {report.company.displayName}
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
-                This page reads from a stored published report version and its persisted artifacts only. No live
-                ATS fetches or live model calls occur on this read path.
+                Published from the stored hiring snapshot captured for this report date. The report remains tied
+                to the evidence below and does not change after publication.
               </p>
             </div>
 
@@ -74,7 +76,7 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
                   style={{ borderColor: "var(--border)" }}
                   href={`/api/reports/${reportVersion.id}/artifacts/html`}
                 >
-                  Open HTML
+                  Open web report
                 </Link>
               ) : null}
               {pdfAvailable ? (
@@ -95,17 +97,15 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
           htmlAvailable={htmlAvailable}
           inline
           pdfAvailable={pdfAvailable}
-          reportRunId={report.reportRunId}
           reportStatus="Published"
-          reportVersionId={report.reportVersionId}
         />
 
         <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {[
             { label: "Published at", value: formatDate(report.publishedAt) },
             { label: "Generated at", value: formatDate(report.generatedAt) },
-            { label: "Providers succeeded", value: report.snapshot.providersSucceeded.join(", ") || "None" },
-            { label: "Total normalized jobs", value: String(report.metrics.totalJobs) },
+            { label: "Providers reviewed", value: report.snapshot.providersSucceeded.join(", ") || "None" },
+            { label: "Roles captured", value: String(report.metrics.totalJobs) },
           ].map((item) => (
             <div
               key={item.label}
@@ -122,12 +122,25 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
 
         <section className="mt-6 rounded-3xl border p-6" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
           <h2 className="text-xl font-semibold text-white">Executive summary</h2>
-          {report.executiveSummary.length > 0 ? (
+          {presented.executiveSummary.length > 0 ? (
             <ol className="mt-4 space-y-3 text-sm leading-7" style={{ color: "var(--foreground-secondary)" }}>
-              {report.executiveSummary.map((item) => (
+              {presented.executiveSummary.map((item) => (
                 <li key={item.order}>
                   {item.text}
-                  {item.claimRefs.length > 0 ? ` [${item.claimRefs.join(", ")}]` : null}
+                  {item.evidenceNumbers.length > 0 ? (
+                    <span className="ml-1">
+                      {item.evidenceNumbers.map((evidenceNumber) => (
+                        <a
+                          key={evidenceNumber}
+                          className="underline underline-offset-4"
+                          href={`#evidence-${evidenceNumber}`}
+                          style={{ color: "var(--accent)" }}
+                        >
+                          [{evidenceNumber}]
+                        </a>
+                      ))}
+                    </span>
+                  ) : null}
                 </li>
               ))}
             </ol>
@@ -140,27 +153,36 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
 
         <div className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
           <section className="rounded-3xl border p-6" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
-            <h2 className="text-xl font-semibold text-white">Claims</h2>
+            <h2 className="text-xl font-semibold text-white">Findings</h2>
             <div className="mt-4 space-y-4">
-              {report.claims.map((claim) => (
+              {presented.claims.map((claim) => (
                 <article
                   key={claim.claimId}
                   className="rounded-2xl border p-4"
                   style={{ borderColor: "var(--border)", background: "rgba(255,255,255,0.02)" }}
                 >
                   <p className="font-data text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--foreground-muted)" }}>
-                    {claim.section} · {claim.claimType} · {claim.confidence}
+                    Claim {claim.claimNumber} · {claim.section} · {claim.claimLabel} · {claim.confidenceLabel}
                   </p>
                   <h3 className="mt-2 text-base font-semibold text-white">{claim.statement}</h3>
                   <p className="mt-2 text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
                     {claim.whyItMatters}
                   </p>
-                  <p className="mt-2 text-xs" style={{ color: "var(--foreground-muted)" }}>
-                    Citations: {claim.citationRefs.join(", ")}
-                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                    {claim.evidenceNumbers.map((evidenceNumber) => (
+                      <a
+                        key={evidenceNumber}
+                        className="rounded-full border px-2.5 py-1 underline underline-offset-4"
+                        href={`#evidence-${evidenceNumber}`}
+                        style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
+                      >
+                        [{evidenceNumber}]
+                      </a>
+                    ))}
+                  </div>
                 </article>
               ))}
-              {report.claims.length === 0 ? (
+              {presented.claims.length === 0 ? (
                 <p className="text-sm" style={{ color: "var(--foreground-secondary)" }}>
                   No claims were published for this report.
                 </p>
@@ -170,28 +192,40 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
 
           <section className="space-y-6">
             <div className="rounded-3xl border p-6" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
-              <h2 className="text-xl font-semibold text-white">Methodology</h2>
+              <h2 className="text-xl font-semibold text-white">Report basis</h2>
               <div className="mt-4 space-y-4 text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
-                <p>Providers queried: {report.snapshot.providersQueried.join(", ") || "None"}</p>
+                <p>Providers reviewed: {report.snapshot.providersQueried.join(", ") || "None"}</p>
                 <p>Snapshot window start: {formatDate(report.snapshot.snapshotWindowStart)}</p>
                 <p>Snapshot window end: {formatDate(report.snapshot.snapshotWindowEnd)}</p>
-                <p>Prompt version: {report.model.promptVersion ?? "Not recorded"}</p>
+                <p>
+                  Coverage:{" "}
+                  {report.snapshot.partialData
+                    ? "Partial provider coverage"
+                    : report.snapshot.zeroData
+                      ? "No active roles observed"
+                      : "Captured provider coverage"}
+                </p>
               </div>
             </div>
 
             <div className="rounded-3xl border p-6" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
-              <h2 className="text-xl font-semibold text-white">Caveats</h2>
-              {report.caveats.length > 0 ? (
-                <ul className="mt-4 space-y-3 text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
-                  {report.caveats.map((caveat, index) => (
-                    <li key={`${caveat.type}-${index}`}>
-                      <span className="font-medium text-white">{caveat.type}:</span> {caveat.text}
-                    </li>
+              <h2 className="text-xl font-semibold text-white">Limits and open questions</h2>
+              {presented.caveatGroups.length > 0 ? (
+                <div className="mt-4 space-y-5">
+                  {presented.caveatGroups.map((group) => (
+                    <div key={group.title}>
+                      <h3 className="text-sm font-semibold text-white">{group.title}</h3>
+                      <ul className="mt-2 space-y-3 text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
+                        {group.items.map((item, index) => (
+                          <li key={`${group.title}-${index}`}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
                   ))}
-                </ul>
+                </div>
               ) : (
                 <p className="mt-4 text-sm" style={{ color: "var(--foreground-secondary)" }}>
-                  No caveats were published for this report.
+                  No material limitations were recorded for this report.
                 </p>
               )}
             </div>
@@ -200,22 +234,38 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
 
         <section className="mt-6 rounded-3xl border p-6" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
           <h2 className="text-xl font-semibold text-white">Evidence appendix</h2>
-          {report.evidenceAppendix.length > 0 ? (
+          {presented.evidenceAppendix.length > 0 ? (
             <div className="mt-4 overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <thead style={{ color: "var(--foreground-muted)" }}>
                   <tr>
-                    <th className="pb-3 pr-4 font-medium">Title</th>
+                    <th className="pb-3 pr-4 font-medium">Ref.</th>
+                    <th className="pb-3 pr-4 font-medium">Role title</th>
                     <th className="pb-3 pr-4 font-medium">Provider</th>
                     <th className="pb-3 pr-4 font-medium">Department</th>
                     <th className="pb-3 pr-4 font-medium">Location</th>
-                    <th className="pb-3 pr-4 font-medium">Claims</th>
+                    <th className="pb-3 pr-4 font-medium">Posted / updated</th>
+                    <th className="pb-3 pr-4 font-medium">Used in</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {report.evidenceAppendix.map((evidence) => (
-                    <tr key={evidence.normalizedJobId} className="border-t" style={{ borderColor: "var(--border)" }}>
-                      <td className="py-3 pr-4 text-white">{evidence.jobTitle}</td>
+                  {presented.evidenceAppendix.map((evidence) => (
+                    <tr
+                      key={evidence.normalizedJobId}
+                      id={`evidence-${evidence.evidenceNumber}`}
+                      className="border-t"
+                      style={{ borderColor: "var(--border)" }}
+                    >
+                      <td className="py-3 pr-4 text-white">[{evidence.evidenceNumber}]</td>
+                      <td className="py-3 pr-4 text-white">
+                        {evidence.jobUrl ? (
+                          <a className="underline underline-offset-4" href={evidence.jobUrl} rel="noreferrer" target="_blank">
+                            {evidence.jobTitle}
+                          </a>
+                        ) : (
+                          evidence.jobTitle
+                        )}
+                      </td>
                       <td className="py-3 pr-4" style={{ color: "var(--foreground-secondary)" }}>
                         {evidence.provider}
                       </td>
@@ -226,7 +276,10 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
                         {evidence.location ?? "Unknown"}
                       </td>
                       <td className="py-3 pr-4" style={{ color: "var(--foreground-secondary)" }}>
-                        {evidence.citedByClaimIds.join(", ")}
+                        {formatDate(evidence.sourcePostedAt)} / {formatDate(evidence.sourceUpdatedAt)}
+                      </td>
+                      <td className="py-3 pr-4" style={{ color: "var(--foreground-secondary)" }}>
+                        {evidence.claimNumbers.map((claimNumber) => `Claim ${claimNumber}`).join(", ")}
                       </td>
                     </tr>
                   ))}

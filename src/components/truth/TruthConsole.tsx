@@ -338,7 +338,7 @@ export function TruthConsole({
       setEnsurePdfState({
         reportVersionId,
         loading: false,
-        error: error instanceof Error ? error.message : "Failed to ensure PDF artifact.",
+        error: error instanceof Error ? error.message : "Failed to generate PDF.",
       });
     }
   }
@@ -403,11 +403,11 @@ export function TruthConsole({
                 Immutable hiring reports
               </p>
               <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">
-                Request a report run, wait for the stored version, then open published artifacts.
+                Request a report, follow its progress, and open the published deliverables.
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
-                The product path now centers on queued report runs, frozen provider snapshots, stored publication,
-                and artifact retrieval. Live ATS fetches and live model output are not rendered in the UI.
+                Reports are issued from stored hiring snapshots and remain stable once published. Artifact
+                availability below reflects the actual published report state.
               </p>
             </div>
 
@@ -418,7 +418,7 @@ export function TruthConsole({
               <p style={{ color: "var(--foreground-secondary)" }}>Signed in as</p>
               <p className="mt-1 font-medium text-white">{session.name ?? session.email}</p>
               <p className="font-data text-[11px] uppercase tracking-[0.18em]" style={{ color: "var(--foreground-muted)" }}>
-                {session.role} · tenant {session.tenantId.slice(0, 8)}
+                {session.role}
               </p>
             </div>
           </div>
@@ -447,9 +447,9 @@ export function TruthConsole({
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="font-data text-[11px] uppercase tracking-[0.2em]" style={{ color: "var(--accent)" }}>
-                    Create report run
+                    Create report
                   </p>
-                  <h2 className="mt-2 text-xl font-semibold text-white">Queue a point-in-time report request</h2>
+                  <h2 className="mt-2 text-xl font-semibold text-white">Create a point-in-time report</h2>
                 </div>
                 <Database className="h-5 w-5" style={{ color: "var(--foreground-muted)" }} />
               </div>
@@ -551,8 +551,8 @@ export function TruthConsole({
                 className="mt-6 rounded-2xl border p-5 text-sm leading-6"
                 style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
               >
-                No report run is active yet. Create one from the home page form to follow queue, fetch,
-                analysis, publication, and artifact status in one place.
+                No report is active yet. Create one from the home page form to track progress and published
+                artifacts in one place.
               </div>
             ) : runLoading && !activeRun ? (
               <div className="mt-6 flex items-center gap-3 text-sm" style={{ color: "var(--foreground-secondary)" }}>
@@ -580,7 +580,6 @@ export function TruthConsole({
                     </div>
 
                     <div className="grid gap-2 text-sm md:text-right" style={{ color: "var(--foreground-secondary)" }}>
-                      <p>Run ID: {activeRun.id}</p>
                       <p>Attempts: {activeRun.attemptCount}</p>
                       <p>Normalized jobs: {activeRun.normalizedJobCount}</p>
                       <p>Data mode: {activeDataMode ?? "in-progress"}</p>
@@ -594,14 +593,16 @@ export function TruthConsole({
                   ) : null}
 
                   <div className="mt-5 flex flex-wrap gap-3">
-                    <Link
-                      className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm text-white"
-                      style={{ borderColor: "var(--border)" }}
-                      href={`/report-runs/${activeRun.id}`}
-                    >
-                      Open status page
-                      <ExternalLink className="h-4 w-4" />
-                    </Link>
+                    {!statusOnly ? (
+                      <Link
+                        className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm text-white"
+                        style={{ borderColor: "var(--border)" }}
+                        href={`/report-runs/${activeRun.id}`}
+                      >
+                        Open status page
+                        <ExternalLink className="h-4 w-4" />
+                      </Link>
+                    ) : null}
 
                     {activeRun.reportVersion ? (
                       <Link
@@ -643,7 +644,7 @@ export function TruthConsole({
                     <div>
                       <h3 className="text-base font-semibold text-white">Artifacts</h3>
                       <p className="mt-1 text-sm" style={{ color: "var(--foreground-secondary)" }}>
-                        Artifact state is read from the stored published report version.
+                        Artifact availability reflects the published report version.
                       </p>
                     </div>
                     {activeRun.reportVersion ? (
@@ -659,12 +660,12 @@ export function TruthConsole({
                         <ArtifactCard
                           available={activeRun.reportVersion.artifactAvailability.html}
                           href={`/api/reports/${activeRun.reportVersion.id}/artifacts/html`}
-                          label="HTML artifact"
+                          label="Web report"
                         />
                         <ArtifactCard
                           available={activeRun.reportVersion.artifactAvailability.pdf}
                           href={`/api/reports/${activeRun.reportVersion.id}/artifacts/pdf`}
-                          label="PDF artifact"
+                          label="PDF report"
                         />
                       </div>
 
@@ -682,7 +683,7 @@ export function TruthConsole({
                             ) : (
                               <FileDown className="h-4 w-4" />
                             )}
-                            Ensure PDF
+                            Generate PDF
                           </button>
                           {ensurePdfState?.reportVersionId === activeRun.reportVersion.id && ensurePdfState.error ? (
                             <p className="text-sm" style={{ color: "#fecaca" }}>
@@ -703,19 +704,17 @@ export function TruthConsole({
                   className="rounded-2xl border p-5"
                   style={{ borderColor: "var(--border)", background: "rgba(255,255,255,0.02)" }}
                 >
-                  <h3 className="text-base font-semibold text-white">Source snapshots</h3>
+                  <h3 className="text-base font-semibold text-white">Source coverage</h3>
                   {activeRun.sourceSnapshots.length > 0 ? (
                     <div className="mt-4 space-y-3">
                       {activeRun.sourceSnapshots.map((snapshot) => (
                         <div
-                          key={snapshot.id}
+                          key={`${snapshot.provider}-${snapshot.providerToken}`}
                           className="rounded-2xl border px-4 py-3 text-sm"
                           style={{ borderColor: "var(--border)", background: "rgba(0,0,0,0.14)" }}
                         >
                           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                            <p className="font-medium text-white">
-                              {snapshot.provider} · {snapshot.providerToken}
-                            </p>
+                            <p className="font-medium text-white">{snapshot.provider}</p>
                             <p style={{ color: "var(--foreground-secondary)" }}>
                               {snapshot.status} · {snapshot.recordCount} records
                             </p>
@@ -739,12 +738,12 @@ export function TruthConsole({
                   className="rounded-2xl border p-5"
                   style={{ borderColor: "var(--border)", background: "rgba(255,255,255,0.02)" }}
                 >
-                  <h3 className="text-base font-semibold text-white">Normalized jobs</h3>
+                  <h3 className="text-base font-semibold text-white">Sample captured roles</h3>
                   {activeRun.normalizedJobs.length > 0 ? (
                     <div className="mt-4 space-y-3">
                       {activeRun.normalizedJobs.slice(0, 5).map((job) => (
                         <div
-                          key={job.id}
+                          key={`${job.provider}-${job.title}-${job.providerJobId ?? job.updatedAt ?? "job"}`}
                           className="rounded-2xl border px-4 py-3 text-sm"
                           style={{ borderColor: "var(--border)", background: "rgba(0,0,0,0.14)" }}
                         >
@@ -803,7 +802,7 @@ export function TruthConsole({
                       <tr key={report.reportVersionId} className="border-t" style={{ borderColor: "var(--border)" }}>
                         <td className="py-4 pr-6">
                           <p className="font-medium text-white">{report.companyDisplayName}</p>
-                          <p style={{ color: "var(--foreground-secondary)" }}>Run {report.reportRunId}</p>
+                          <p style={{ color: "var(--foreground-secondary)" }}>Version {report.versionNumber}</p>
                         </td>
                         <td className="py-4 pr-6" style={{ color: "var(--foreground-secondary)" }}>
                           {formatDate(report.publishedAt ?? report.generatedAt)}
@@ -865,8 +864,6 @@ export function TruthConsole({
         ) : null}
 
         <SystemStatusBar
-          reportRunId={activeRun?.id ?? null}
-          reportVersionId={activeRun?.reportVersion?.id ?? null}
           reportStatus={activeRun ? STATUS_LABELS[activeRun.status] : null}
           dataMode={activeDataMode}
           htmlAvailable={activeRun?.reportVersion?.artifactAvailability.html ?? null}
@@ -896,7 +893,7 @@ function ArtifactCard({
         <div>
           <p className="font-medium text-white">{label}</p>
           <p className="mt-1 text-sm" style={{ color: "var(--foreground-secondary)" }}>
-            {available ? "Available" : "Not generated yet"}
+            {available ? "Available" : "Available after generation"}
           </p>
         </div>
         {available ? (

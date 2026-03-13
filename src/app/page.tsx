@@ -19,8 +19,7 @@ export default async function Home() {
             Stratum is now a stored report workflow, not a live ATS-to-LLM demo.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-7" style={{ color: "var(--foreground-secondary)" }}>
-            Sign in to create a report run, follow queued and in-progress statuses, and open published report
-            versions with real HTML and PDF artifact availability.
+            Sign in to create a report, follow its progress, and open the published web and PDF versions.
           </p>
           <div className="mt-8">
             <Link

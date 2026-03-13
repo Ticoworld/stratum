@@ -6,6 +6,14 @@ import { getObjectBuffer } from "@/lib/storage/s3";
 
 const artifactTypeSchema = z.enum(["html", "pdf"]);
 
+function toFileSlug(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
 type RouteContext = {
   params: Promise<{
     reportVersionId: string;
@@ -27,7 +35,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
 
     const body = await getObjectBuffer(artifact.objectKey);
-    const fileName = `${reportVersion.report.company.canonicalName}-${reportVersion.id}.${artifactType}`;
+    const publicationDate = reportVersion.generatedAt.toISOString().slice(0, 10);
+    const fileName = `${toFileSlug(reportVersion.report.company.canonicalName)}-report-${publicationDate}.${artifactType}`;
 
     return new NextResponse(new Uint8Array(body), {
       status: 200,
