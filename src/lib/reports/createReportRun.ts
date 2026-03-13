@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { companies, reportRuns } from "@/db/schema";
 import { assertReportCreationReady } from "@/lib/deployment/readiness";
 import { resolveCompany } from "@/lib/providers/ats/resolveCompany";
+import { dispatchReportWorker } from "@/lib/reports/dispatchReportWorker";
 
 const optionalWebsiteDomain = z.preprocess(
   (value) => {
@@ -119,6 +120,15 @@ export async function createReportRun(
     attemptCount: 1,
     createdAt: now,
   });
+
+  try {
+    await dispatchReportWorker();
+  } catch (error) {
+    console.error("[report-runs] Failed to dispatch GitHub report worker:", {
+      reportRunId,
+      error,
+    });
+  }
 
   return {
     reportRunId,

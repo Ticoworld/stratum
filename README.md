@@ -76,6 +76,14 @@ R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
 STRATUM_ANALYSIS_RETRY_PROOF_FAILURES=0
 ```
 
+### Optional web automation
+
+Set this on the web runtime if you want report creation to immediately trigger the GitHub worker workflow instead of waiting for the scheduled run.
+
+```env
+GITHUB_DISPATCH_TOKEN=ghp_replace_me
+```
+
 ## Local setup
 
 1. Install dependencies.
@@ -119,6 +127,7 @@ Set these on Vercel:
 - Shared infrastructure: `DATABASE_URL`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `STRATUM_S3_BUCKET`
 - Web-only: `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `NEXT_PUBLIC_SITE_URL`
 - Optional if needed: `STRATUM_S3_ENDPOINT` or `R2_ENDPOINT`
+- Optional for immediate GitHub worker dispatch: `GITHUB_DISPATCH_TOKEN`
 
 Responsibilities owned by the web runtime:
 
