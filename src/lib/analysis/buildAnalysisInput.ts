@@ -1,9 +1,10 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { companies, normalizedJobs, reportRuns, sourceSnapshots } from "@/db/schema";
+import { assessDataset, type AnalysisDatasetAssessment } from "@/lib/analysis/datasetAssessment";
 
 export interface AnalysisInputJob {
-  normalizedJobId: string;
+  evidenceRef: string;
   provider: string;
   providerJobId: string | null;
   title: string;
@@ -12,16 +13,34 @@ export interface AnalysisInputJob {
   postedAt: string | null;
   updatedAt: string | null;
   jobUrl: string | null;
-  sourceSnapshotId: string;
+  snapshotRef: string;
 }
 
 export interface AnalysisInputSnapshot {
-  sourceSnapshotId: string;
+  snapshotRef: string;
   provider: string;
-  providerToken: string;
   fetchedAt: string | null;
   recordCount: number;
-  payloadSha256: string | null;
+}
+
+export interface AnalysisEvidenceBucket {
+  key: string;
+  count: number;
+  sampleEvidenceRefs: string[];
+}
+
+export interface AnalysisEvidenceSummary {
+  totalNormalizedJobs: number;
+  providerCoverage: {
+    capturedProviders: string[];
+    providerCount: number;
+  };
+  departmentSummary: AnalysisEvidenceBucket[];
+  geographySummary: AnalysisEvidenceBucket[];
+  senioritySummary: AnalysisEvidenceBucket[];
+  postingAgeSummary: AnalysisEvidenceBucket[];
+  repeatedTitleKeywords: AnalysisEvidenceBucket[];
+  sampleRoles: AnalysisInputJob[];
 }
 
 export interface AnalysisInput {
@@ -37,6 +56,8 @@ export interface AnalysisInput {
   jobCountsByDepartment: Array<{ department: string; count: number }>;
   jobCountsByLocation: Array<{ location: string; count: number }>;
   recencyBuckets: Array<{ bucket: string; count: number }>;
+  datasetAssessment: AnalysisDatasetAssessment;
+  evidenceSummary: AnalysisEvidenceSummary;
   normalizedJobs: AnalysisInputJob[];
 }
 
@@ -53,6 +74,23 @@ export interface AnalysisInputContext {
     }
   >;
   jobsById: Map<
+    string,
+    {
+      normalizedJobId: string;
+      sourceSnapshotId: string;
+      provider: string;
+      providerJobId: string | null;
+      jobUrl: string | null;
+      title: string;
+      department: string | null;
+      location: string | null;
+      postedAt: Date | null;
+      updatedAt: Date | null;
+      rawRecordPath: string;
+      normalizedSha256: string;
+    }
+  >;
+  jobsByEvidenceRef: Map<
     string,
     {
       normalizedJobId: string;
@@ -96,6 +134,133 @@ function buildRecencyBucket(asOfTime: Date, jobDate: Date | null): string {
   }
 
   return "91_plus_days";
+}
+
+function takeTopBuckets(map: Map<string, number>, sampleRefsByKey: Map<string, string[]>, limit = 5) {
+  return Array.from(map.entries())
+    .sort((left, right) => {
+      if (right[1] !== left[1]) {
+        return right[1] - left[1];
+      }
+
+      return left[0].localeCompare(right[0]);
+    })
+    .slice(0, limit)
+    .map(([key, count]) => ({
+      key,
+      count,
+      sampleEvidenceRefs: (sampleRefsByKey.get(key) ?? []).slice(0, 3),
+    }));
+}
+
+function addSampleRef(sampleRefsByKey: Map<string, string[]>, key: string, evidenceRef: string) {
+  const existing = sampleRefsByKey.get(key) ?? [];
+
+  if (!existing.includes(evidenceRef)) {
+    existing.push(evidenceRef);
+  }
+
+  sampleRefsByKey.set(key, existing);
+}
+
+function deriveGeographyBucket(location: string | null) {
+  if (!location) {
+    return "Unknown";
+  }
+
+  const parts = location
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length >= 2) {
+    return parts.at(-1) ?? location;
+  }
+
+  return parts[0] ?? location;
+}
+
+function deriveSeniorityBucket(title: string) {
+  const normalized = title.toLowerCase();
+
+  if (/\b(intern|internship|apprentice|junior|associate)\b/.test(normalized)) {
+    return "entry_or_associate";
+  }
+
+  if (/\b(manager|lead|head)\b/.test(normalized)) {
+    return "manager_or_lead";
+  }
+
+  if (/\b(director|vp|vice president|chief)\b/.test(normalized)) {
+    return "director_or_executive";
+  }
+
+  if (/\b(principal|staff|senior|sr)\b/.test(normalized)) {
+    return "senior_ic";
+  }
+
+  return "mid_ic_or_unspecified";
+}
+
+const TITLE_KEYWORD_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "apac",
+  "associate",
+  "dach",
+  "emea",
+  "for",
+  "ii",
+  "iii",
+  "in",
+  "intern",
+  "lead",
+  "manager",
+  "new",
+  "of",
+  "or",
+  "principal",
+  "senior",
+  "sr",
+  "staff",
+  "the",
+  "to",
+]);
+
+function extractRepeatedTitleKeywords(
+  jobs: Array<{ title: string; evidenceRef: string }>
+): AnalysisEvidenceBucket[] {
+  const counts = new Map<string, number>();
+  const sampleRefsByKey = new Map<string, string[]>();
+
+  for (const job of jobs) {
+    const tokens = Array.from(
+      new Set(
+        job.title
+          .toLowerCase()
+          .split(/[^a-z0-9]+/)
+          .map((token) => token.trim())
+          .filter(
+            (token) =>
+              token.length >= 3 &&
+              !TITLE_KEYWORD_STOP_WORDS.has(token) &&
+              !/^\d+$/.test(token)
+          )
+      )
+    );
+
+    for (const token of tokens) {
+      incrementCount(counts, token);
+      addSampleRef(sampleRefsByKey, token, job.evidenceRef);
+    }
+  }
+
+  return takeTopBuckets(
+    new Map(Array.from(counts.entries()).filter(([, count]) => count >= 2)),
+    sampleRefsByKey,
+    8
+  );
 }
 
 export async function buildAnalysisInput(reportRunId: string): Promise<AnalysisInputContext> {
@@ -154,14 +319,34 @@ export async function buildAnalysisInput(reportRunId: string): Promise<AnalysisI
   const departmentCounts = new Map<string, number>();
   const locationCounts = new Map<string, number>();
   const recencyCounts = new Map<string, number>();
+  const geographyCounts = new Map<string, number>();
+  const seniorityCounts = new Map<string, number>();
+  const departmentSampleRefs = new Map<string, string[]>();
+  const geographySampleRefs = new Map<string, string[]>();
+  const senioritySampleRefs = new Map<string, string[]>();
+  const postingAgeSampleRefs = new Map<string, string[]>();
+
+  const evidenceRefByJobId = new Map(
+    jobs.map((job, index) => [job.normalizedJobId, `job-${String(index + 1).padStart(3, "0")}`])
+  );
 
   for (const job of jobs) {
-    incrementCount(departmentCounts, job.department?.trim() || "Unknown");
-    incrementCount(locationCounts, job.location?.trim() || "Unknown");
-    incrementCount(
-      recencyCounts,
-      buildRecencyBucket(run.asOfTime, job.updatedAt ?? job.postedAt ?? null)
-    );
+    const evidenceRef = evidenceRefByJobId.get(job.normalizedJobId) ?? job.normalizedJobId;
+    const department = job.department?.trim() || "Unknown";
+    const location = job.location?.trim() || "Unknown";
+    const recencyBucket = buildRecencyBucket(run.asOfTime, job.updatedAt ?? job.postedAt ?? null);
+    const geographyBucket = deriveGeographyBucket(job.location);
+    const seniorityBucket = deriveSeniorityBucket(job.title);
+
+    incrementCount(departmentCounts, department);
+    incrementCount(locationCounts, location);
+    incrementCount(recencyCounts, recencyBucket);
+    incrementCount(geographyCounts, geographyBucket);
+    incrementCount(seniorityCounts, seniorityBucket);
+    addSampleRef(departmentSampleRefs, department, evidenceRef);
+    addSampleRef(geographySampleRefs, geographyBucket, evidenceRef);
+    addSampleRef(senioritySampleRefs, seniorityBucket, evidenceRef);
+    addSampleRef(postingAgeSampleRefs, recencyBucket, evidenceRef);
   }
 
   const snapshotsById = new Map(
@@ -176,6 +361,9 @@ export async function buildAnalysisInput(reportRunId: string): Promise<AnalysisI
       },
     ])
   );
+  const snapshotRefById = new Map(
+    snapshots.map((snapshot, index) => [snapshot.sourceSnapshotId, `snapshot-${String(index + 1).padStart(2, "0")}`])
+  );
 
   const jobsById = new Map(
     jobs.map((job) => [
@@ -185,6 +373,49 @@ export async function buildAnalysisInput(reportRunId: string): Promise<AnalysisI
       },
     ])
   );
+  const jobsByEvidenceRef = new Map(
+    jobs.map((job, index) => [`job-${String(index + 1).padStart(3, "0")}`, { ...job }])
+  );
+  const latestSnapshotFetchedAt = snapshots
+    .map((snapshot) => snapshot.fetchedAt)
+    .filter((value): value is Date => value instanceof Date)
+    .sort((left, right) => right.getTime() - left.getTime())[0] ?? null;
+  const datasetAssessment = assessDataset({
+    asOfTime: run.asOfTime,
+    totalJobs: jobs.length,
+    recencyBuckets: Array.from(recencyCounts.entries()).map(([bucket, count]) => ({ bucket, count })),
+    latestSnapshotFetchedAt,
+  });
+  const normalizedJobInputs: AnalysisInputJob[] = jobs.map((job) => ({
+    evidenceRef: evidenceRefByJobId.get(job.normalizedJobId) ?? job.normalizedJobId,
+    provider: job.provider,
+    providerJobId: job.providerJobId,
+    title: job.title,
+    department: job.department,
+    location: job.location,
+    postedAt: toIsoString(job.postedAt),
+    updatedAt: toIsoString(job.updatedAt),
+    jobUrl: job.jobUrl,
+    snapshotRef: snapshotRefById.get(job.sourceSnapshotId) ?? job.sourceSnapshotId,
+  }));
+  const evidenceSummary: AnalysisEvidenceSummary = {
+    totalNormalizedJobs: jobs.length,
+    providerCoverage: {
+      capturedProviders: snapshots.map((snapshot) => snapshot.provider),
+      providerCount: snapshots.length,
+    },
+    departmentSummary: takeTopBuckets(departmentCounts, departmentSampleRefs),
+    geographySummary: takeTopBuckets(geographyCounts, geographySampleRefs),
+    senioritySummary: takeTopBuckets(seniorityCounts, senioritySampleRefs),
+    postingAgeSummary: takeTopBuckets(recencyCounts, postingAgeSampleRefs),
+    repeatedTitleKeywords: extractRepeatedTitleKeywords(
+      jobs.map((job) => ({
+        title: job.title,
+        evidenceRef: evidenceRefByJobId.get(job.normalizedJobId) ?? job.normalizedJobId,
+      }))
+    ),
+    sampleRoles: normalizedJobInputs.slice(0, 12),
+  };
 
   return {
     input: {
@@ -197,12 +428,10 @@ export async function buildAnalysisInput(reportRunId: string): Promise<AnalysisI
       },
       asOfTime: run.asOfTime.toISOString(),
       providerSummary: snapshots.map((snapshot) => ({
-        sourceSnapshotId: snapshot.sourceSnapshotId,
+        snapshotRef: snapshotRefById.get(snapshot.sourceSnapshotId) ?? snapshot.sourceSnapshotId,
         provider: snapshot.provider,
-        providerToken: snapshot.providerToken,
         fetchedAt: toIsoString(snapshot.fetchedAt),
         recordCount: snapshot.recordCount,
-        payloadSha256: snapshot.payloadSha256,
       })),
       jobCountsByDepartment: Array.from(departmentCounts.entries()).map(([department, count]) => ({
         department,
@@ -216,20 +445,12 @@ export async function buildAnalysisInput(reportRunId: string): Promise<AnalysisI
         bucket,
         count,
       })),
-      normalizedJobs: jobs.map((job) => ({
-        normalizedJobId: job.normalizedJobId,
-        provider: job.provider,
-        providerJobId: job.providerJobId,
-        title: job.title,
-        department: job.department,
-        location: job.location,
-        postedAt: toIsoString(job.postedAt),
-        updatedAt: toIsoString(job.updatedAt),
-        jobUrl: job.jobUrl,
-        sourceSnapshotId: job.sourceSnapshotId,
-      })),
+      datasetAssessment,
+      evidenceSummary,
+      normalizedJobs: normalizedJobInputs,
     },
     snapshotsById,
     jobsById,
+    jobsByEvidenceRef,
   };
 }

@@ -47,6 +47,10 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: error.message }, { status: 401 });
     }
 
+    if (error instanceof Error && error.message.includes("Object storage is not configured")) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
+
     console.error("[artifacts] Failed to ensure artifact:", error);
     return NextResponse.json({ error: "Failed to ensure artifact." }, { status: 500 });
   }

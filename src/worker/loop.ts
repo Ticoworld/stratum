@@ -1,3 +1,4 @@
+import { writeWorkerHeartbeat } from "@/lib/deployment/readiness";
 import { claimNextReportRun } from "@/lib/reports/claimNextReportRun";
 import { executeReportRun } from "@/lib/reports/executeReportRun";
 
@@ -30,6 +31,7 @@ export async function runWorkerLoop(options: RunWorkerLoopOptions = {}) {
   const pollIntervalMs = options.pollIntervalMs ?? 5000;
 
   do {
+    await writeWorkerHeartbeat();
     const processed = await processNextReportRun();
 
     if (options.once) {

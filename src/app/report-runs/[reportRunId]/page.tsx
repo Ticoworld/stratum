@@ -1,7 +1,9 @@
+import { DeploymentReadinessNotice } from "@/components/system/DeploymentReadinessNotice";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { TruthConsole } from "@/components/truth/TruthConsole";
+import { TruthConsole, type ReportRunResponse } from "@/components/truth/TruthConsole";
 import { requireTenantRole } from "@/lib/auth/requireTenantRole";
+import { getDeploymentReadinessSummary } from "@/lib/deployment/readiness";
 import { getReportRun } from "@/lib/reports/getReportRun";
 
 type ReportRunPageProps = {
@@ -12,6 +14,7 @@ type ReportRunPageProps = {
 
 export default async function ReportRunPage({ params }: ReportRunPageProps) {
   const session = await requireTenantRole("viewer");
+  const readiness = await getDeploymentReadinessSummary();
   const { reportRunId } = await params;
   const reportRun = await getReportRun({
     reportRunId,
@@ -39,8 +42,14 @@ export default async function ReportRunPage({ params }: ReportRunPageProps) {
           </Link>
         </div>
       </div>
+      <div className="px-6">
+        <div className="mx-auto max-w-7xl">
+          <DeploymentReadinessNotice readiness={readiness} />
+        </div>
+      </div>
       <TruthConsole
         initialReportRunId={reportRunId}
+        initialReportRun={JSON.parse(JSON.stringify(reportRun)) as ReportRunResponse}
         session={{
           name: session.user.name,
           email: session.user.email,

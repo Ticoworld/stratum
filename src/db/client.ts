@@ -1,7 +1,9 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "@/db/schema";
-import { phase1Env } from "@/lib/env";
+import { getSharedEnv } from "@/lib/env";
+
+const sharedEnv = getSharedEnv();
 
 const createDb = (client: ReturnType<typeof postgres>) =>
   drizzle(client, {
@@ -23,7 +25,7 @@ const globalForDb = globalThis as typeof globalThis & {
 
 const sql =
   globalForDb.__stratumSql ??
-  postgres(phase1Env.DATABASE_URL, {
+  postgres(sharedEnv.DATABASE_URL, {
     max: 1,
     prepare: false,
   });

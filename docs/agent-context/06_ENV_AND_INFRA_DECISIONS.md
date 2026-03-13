@@ -1,9 +1,15 @@
 # Env And Infra Decisions
 
 ## Current env decisions
-Phase 1 introduced a central env module at `src/lib/env.ts`. It validates the infrastructure/report-system env surface and deliberately avoided destabilizing the legacy dashboard path during migration.
+Phase 1 introduced a central env module at `src/lib/env.ts`.
 
-That isolation was intentional during migration. Phase 8 removed the remaining legacy cache-backed dashboard path, but the central env module remains the binding place for report-system env validation.
+Phase C changed the contract from a single mixed validation surface into explicit role-based contracts:
+- shared required
+- web-only required
+- worker-only required
+- optional/local-only
+
+The central env module remains binding truth for runtime validation.
 
 ## PostgreSQL vendor note
 Approved and implemented: generic PostgreSQL via `DATABASE_URL`, accessed through Drizzle and `postgres`.
@@ -29,56 +35,44 @@ This foundation is present in:
 - `src/lib/auth/session.ts`
 
 ## AWS / S3 decision
-Approved decision:
+Approved and implemented:
 - object storage is part of the target architecture
-- S3 client setup exists in Phase 1
-- AWS env vars are not required in Phase 1
+- raw payload capture and artifact retrieval both depend on private S3-compatible storage
+- web and worker runtimes both depend on the same object storage contract for full production behavior
 
 Implemented behavior:
-- `src/lib/storage/s3.ts` exists
-- `src/lib/env.ts` treats S3 env as optional
-- empty AWS strings are normalized to `undefined`
-- missing AWS values do not fail build, typecheck, or migration commands
-
-Future sessions must keep that contract until the storage-writing phase actually begins.
+- `src/lib/storage/s3.ts` fails with direct errors when object storage is actually used without required env
+- worker startup validates object storage before entering the loop
+- deployment readiness reports whether object storage is configured
 
 ## Required env vars now
+
+### Shared required
 - `DATABASE_URL`
+- `AWS_REGION`
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `STRATUM_S3_BUCKET`
+
+### Web-only required
 - `AUTH_SECRET`
 - `AUTH_GOOGLE_ID`
 - `AUTH_GOOGLE_SECRET`
-
-## Optional now
 - `NEXT_PUBLIC_SITE_URL`
-- `AWS_REGION`
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
-- `STRATUM_S3_BUCKET`
 
-## Legacy env vars
-The old cache-backed ATS-to-LLM product path has been removed.
-
-Remaining non-foundation env items are:
-- `GEMINI_API_KEY` for structured analysis
-- `MONGODB_URI` as leftover legacy env surface not used by the report product path
-
-## Later-phase env vars
-These become materially important in later phases but are not required to complete Phase 1.
-
-- `AWS_REGION`
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
-- `STRATUM_S3_BUCKET`
+### Worker-only required
 - `GEMINI_API_KEY`
 
-Interpretation:
-- AWS values become effectively required once raw source snapshots and artifacts are written.
-- `GEMINI_API_KEY` is required for the structured analysis path.
+### Optional / local-only
+- `STRATUM_S3_ENDPOINT`
+- `R2_ENDPOINT`
+- `STRATUM_ANALYSIS_RETRY_PROOF_FAILURES`
 
 ## Setup notes future Codex sessions must know
 - `drizzle.config.ts` loads `.env.local` first and `.env` second.
 - Next.js build also loads `.env.local`.
 - `src/lib/env.ts` remains the central env module for the report product path.
-- If AWS vars are set partially, `src/lib/env.ts` throws when S3 config is requested.
-- `npm run db:generate` and `npm run db:migrate` hit Windows sandbox `spawn EPERM` and may require escalation.
+- The web runtime can build without worker-only env at import time, but report creation is blocked until the worker dependency is healthy.
+- The worker runtime must pass `npm run worker:check-env` before production rollout.
+- The web runtime exposes `/api/deployment/readiness` and uses worker heartbeat freshness to decide whether report creation is safe.
 - Google sign-in requires a valid Google OAuth app with callback URLs configured for the environment being tested.

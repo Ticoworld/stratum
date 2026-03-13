@@ -1,9 +1,14 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ReportArtifactActions } from "@/components/reports/ReportArtifactActions";
 import { SystemStatusBar } from "@/components/ui/SystemStatusBar";
+import { getReportArtifactStatus } from "@/lib/artifacts/status";
 import { requireTenantRole } from "@/lib/auth/requireTenantRole";
 import { getReportVersion } from "@/lib/reports/getReportVersion";
-import { presentReport } from "@/lib/reports/presentation";
+import {
+  presentDataMode,
+  presentProviderName,
+  presentReport,
+} from "@/lib/reports/presentation";
 
 type ReportPageProps = {
   params: Promise<{
@@ -36,17 +41,18 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
 
   const report = reportVersion.report;
   const presented = presentReport(report);
-  const htmlAvailable = reportVersion.artifacts.some(
-    (artifact) => artifact.artifactType === "html" && artifact.status === "available"
-  );
-  const pdfAvailable = reportVersion.artifacts.some(
-    (artifact) => artifact.artifactType === "pdf" && artifact.status === "available"
-  );
+  const htmlStatus = getReportArtifactStatus(reportVersion.artifacts, "html");
+  const pdfStatus = getReportArtifactStatus(reportVersion.artifacts, "pdf");
   const dataMode = report.snapshot.zeroData
     ? "zero-data"
     : report.snapshot.partialData
       ? "partial-data"
       : "completed";
+  const coverageLabel = presentDataMode(dataMode);
+  const providersReviewed =
+    report.snapshot.providersSucceeded.map((provider) => presentProviderName(provider)).join(", ") || "None";
+  const providersQueried =
+    report.snapshot.providersQueried.map((provider) => presentProviderName(provider)).join(", ") || "None";
 
   return (
     <main className="min-h-screen px-6 py-8" style={{ background: "var(--background)" }}>
@@ -61,42 +67,24 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
                 {report.company.displayName}
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
-                Published from the stored hiring snapshot captured for this report date. The report remains tied
-                to the evidence below and does not change after publication.
+                Published from the stored hiring snapshot captured for this report date. The report is fixed at
+                publication and remains tied to the evidence cited below.
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-3 text-sm">
-              <Link className="rounded-full border px-4 py-2 text-white" style={{ borderColor: "var(--border)" }} href="/">
-                Back to home
-              </Link>
-              {htmlAvailable ? (
-                <Link
-                  className="rounded-full border px-4 py-2 text-white"
-                  style={{ borderColor: "var(--border)" }}
-                  href={`/api/reports/${reportVersion.id}/artifacts/html`}
-                >
-                  Open web report
-                </Link>
-              ) : null}
-              {pdfAvailable ? (
-                <Link
-                  className="rounded-full px-4 py-2 text-white"
-                  style={{ background: "var(--accent)" }}
-                  href={`/api/reports/${reportVersion.id}/artifacts/pdf`}
-                >
-                  Download PDF
-                </Link>
-              ) : null}
-            </div>
+            <ReportArtifactActions
+              reportVersionId={reportVersion.id}
+              htmlStatus={htmlStatus}
+              pdfStatus={pdfStatus}
+            />
           </div>
         </header>
 
         <SystemStatusBar
           dataMode={dataMode}
-          htmlAvailable={htmlAvailable}
+          htmlStatus={htmlStatus}
           inline
-          pdfAvailable={pdfAvailable}
+          pdfStatus={pdfStatus}
           reportStatus="Published"
         />
 
@@ -104,7 +92,7 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
           {[
             { label: "Published at", value: formatDate(report.publishedAt) },
             { label: "Generated at", value: formatDate(report.generatedAt) },
-            { label: "Providers reviewed", value: report.snapshot.providersSucceeded.join(", ") || "None" },
+            { label: "Providers reviewed", value: providersReviewed },
             { label: "Roles captured", value: String(report.metrics.totalJobs) },
           ].map((item) => (
             <div
@@ -122,6 +110,19 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
 
         <section className="mt-6 rounded-3xl border p-6" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
           <h2 className="text-xl font-semibold text-white">Executive summary</h2>
+          {report.snapshot.partialData ? (
+            <div
+              className="mt-4 rounded-2xl border px-4 py-3 text-sm leading-6"
+              style={{
+                borderColor: "rgba(250,204,21,0.28)",
+                background: "rgba(113,63,18,0.18)",
+                color: "#fef3c7",
+              }}
+            >
+              Coverage is partial for this report. The findings below are limited to the providers that were
+              successfully captured.
+            </div>
+          ) : null}
           {presented.executiveSummary.length > 0 ? (
             <ol className="mt-4 space-y-3 text-sm leading-7" style={{ color: "var(--foreground-secondary)" }}>
               {presented.executiveSummary.map((item) => (
@@ -162,7 +163,7 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
                   style={{ borderColor: "var(--border)", background: "rgba(255,255,255,0.02)" }}
                 >
                   <p className="font-data text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--foreground-muted)" }}>
-                    Claim {claim.claimNumber} · {claim.section} · {claim.claimLabel} · {claim.confidenceLabel}
+                    Finding {claim.claimNumber} · {claim.section} · {claim.claimLabel} · {claim.confidenceLabel}
                   </p>
                   <h3 className="mt-2 text-base font-semibold text-white">{claim.statement}</h3>
                   <p className="mt-2 text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
@@ -194,17 +195,10 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
             <div className="rounded-3xl border p-6" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
               <h2 className="text-xl font-semibold text-white">Report basis</h2>
               <div className="mt-4 space-y-4 text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
-                <p>Providers reviewed: {report.snapshot.providersQueried.join(", ") || "None"}</p>
+                <p>Providers reviewed: {providersQueried}</p>
                 <p>Snapshot window start: {formatDate(report.snapshot.snapshotWindowStart)}</p>
                 <p>Snapshot window end: {formatDate(report.snapshot.snapshotWindowEnd)}</p>
-                <p>
-                  Coverage:{" "}
-                  {report.snapshot.partialData
-                    ? "Partial provider coverage"
-                    : report.snapshot.zeroData
-                      ? "No active roles observed"
-                      : "Captured provider coverage"}
-                </p>
+                <p>Coverage: {coverageLabel}</p>
               </div>
             </div>
 
@@ -267,7 +261,7 @@ export default async function ReportVersionPage({ params }: ReportPageProps) {
                         )}
                       </td>
                       <td className="py-3 pr-4" style={{ color: "var(--foreground-secondary)" }}>
-                        {evidence.provider}
+                        {presentProviderName(evidence.provider)}
                       </td>
                       <td className="py-3 pr-4" style={{ color: "var(--foreground-secondary)" }}>
                         {evidence.department ?? "Unknown"}

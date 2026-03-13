@@ -1,4 +1,8 @@
-import { presentReport } from "@/lib/reports/presentation";
+import {
+  presentDataMode,
+  presentProviderName,
+  presentReport,
+} from "@/lib/reports/presentation";
 import { type ReportJson } from "@/lib/reports/reportJson";
 
 function escapeHtml(value: string): string {
@@ -38,13 +42,15 @@ export function renderReportHtml(report: ReportJson): string {
   const presented = presentReport(report);
   const providerList =
     report.snapshot.providersSucceeded.length > 0
-      ? report.snapshot.providersSucceeded.join(", ")
+      ? report.snapshot.providersSucceeded.map((provider) => presentProviderName(provider)).join(", ")
       : "None";
-  const coverage = report.snapshot.zeroData
-    ? "No active roles observed"
-    : report.snapshot.partialData
-      ? "Partial provider coverage"
-      : "Captured provider coverage";
+  const coverage = presentDataMode(
+    report.snapshot.zeroData
+      ? "zero-data"
+      : report.snapshot.partialData
+        ? "partial-data"
+        : "completed"
+  );
 
   const executiveSummaryHtml =
     presented.executiveSummary.length > 0
@@ -61,7 +67,7 @@ export function renderReportHtml(report: ReportJson): string {
           presented.claims.map(
             (claim) => `
               <article class="card">
-                <p class="eyebrow">Claim ${claim.claimNumber} · ${escapeHtml(claim.section)} · ${escapeHtml(claim.claimLabel)} · ${escapeHtml(claim.confidenceLabel)}</p>
+                <p class="eyebrow">Finding ${claim.claimNumber} · ${escapeHtml(claim.section)} · ${escapeHtml(claim.claimLabel)} · ${escapeHtml(claim.confidenceLabel)}</p>
                 <h3>${escapeHtml(claim.statement)}</h3>
                 <p>${escapeHtml(claim.whyItMatters)}</p>
                 <p class="muted">Supporting evidence${renderCitationRefs(claim.evidenceNumbers)}</p>
@@ -83,7 +89,7 @@ export function renderReportHtml(report: ReportJson): string {
                     ? `<a href="${escapeHtml(evidence.jobUrl)}">${escapeHtml(evidence.jobTitle)}</a>`
                     : escapeHtml(evidence.jobTitle)
                 }</td>
-                <td>${escapeHtml(evidence.provider)}</td>
+                <td>${escapeHtml(presentProviderName(evidence.provider))}</td>
                 <td>${escapeHtml(evidence.department ?? "Unknown")}</td>
                 <td>${escapeHtml(evidence.location ?? "Unknown")}</td>
                 <td>${escapeHtml(`${formatDate(evidence.sourcePostedAt)} / ${formatDate(evidence.sourceUpdatedAt)}`)}</td>
@@ -162,6 +168,13 @@ export function renderReportHtml(report: ReportJson): string {
       }
       .card { padding: 16px; margin-top: 16px; }
       .muted, .empty { color: var(--muted); }
+      .callout {
+        margin: 0 0 16px;
+        padding: 12px 14px;
+        border: 1px solid #d7c089;
+        border-radius: 12px;
+        background: #fff7df;
+      }
       .citation {
         color: var(--accent);
         font-weight: 600;
@@ -188,8 +201,11 @@ export function renderReportHtml(report: ReportJson): string {
   <body>
     <main>
       <header>
-        <p class="eyebrow">Published Report</p>
+        <p class="eyebrow">Published Hiring Report</p>
         <h1>${escapeHtml(report.company.displayName)}</h1>
+        <p class="muted">
+          Published from a stored hiring snapshot for this report date. The report remains fixed after publication.
+        </p>
         <div class="grid">
           <p>Published at: ${escapeHtml(formatDate(report.publishedAt))}</p>
           <p>Generated at: ${escapeHtml(formatDate(report.generatedAt))}</p>
@@ -200,6 +216,11 @@ export function renderReportHtml(report: ReportJson): string {
 
       <section>
         <h2>Executive Summary</h2>
+        ${
+          report.snapshot.partialData
+            ? `<p class="callout">Coverage is partial for this report. Findings are limited to the providers captured successfully.</p>`
+            : ""
+        }
         ${executiveSummaryHtml}
       </section>
 

@@ -1,8 +1,11 @@
 import Link from "next/link";
+import { DeploymentReadinessNotice } from "@/components/system/DeploymentReadinessNotice";
 import { getAuthSession } from "@/lib/auth/session";
+import { getDeploymentReadinessSummary } from "@/lib/deployment/readiness";
 import { TruthConsole } from "@/components/truth/TruthConsole";
 
 export default async function Home() {
+  const readiness = await getDeploymentReadinessSummary();
   const session = await getAuthSession();
 
   if (!session?.user?.email || !session.tenantId || !session.role) {
@@ -21,6 +24,7 @@ export default async function Home() {
           <p className="mt-4 max-w-2xl text-base leading-7" style={{ color: "var(--foreground-secondary)" }}>
             Sign in to create a report, follow its progress, and open the published web and PDF versions.
           </p>
+          <DeploymentReadinessNotice readiness={readiness} />
           <div className="mt-8">
             <Link
               className="inline-flex items-center rounded-full px-5 py-3 text-sm font-medium text-white"
@@ -36,13 +40,20 @@ export default async function Home() {
   }
 
   return (
-    <TruthConsole
-      session={{
-        name: session.user.name,
-        email: session.user.email,
-        role: session.role,
-        tenantId: session.tenantId,
-      }}
-    />
+    <>
+      <div className="px-6">
+        <div className="mx-auto max-w-7xl">
+          <DeploymentReadinessNotice readiness={readiness} />
+        </div>
+      </div>
+      <TruthConsole
+        session={{
+          name: session.user.name,
+          email: session.user.email,
+          role: session.role,
+          tenantId: session.tenantId,
+        }}
+      />
+    </>
   );
 }

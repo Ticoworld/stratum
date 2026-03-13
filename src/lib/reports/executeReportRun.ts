@@ -14,7 +14,7 @@ import { fetchProviderSnapshotForResolvedCompany } from "@/lib/providers/ats/fet
 import { resolveCompany } from "@/lib/providers/ats/resolveCompany";
 import { buildRawSnapshotObjectKey } from "@/lib/storage/objectKeys";
 import { gzipJson, sha256Hex } from "@/lib/storage/checksums";
-import { isS3Configured, putObject, s3Bucket } from "@/lib/storage/s3";
+import { getS3Bucket, putObject } from "@/lib/storage/s3";
 import { publishReportVersion } from "@/lib/reports/publishReportVersion";
 import { analyzeFrozenData } from "@/worker/steps/analyzeFrozenData";
 import { renderArtifacts } from "@/worker/steps/renderArtifacts";
@@ -24,11 +24,15 @@ async function updateRun(
   lockToken: string | null,
   values: Partial<typeof reportRuns.$inferInsert>
 ) {
+  const nextValues = {
+    ...values,
+    ...(lockToken && values.lockedAt === undefined ? { lockedAt: new Date() } : {}),
+  };
   const whereClause = lockToken
     ? and(eq(reportRuns.id, reportRunId), eq(reportRuns.lockToken, lockToken))
     : eq(reportRuns.id, reportRunId);
 
-  await db.update(reportRuns).set(values).where(whereClause);
+  await db.update(reportRuns).set(nextValues).where(whereClause);
 }
 
 async function upsertProviderAccount(params: {
@@ -89,6 +93,48 @@ async function markRunFailed(
   });
 }
 
+function getRunFailureDetails(error: unknown) {
+  const message = error instanceof Error ? error.message : "Unknown report-run execution failure.";
+
+  if (message.includes("did not respond cleanly after 3 attempts")) {
+    return {
+      failureCode: "analysis_model_transient_failure",
+      failureMessage: message,
+    };
+  }
+
+  if (message.startsWith("The analysis model returned")) {
+    return {
+      failureCode: "analysis_model_failed",
+      failureMessage: message,
+    };
+  }
+
+  if (
+    message.startsWith("Structured analysis") ||
+    message.startsWith("Executive summary") ||
+    message.includes("unsupported claim") ||
+    message.includes("missing required caveats")
+  ) {
+    return {
+      failureCode: "analysis_validation_failed",
+      failureMessage: message,
+    };
+  }
+
+  if (message.toLowerCase().includes("pdf")) {
+    return {
+      failureCode: "artifact_pdf_failed",
+      failureMessage: message,
+    };
+  }
+
+  return {
+    failureCode: "report_run_execution_failed",
+    failureMessage: message,
+  };
+}
+
 export interface ExecuteReportRunResult {
   reportRunId: string;
   companyId: string;
@@ -108,13 +154,17 @@ export async function executeReportRun(
     throw new Error(`Report run ${claimedRun.id} does not have a lock token.`);
   }
 
-  if (!isS3Configured() || !s3Bucket) {
+  try {
+    getS3Bucket();
+  } catch (error) {
     await markRunFailed(
       claimedRun,
       "s3_not_configured",
-      "S3 is not configured. Phase 3 snapshot execution requires AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and STRATUM_S3_BUCKET."
+      error instanceof Error
+        ? error.message
+        : "Object storage is not configured for report-run execution."
     );
-    throw new Error("S3 is not configured for Phase 3 snapshot execution.");
+    throw error;
   }
 
   const [company] = await db
@@ -313,8 +363,8 @@ export async function executeReportRun(
       reportVersionId: published.reportVersionId,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown report-run execution failure.";
-    await markRunFailed(claimedRun, "report_run_execution_failed", message);
+    const { failureCode, failureMessage } = getRunFailureDetails(error);
+    await markRunFailed(claimedRun, failureCode, failureMessage);
     throw error;
   }
 }

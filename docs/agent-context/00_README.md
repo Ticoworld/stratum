@@ -16,9 +16,11 @@ Read every file in this folder before making design or implementation decisions.
 - `08_CANONICAL_DECISIONS.md`: approved decision register.
 - `09_NEXT_CODEX_START_PROMPT.md`: startup prompt for a new Codex session.
 - `10_MACHINE_SUMMARY.json`: machine-readable summary for automation or fast session bootstrapping.
+- `11_DEPLOYMENT_READINESS_CHECKLIST.md`: final go/no-go deployment checklist for production rollout.
 
 ## Current repo status
 - Phases 1 through 8 are complete.
+- Phase C deployment readiness and rollout hardening is complete.
 - Central env handling exists in `src/lib/env.ts`.
 - PostgreSQL + Drizzle foundation exists.
 - Minimal auth foundation exists with Auth.js + Google OIDC.
@@ -30,6 +32,9 @@ Read every file in this folder before making design or implementation decisions.
 - A published immutable report read path exists.
 - HTML and PDF artifact generation and protected retrieval now exist.
 - A real report-run status page now exists.
+- Deployment env handling is now split by runtime role and shared infrastructure contract.
+- The worker writes a heartbeat to Postgres so the web app can honestly gate report creation.
+- A minimal deployment readiness surface exists at `/api/deployment/readiness` and on the product UI.
 - The legacy compatibility shim and cache-backed demo orchestration path have been removed.
 - The legacy MCP entrypoint tied to the demo path has been removed from the repo.
-- No next phase is approved in this handoff pack.
+- The repo now contains an explicit production rollout gate and deployment checklist.

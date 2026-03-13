@@ -1,18 +1,31 @@
 "use client";
 
+import {
+  describeArtifactStatus,
+  type ReportArtifactStatus,
+} from "@/lib/artifacts/status";
+import { presentDataMode } from "@/lib/reports/presentation";
+
 interface SystemStatusBarProps {
   reportStatus?: string | null;
   dataMode?: string | null;
-  htmlAvailable?: boolean | null;
-  pdfAvailable?: boolean | null;
+  htmlStatus?: ReportArtifactStatus | null;
+  pdfStatus?: ReportArtifactStatus | null;
   inline?: boolean;
+}
+
+function formatArtifactStatus(status: ReportArtifactStatus | null | undefined) {
+  if (!status) {
+    return "Pending";
+  }
+  return describeArtifactStatus(status);
 }
 
 export function SystemStatusBar({
   reportStatus = null,
   dataMode = null,
-  htmlAvailable = null,
-  pdfAvailable = null,
+  htmlStatus = null,
+  pdfStatus = null,
   inline = false,
 }: SystemStatusBarProps) {
   return (
@@ -26,10 +39,10 @@ export function SystemStatusBar({
         color: "var(--foreground-secondary)",
       }}
     >
-      <span>Status: {reportStatus ?? "Idle"}</span>
-      <span>Coverage: {dataMode ?? "Pending"}</span>
-      <span>Web report: {htmlAvailable == null ? "Pending" : htmlAvailable ? "Available" : "In progress"}</span>
-      <span>PDF: {pdfAvailable == null ? "Pending" : pdfAvailable ? "Available" : "In progress"}</span>
+      <span>Report status: {reportStatus ?? "Idle"}</span>
+      <span>Coverage: {presentDataMode(dataMode)}</span>
+      <span>Web report: {formatArtifactStatus(htmlStatus)}</span>
+      <span>PDF: {formatArtifactStatus(pdfStatus)}</span>
     </div>
   );
 }

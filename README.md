@@ -25,7 +25,58 @@ The live ATS-to-LLM demo path has been retired. The product-facing system now cr
 - Playwright for PDF generation
 - Gemini via `@google/genai` for structured analysis
 
-## Setup
+## Runtime roles
+
+Stratum is one repo with two production runtime roles:
+
+- Web runtime: serves the Next.js UI, auth, report pages, artifact retrieval, and readiness status.
+- Worker runtime: claims queued `report_runs`, captures snapshots, runs analysis, publishes reports, and renders artifacts.
+- Shared infrastructure: PostgreSQL and private S3-compatible object storage.
+
+The web app can be deployed independently, and the worker can be deployed independently. Full production behavior requires both.
+
+## Environment contract
+
+### Shared required
+
+These back shared infrastructure. Missing values block full production behavior.
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/stratum
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=replace_me
+AWS_SECRET_ACCESS_KEY=replace_me
+STRATUM_S3_BUCKET=replace_me
+```
+
+### Web-only required
+
+These must be present on the web app runtime.
+
+```env
+AUTH_SECRET=replace_me
+AUTH_GOOGLE_ID=replace_me
+AUTH_GOOGLE_SECRET=replace_me
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+```
+
+### Worker-only required
+
+These must be present on the worker runtime.
+
+```env
+GEMINI_API_KEY=replace_me
+```
+
+### Optional / local-only
+
+```env
+STRATUM_S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+STRATUM_ANALYSIS_RETRY_PROOF_FAILURES=0
+```
+
+## Local setup
 
 1. Install dependencies.
 
@@ -39,43 +90,79 @@ npm install
 cp .env.example .env.local
 ```
 
-Required foundation variables:
-
-```env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/stratum
-AUTH_SECRET=replace_me
-AUTH_GOOGLE_ID=replace_me
-AUTH_GOOGLE_SECRET=replace_me
-```
-
-Required when the full report pipeline is exercised:
-
-```env
-GEMINI_API_KEY=your_key
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
-STRATUM_S3_BUCKET=...
-```
-
-3. Run the app.
+3. Start the web runtime.
 
 ```bash
-npm run dev
+npm run dev:web
 ```
 
-4. Run the worker.
+4. Validate the worker env contract, then start the worker.
 
 ```bash
+npm run worker:check-env
 npm run worker:report-runs -- --once
 ```
 
-5. Build for production.
+5. Build the web app.
 
 ```bash
 npm run build
-npm run start
+npm run start:web
 ```
+
+## Production deployment
+
+### Vercel web app
+
+Set these on Vercel:
+
+- Shared infrastructure: `DATABASE_URL`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `STRATUM_S3_BUCKET`
+- Web-only: `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `NEXT_PUBLIC_SITE_URL`
+- Optional if needed: `STRATUM_S3_ENDPOINT` or `R2_ENDPOINT`
+
+Responsibilities owned by the web runtime:
+
+- Auth and tenant-scoped access control
+- Report creation API gating
+- Stored report pages
+- Protected HTML/PDF retrieval
+- `/api/deployment/readiness`
+
+### Worker host
+
+Set these on the worker host:
+
+- Shared infrastructure: `DATABASE_URL`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `STRATUM_S3_BUCKET`
+- Worker-only: `GEMINI_API_KEY`
+- Optional if needed: `STRATUM_S3_ENDPOINT` or `R2_ENDPOINT`
+
+Responsibilities owned by the worker runtime:
+
+- Row claiming from `report_runs`
+- ATS snapshot capture
+- Structured analysis
+- Publication
+- HTML/PDF artifact generation
+- Worker heartbeat writes to `worker_heartbeats`
+
+### Shared secrets
+
+These must match across web and worker:
+
+- `DATABASE_URL`
+- `AWS_REGION`
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `STRATUM_S3_BUCKET`
+- `STRATUM_S3_ENDPOINT` or `R2_ENDPOINT` if used
+
+## Operator clarity
+
+- Web app up: load `/` or call `/api/deployment/readiness`
+- Worker dependency configured: `/api/deployment/readiness` reports whether a recent `report-runs` heartbeat exists
+- Report creation will work: `/api/deployment/readiness` reports `reportCreation.ready`; if false, the web API returns `503` and explains why
+
+If the web app is up but the worker heartbeat is missing or stale, Stratum is only partially deployed and report creation is intentionally blocked.
 
 ## Main paths
 
@@ -84,6 +171,7 @@ npm run start
 - `/reports/[reportVersionId]` shows stored published reports
 - `/api/report-runs/*` manages report-run writes and reads
 - `/api/reports/*` serves stored reports and protected artifacts
+- `/api/deployment/readiness` returns minimal deployment readiness JSON
 
 ## Project structure
 

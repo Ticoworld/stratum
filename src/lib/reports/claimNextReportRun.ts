@@ -20,6 +20,32 @@ export interface ClaimedReportRun {
   createdAt: Date;
 }
 
+const STALE_LOCK_INTERVAL = "15 minutes";
+const RECLAIMABLE_RUN_STATUSES = [
+  "claimed",
+  "resolving",
+  "fetching",
+  "normalizing",
+  "analyzing",
+  "validating",
+  "publishing",
+] as const;
+
+function buildClaimableRunWhereClause() {
+  const reclaimableStatuses = RECLAIMABLE_RUN_STATUSES.map((status) => `'${status}'`).join(", ");
+
+  return `
+    (
+      status = 'queued'
+      or (
+        status in (${reclaimableStatuses})
+        and locked_at is not null
+        and locked_at < now() - interval '${STALE_LOCK_INTERVAL}'
+      )
+    )
+  `;
+}
+
 function mapClaimedRun(row: Record<string, unknown>): ClaimedReportRun {
   return {
     id: String(row.id),
@@ -65,8 +91,10 @@ export async function claimNextReportRun(): Promise<ClaimedReportRun | null> {
         failure_message as "failureMessage",
         created_at as "createdAt"
       from report_runs
-      where status = 'queued'
-      order by created_at asc
+      where ${buildClaimableRunWhereClause()}
+      order by
+        case when status = 'queued' then 0 else 1 end asc,
+        created_at asc
       limit 1
       for update skip locked
     `);
@@ -80,9 +108,11 @@ export async function claimNextReportRun(): Promise<ClaimedReportRun | null> {
       update report_runs
       set
         status = 'claimed',
+        attempt_count = case when status = 'queued' then attempt_count else attempt_count + 1 end,
         lock_token = $1::uuid,
         locked_at = $2::timestamptz,
         started_at = coalesce(started_at, $2::timestamptz),
+        completed_at = null,
         failure_code = null,
         failure_message = null
       where id = $3::uuid
@@ -138,7 +168,8 @@ export async function claimReportRunById(reportRunId: string): Promise<ClaimedRe
         failure_message as "failureMessage",
         created_at as "createdAt"
       from report_runs
-      where id = $1::uuid and status = 'queued'
+      where id = $1::uuid
+        and ${buildClaimableRunWhereClause()}
       limit 1
       for update skip locked
     `,
@@ -154,9 +185,11 @@ export async function claimReportRunById(reportRunId: string): Promise<ClaimedRe
       update report_runs
       set
         status = 'claimed',
+        attempt_count = case when status = 'queued' then attempt_count else attempt_count + 1 end,
         lock_token = $1::uuid,
         locked_at = $2::timestamptz,
         started_at = coalesce(started_at, $2::timestamptz),
+        completed_at = null,
         failure_code = null,
         failure_message = null
       where id = $3::uuid

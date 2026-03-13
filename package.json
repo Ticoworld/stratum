@@ -4,13 +4,16 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:web": "next dev",
     "build": "next build",
     "start": "next start",
+    "start:web": "next start",
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "phase2:capture": "npx tsx scripts/test-new-boards.ts",
-    "worker:report-runs": "npx tsx src/worker/start.ts"
+    "worker:report-runs": "npx tsx src/worker/start.ts",
+    "worker:check-env": "npx tsx src/worker/start.ts --check-env"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1007.0",

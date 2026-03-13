@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { type FormEvent, useEffect, useEffectEvent, useState } from "react";
+import { type FormEvent, useEffect, useEffectEvent, useRef, useState } from "react";
 import {
   ArrowRight,
   Clock3,
@@ -15,6 +15,17 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { SystemStatusBar } from "@/components/ui/SystemStatusBar";
+import {
+  describeArtifactStatus,
+  type ReportArtifactStatus,
+} from "@/lib/artifacts/status";
+import {
+  presentCompanyResolution,
+  presentDataMode,
+  presentProviderName,
+  presentRunStatus,
+  presentSnapshotStatus,
+} from "@/lib/reports/presentation";
 
 type SessionSummary = {
   name?: string | null;
@@ -25,6 +36,7 @@ type SessionSummary = {
 
 type ReportRunStatus =
   | "queued"
+  | "claimed"
   | "resolving"
   | "fetching"
   | "normalizing"
@@ -37,12 +49,11 @@ type ReportRunStatus =
   | "failed"
   | "needs_resolution";
 
-type ReportRunResponse = {
+export type ReportRunResponse = {
   id: string;
   companyId: string;
   requestedCompanyName: string;
   companyDisplayName: string;
-  companyCanonicalName: string;
   companyResolutionStatus: string;
   status: ReportRunStatus;
   attemptCount: number;
@@ -54,9 +65,7 @@ type ReportRunResponse = {
   failureMessage: string | null;
   normalizedJobCount: number;
   sourceSnapshots: Array<{
-    id: string;
     provider: string;
-    providerToken: string;
     status: string;
     httpStatus: number | null;
     fetchedAt: string | null;
@@ -65,12 +74,10 @@ type ReportRunResponse = {
     errorMessage: string | null;
   }>;
   normalizedJobs: Array<{
-    id: string;
     provider: string;
     title: string;
     department: string | null;
     location: string | null;
-    providerJobId: string | null;
     jobUrl: string | null;
     updatedAt: string | null;
   }>;
@@ -85,15 +92,16 @@ type ReportRunResponse = {
       html: boolean;
       pdf: boolean;
     };
+    artifactStatus: {
+      html: ReportArtifactStatus;
+      pdf: ReportArtifactStatus;
+    };
   } | null;
 };
 
 type ReportListItem = {
   reportVersionId: string;
-  reportRunId: string;
-  companyId: string;
   companyDisplayName: string;
-  companyCanonicalName: string;
   status: string;
   versionNumber: number;
   templateVersion: string;
@@ -105,11 +113,16 @@ type ReportListItem = {
     html: boolean;
     pdf: boolean;
   };
+  artifactStatus: {
+    html: ReportArtifactStatus;
+    pdf: ReportArtifactStatus;
+  };
 };
 
 type TruthConsoleProps = {
   session: SessionSummary;
   initialReportRunId?: string;
+  initialReportRun?: ReportRunResponse | null;
   statusOnly?: boolean;
 };
 
@@ -120,21 +133,6 @@ const TERMINAL_RUN_STATUSES = new Set<ReportRunStatus>([
   "failed",
   "needs_resolution",
 ]);
-
-const STATUS_LABELS: Record<ReportRunStatus, string> = {
-  queued: "Queued",
-  resolving: "Resolving company",
-  fetching: "Fetching ATS snapshot",
-  normalizing: "Normalizing jobs",
-  analyzing: "Analyzing frozen input",
-  validating: "Validating citations",
-  publishing: "Publishing report",
-  completed: "Completed",
-  completed_partial: "Partial-data",
-  completed_zero_data: "Zero-data",
-  failed: "Failed",
-  needs_resolution: "Needs resolution",
-};
 
 function formatDate(value: string | null) {
   if (!value) {
@@ -153,18 +151,18 @@ function formatRelativeStatus(run: ReportRunResponse | null) {
   }
 
   if (run.status === "completed_partial") {
-    return "Completed with partial provider coverage";
+    return "Published with partial provider coverage";
   }
 
   if (run.status === "completed_zero_data") {
-    return "Completed with zero normalized jobs";
+    return "Published with no active roles observed";
   }
 
   if (run.status === "needs_resolution") {
-    return "No supported provider snapshot could be captured";
+    return "No supported hiring board could be confirmed automatically";
   }
 
-  return STATUS_LABELS[run.status] ?? run.status;
+  return presentRunStatus(run.status);
 }
 
 function getStatusTone(status: ReportRunStatus) {
@@ -213,17 +211,19 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
 export function TruthConsole({
   session,
   initialReportRunId,
+  initialReportRun = null,
   statusOnly = false,
 }: TruthConsoleProps) {
   const [companyName, setCompanyName] = useState("");
   const [websiteDomain, setWebsiteDomain] = useState("");
   const [createLoading, setCreateLoading] = useState(false);
-  const [runLoading, setRunLoading] = useState(Boolean(initialReportRunId));
+  const [runLoading, setRunLoading] = useState(Boolean(initialReportRunId && !initialReportRun));
   const [reportsLoading, setReportsLoading] = useState(!statusOnly);
   const [activeRunId, setActiveRunId] = useState<string | null>(initialReportRunId ?? null);
-  const [activeRun, setActiveRun] = useState<ReportRunResponse | null>(null);
+  const [activeRun, setActiveRun] = useState<ReportRunResponse | null>(initialReportRun);
   const [recentReports, setRecentReports] = useState<ReportListItem[]>([]);
   const [requestError, setRequestError] = useState<string | null>(null);
+  const runRequestInFlightRef = useRef(false);
   const [ensurePdfState, setEnsurePdfState] = useState<{
     reportVersionId: string;
     loading: boolean;
@@ -252,10 +252,19 @@ export function TruthConsole({
     await refreshReports();
   });
 
+  const refreshRunEvent = useEffectEvent(async (runId: string, preserveLoading = false) => {
+    return refreshRun(runId, preserveLoading);
+  });
+
   async function refreshRun(runId: string, preserveLoading = false) {
+    if (runRequestInFlightRef.current) {
+      return activeRun;
+    }
+
     if (!preserveLoading) {
       setRunLoading(true);
     }
+    runRequestInFlightRef.current = true;
 
     try {
       const response = await fetch(`/api/report-runs/${runId}`, { cache: "no-store" });
@@ -267,6 +276,7 @@ export function TruthConsole({
       setRequestError(error instanceof Error ? error.message : "Failed to load report run.");
       return null;
     } finally {
+      runRequestInFlightRef.current = false;
       if (!preserveLoading) {
         setRunLoading(false);
       }
@@ -304,7 +314,6 @@ export function TruthConsole({
 
       setActiveRunId(payload.reportRunId);
       await refreshRun(payload.reportRunId);
-      await refreshReports();
     } catch (error) {
       setRequestError(error instanceof Error ? error.message : "Failed to create report run.");
     } finally {
@@ -354,20 +363,46 @@ export function TruthConsole({
       return;
     }
 
-    void refreshRun(activeRunId);
-  }, [activeRunId]);
+    if (activeRun?.id === activeRunId) {
+      return;
+    }
+
+    void refreshRunEvent(activeRunId);
+  }, [activeRun, activeRunId]);
 
   useEffect(() => {
     if (!activeRunId || !activeRun || TERMINAL_RUN_STATUSES.has(activeRun.status)) {
       return;
     }
 
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+      return;
+    }
+
+    const intervalMs =
+      activeRun.status === "queued" || activeRun.status === "claimed" ? 15000 : 10000;
+
     const interval = window.setInterval(() => {
-      void refreshRun(activeRunId, true);
-    }, 4000);
+      void refreshRunEvent(activeRunId, true);
+    }, intervalMs);
 
     return () => window.clearInterval(interval);
   }, [activeRun, activeRunId]);
+
+  useEffect(() => {
+    if (!activeRunId) {
+      return;
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshRunEvent(activeRunId, true);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [activeRunId]);
 
   useEffect(() => {
     if (!activeRun || !TERMINAL_RUN_STATUSES.has(activeRun.status)) {
@@ -571,7 +606,7 @@ export function TruthConsole({
                   <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                     <div>
                       <p className="font-data text-[11px] uppercase tracking-[0.2em]" style={{ color: activeTone?.color }}>
-                        {STATUS_LABELS[activeRun.status]}
+                        {presentRunStatus(activeRun.status)}
                       </p>
                       <p className="mt-2 text-lg font-semibold text-white">{formatRelativeStatus(activeRun)}</p>
                       <p className="mt-2 text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
@@ -582,7 +617,7 @@ export function TruthConsole({
                     <div className="grid gap-2 text-sm md:text-right" style={{ color: "var(--foreground-secondary)" }}>
                       <p>Attempts: {activeRun.attemptCount}</p>
                       <p>Normalized jobs: {activeRun.normalizedJobCount}</p>
-                      <p>Data mode: {activeDataMode ?? "in-progress"}</p>
+                      <p>Coverage: {presentDataMode(activeDataMode)}</p>
                     </div>
                   </div>
 
@@ -618,11 +653,11 @@ export function TruthConsole({
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-3">
-                  {[
-                    { label: "Started", value: formatDate(activeRun.startedAt) },
-                    { label: "Completed", value: formatDate(activeRun.completedAt) },
-                    { label: "Company resolution", value: activeRun.companyResolutionStatus },
-                  ].map((item) => (
+                    {[
+                      { label: "Started", value: formatDate(activeRun.startedAt) },
+                      { label: "Completed", value: formatDate(activeRun.completedAt) },
+                      { label: "Company status", value: presentCompanyResolution(activeRun.companyResolutionStatus) },
+                    ].map((item) => (
                     <div
                       key={item.label}
                       className="rounded-2xl border p-4"
@@ -644,7 +679,7 @@ export function TruthConsole({
                     <div>
                       <h3 className="text-base font-semibold text-white">Artifacts</h3>
                       <p className="mt-1 text-sm" style={{ color: "var(--foreground-secondary)" }}>
-                        Artifact availability reflects the published report version.
+                        Availability reflects the stored published artifact state.
                       </p>
                     </div>
                     {activeRun.reportVersion ? (
@@ -658,33 +693,40 @@ export function TruthConsole({
                     <div className="mt-4 space-y-4">
                       <div className="grid gap-3 md:grid-cols-2">
                         <ArtifactCard
-                          available={activeRun.reportVersion.artifactAvailability.html}
+                          status={activeRun.reportVersion.artifactStatus.html}
                           href={`/api/reports/${activeRun.reportVersion.id}/artifacts/html`}
                           label="Web report"
                         />
                         <ArtifactCard
-                          available={activeRun.reportVersion.artifactAvailability.pdf}
+                          status={activeRun.reportVersion.artifactStatus.pdf}
                           href={`/api/reports/${activeRun.reportVersion.id}/artifacts/pdf`}
                           label="PDF report"
                         />
                       </div>
 
-                      {!activeRun.reportVersion.artifactAvailability.pdf ? (
+                      {activeRun.reportVersion.artifactStatus.pdf !== "available" ? (
                         <div className="flex flex-wrap items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() => void handleEnsurePdf(activeRun.reportVersion!.id)}
-                            disabled={ensurePdfState?.loading && ensurePdfState.reportVersionId === activeRun.reportVersion.id}
-                            className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm text-white disabled:opacity-50"
-                            style={{ borderColor: "var(--border)" }}
-                          >
-                            {ensurePdfState?.loading && ensurePdfState.reportVersionId === activeRun.reportVersion.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <FileDown className="h-4 w-4" />
-                            )}
-                            Generate PDF
-                          </button>
+                          {activeRun.reportVersion.artifactStatus.pdf === "queued" ||
+                          activeRun.reportVersion.artifactStatus.pdf === "rendering" ? (
+                            <p className="text-sm" style={{ color: "var(--foreground-secondary)" }}>
+                              PDF is being prepared automatically.
+                            </p>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => void handleEnsurePdf(activeRun.reportVersion!.id)}
+                              disabled={ensurePdfState?.loading && ensurePdfState.reportVersionId === activeRun.reportVersion.id}
+                              className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm text-white disabled:opacity-50"
+                              style={{ borderColor: "var(--border)" }}
+                            >
+                              {ensurePdfState?.loading && ensurePdfState.reportVersionId === activeRun.reportVersion.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <FileDown className="h-4 w-4" />
+                              )}
+                              {activeRun.reportVersion.artifactStatus.pdf === "failed" ? "Retry PDF generation" : "Generate PDF now"}
+                            </button>
+                          )}
                           {ensurePdfState?.reportVersionId === activeRun.reportVersion.id && ensurePdfState.error ? (
                             <p className="text-sm" style={{ color: "#fecaca" }}>
                               {ensurePdfState.error}
@@ -709,14 +751,14 @@ export function TruthConsole({
                     <div className="mt-4 space-y-3">
                       {activeRun.sourceSnapshots.map((snapshot) => (
                         <div
-                          key={`${snapshot.provider}-${snapshot.providerToken}`}
+                          key={`${snapshot.provider}-${snapshot.fetchedAt ?? snapshot.status}`}
                           className="rounded-2xl border px-4 py-3 text-sm"
                           style={{ borderColor: "var(--border)", background: "rgba(0,0,0,0.14)" }}
                         >
                           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                            <p className="font-medium text-white">{snapshot.provider}</p>
+                            <p className="font-medium text-white">{presentProviderName(snapshot.provider)}</p>
                             <p style={{ color: "var(--foreground-secondary)" }}>
-                              {snapshot.status} · {snapshot.recordCount} records
+                              {presentSnapshotStatus(snapshot.status)} · {snapshot.recordCount} roles
                             </p>
                           </div>
                           <p className="mt-2 leading-6" style={{ color: "var(--foreground-secondary)" }}>
@@ -743,13 +785,13 @@ export function TruthConsole({
                     <div className="mt-4 space-y-3">
                       {activeRun.normalizedJobs.slice(0, 5).map((job) => (
                         <div
-                          key={`${job.provider}-${job.title}-${job.providerJobId ?? job.updatedAt ?? "job"}`}
+                          key={`${job.provider}-${job.title}-${job.updatedAt ?? "job"}`}
                           className="rounded-2xl border px-4 py-3 text-sm"
                           style={{ borderColor: "var(--border)", background: "rgba(0,0,0,0.14)" }}
                         >
                           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                             <p className="font-medium text-white">{job.title}</p>
-                            <p style={{ color: "var(--foreground-secondary)" }}>{job.provider}</p>
+                            <p style={{ color: "var(--foreground-secondary)" }}>{presentProviderName(job.provider)}</p>
                           </div>
                           <p className="mt-2 leading-6" style={{ color: "var(--foreground-secondary)" }}>
                             {(job.department ?? "Unknown department") + " · " + (job.location ?? "Unknown location")}
@@ -815,12 +857,11 @@ export function TruthConsole({
                               color: report.dataMode === "completed" ? "#bfdbfe" : "var(--foreground-secondary)",
                             }}
                           >
-                            {report.dataMode}
+                            {presentDataMode(report.dataMode)}
                           </span>
                         </td>
                         <td className="py-4 pr-6" style={{ color: "var(--foreground-secondary)" }}>
-                          HTML {report.artifactAvailability.html ? "available" : "missing"} · PDF{" "}
-                          {report.artifactAvailability.pdf ? "available" : "missing"}
+                          Web report {describeArtifactStatus(report.artifactStatus.html)} · PDF {describeArtifactStatus(report.artifactStatus.pdf)}
                         </td>
                         <td className="py-4">
                           <div className="flex flex-wrap gap-3">
@@ -864,10 +905,10 @@ export function TruthConsole({
         ) : null}
 
         <SystemStatusBar
-          reportStatus={activeRun ? STATUS_LABELS[activeRun.status] : null}
+          reportStatus={activeRun ? presentRunStatus(activeRun.status) : null}
           dataMode={activeDataMode}
-          htmlAvailable={activeRun?.reportVersion?.artifactAvailability.html ?? null}
-          pdfAvailable={activeRun?.reportVersion?.artifactAvailability.pdf ?? null}
+          htmlStatus={activeRun?.reportVersion?.artifactStatus.html ?? null}
+          pdfStatus={activeRun?.reportVersion?.artifactStatus.pdf ?? null}
           inline={false}
         />
       </main>
@@ -876,14 +917,17 @@ export function TruthConsole({
 }
 
 function ArtifactCard({
-  available,
+  status,
   href,
   label,
 }: {
-  available: boolean;
+  status: ReportArtifactStatus;
   href: string;
   label: string;
 }) {
+  const available = status === "available";
+  const description = describeArtifactStatus(status);
+
   return (
     <div
       className="rounded-2xl border p-4"
@@ -893,7 +937,7 @@ function ArtifactCard({
         <div>
           <p className="font-medium text-white">{label}</p>
           <p className="mt-1 text-sm" style={{ color: "var(--foreground-secondary)" }}>
-            {available ? "Available" : "Available after generation"}
+            {description}
           </p>
         </div>
         {available ? (

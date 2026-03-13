@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { companies, reportRuns } from "@/db/schema";
+import { assertReportCreationReady } from "@/lib/deployment/readiness";
 import { resolveCompany } from "@/lib/providers/ats/resolveCompany";
 
 const optionalWebsiteDomain = z.preprocess(
@@ -90,6 +91,8 @@ async function upsertCompanyForRun(params: {
 export async function createReportRun(
   params: CreateReportRunParams
 ): Promise<CreateReportRunResult> {
+  await assertReportCreationReady();
+
   const input = createReportRunInputSchema.parse({
     companyName: params.companyName,
     websiteDomain: params.websiteDomain,

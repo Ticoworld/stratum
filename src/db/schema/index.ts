@@ -11,3 +11,4 @@ export * from "@/db/schema/reportVersions";
 export * from "@/db/schema/sourceSnapshots";
 export * from "@/db/schema/tenants";
 export * from "@/db/schema/users";
+export * from "@/db/schema/workerHeartbeats";

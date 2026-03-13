@@ -2,17 +2,19 @@ import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { bootstrapUser } from "@/lib/auth/bootstrapUser";
 import type { MemberRole } from "@/lib/auth/roles";
-import { phase1Env } from "@/lib/env";
+import { getWebEnv } from "@/lib/env";
+
+const webEnv = getWebEnv();
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  secret: phase1Env.AUTH_SECRET,
+  secret: webEnv.AUTH_SECRET,
   session: {
     strategy: "jwt",
   },
   providers: [
     Google({
-      clientId: phase1Env.AUTH_GOOGLE_ID,
-      clientSecret: phase1Env.AUTH_GOOGLE_SECRET,
+      clientId: webEnv.AUTH_GOOGLE_ID,
+      clientSecret: webEnv.AUTH_GOOGLE_SECRET,
     }),
   ],
   callbacks: {

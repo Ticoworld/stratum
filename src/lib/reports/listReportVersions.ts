@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { artifacts, companies, reportRuns, reportVersions } from "@/db/schema";
+import { getReportArtifactStatus } from "@/lib/artifacts/status";
 
 export async function listReportVersions(params: {
   tenantId: string;
@@ -15,10 +16,7 @@ export async function listReportVersions(params: {
   const rows = await db
     .select({
       reportVersionId: reportVersions.id,
-      reportRunId: reportVersions.reportRunId,
-      companyId: reportRuns.companyId,
       companyDisplayName: companies.displayName,
-      companyCanonicalName: companies.canonicalName,
       runStatus: reportRuns.status,
       status: reportVersions.status,
       versionNumber: reportVersions.versionNumber,
@@ -58,6 +56,10 @@ export async function listReportVersions(params: {
           : row.runStatus === "completed_partial"
             ? "partial-data"
             : "completed",
+      artifactStatus: {
+        html: getReportArtifactStatus(reportArtifacts, "html"),
+        pdf: getReportArtifactStatus(reportArtifacts, "pdf"),
+      },
       artifactAvailability: {
         html: reportArtifacts.some(
           (artifact) => artifact.artifactType === "html" && artifact.status === "available"

@@ -36,7 +36,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     const body = await getObjectBuffer(artifact.objectKey);
     const publicationDate = reportVersion.generatedAt.toISOString().slice(0, 10);
-    const fileName = `${toFileSlug(reportVersion.report.company.canonicalName)}-report-${publicationDate}.${artifactType}`;
+    const companySlug = toFileSlug(reportVersion.report.company.displayName) || "company";
+    const fileName = `${companySlug}-hiring-report-${publicationDate}.${artifactType}`;
 
     return new NextResponse(new Uint8Array(body), {
       status: 200,
@@ -60,6 +61,10 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: error.message }, { status: 401 });
+    }
+
+    if (error instanceof Error && error.message.includes("Object storage is not configured")) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
     }
 
     console.error("[artifacts] Failed to fetch artifact:", error);

@@ -8,6 +8,13 @@ import {
   reportRuns,
   sourceSnapshots,
 } from "@/db/schema";
+import { buildAnalysisInput } from "@/lib/analysis/buildAnalysisInput";
+import {
+  ALLOWED_CLAIM_FAMILIES,
+  ALLOWED_CLAIM_LABELS,
+} from "@/lib/analysis/claimTaxonomy";
+import { validateAnalysisOutput } from "@/lib/analysis/validateAnalysisOutput";
+import { getObjectJson } from "@/lib/storage/s3";
 
 export interface PublicationValidationResult {
   runId: string;
@@ -86,6 +93,7 @@ export async function validateForPublication(
   const [latestSuccessfulAnalysisRun] = await db
     .select({
       id: analysisRuns.id,
+      outputObjectKey: analysisRuns.outputObjectKey,
     })
     .from(analysisRuns)
     .where(and(eq(analysisRuns.reportRunId, reportRunId), eq(analysisRuns.status, "succeeded")))
@@ -120,6 +128,9 @@ export async function validateForPublication(
   const claimRows = await db
     .select({
       id: claims.id,
+      claimType: claims.claimType,
+      supportStatus: claims.supportStatus,
+      confidence: claims.confidence,
     })
     .from(claims)
     .where(eq(claims.analysisRunId, latestSuccessfulAnalysisRun.id));
@@ -129,6 +140,18 @@ export async function validateForPublication(
   }
 
   for (const claim of claimRows) {
+    if (!ALLOWED_CLAIM_FAMILIES.includes(claim.claimType as (typeof ALLOWED_CLAIM_FAMILIES)[number])) {
+      throw new Error(`Claim ${claim.id} has unsupported claim_type "${claim.claimType}".`);
+    }
+
+    if (!ALLOWED_CLAIM_LABELS.includes(claim.supportStatus as (typeof ALLOWED_CLAIM_LABELS)[number])) {
+      throw new Error(`Claim ${claim.id} has unsupported support_status "${claim.supportStatus}".`);
+    }
+
+    if (!["high", "medium", "low"].includes(claim.confidence)) {
+      throw new Error(`Claim ${claim.id} has unsupported confidence "${claim.confidence}".`);
+    }
+
     const claimCitations = await db
       .select({
         id: citations.id,
@@ -155,6 +178,32 @@ export async function validateForPublication(
       ) {
         throw new Error(`Citation ${citation.id} is missing publication evidence fields.`);
       }
+    }
+  }
+
+  if (!latestSuccessfulAnalysisRun.outputObjectKey) {
+    throw new Error(
+      `Analysis run ${latestSuccessfulAnalysisRun.id} is missing persisted output required for publication.`
+    );
+  }
+
+  const analysisContext = await buildAnalysisInput(reportRunId);
+  const rawAnalysisOutput = await getObjectJson<unknown>(latestSuccessfulAnalysisRun.outputObjectKey);
+  const validatedOutput = validateAnalysisOutput(rawAnalysisOutput, analysisContext);
+
+  if (
+    analysisContext.input.datasetAssessment.evidenceStrength !== "strong" &&
+    validatedOutput.caveats.length === 0
+  ) {
+    throw new Error(`Report run ${reportRunId} is missing required caveats for a weak or limited dataset.`);
+  }
+
+  for (const claim of validatedOutput.claims) {
+    if (
+      analysisContext.input.datasetAssessment.confidenceCap === "low" &&
+      claim.confidence !== "low"
+    ) {
+      throw new Error(`Claim ${claim.claimId} exceeds the low-confidence cap required for this dataset.`);
     }
   }
 

@@ -31,6 +31,13 @@ export interface PresentedReport {
   caveatGroups: PresentedCaveatGroup[];
 }
 
+const PROVIDER_LABELS: Record<string, string> = {
+  greenhouse: "Greenhouse",
+  lever: "Lever",
+  ashby: "Ashby",
+  workable: "Workable",
+};
+
 function uniqueSorted(values: number[]): number[] {
   return Array.from(new Set(values)).sort((left, right) => left - right);
 }
@@ -43,19 +50,98 @@ function toLabel(value: string): string {
     .join(" ");
 }
 
-function getClaimLabel(claimType: string): string {
-  if (claimType === "fact") {
-    return "Observed hiring signal";
+export function presentProviderName(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  return PROVIDER_LABELS[normalized] ?? toLabel(value);
+}
+
+export function presentRunStatus(value: string): string {
+  switch (value) {
+    case "queued":
+      return "Awaiting worker";
+    case "claimed":
+      return "Worker started";
+    case "resolving":
+      return "Resolving company";
+    case "fetching":
+      return "Capturing hiring snapshot";
+    case "normalizing":
+      return "Preparing hiring dataset";
+    case "analyzing":
+      return "Analyzing hiring evidence";
+    case "validating":
+      return "Validating evidence and publication checks";
+    case "publishing":
+      return "Publishing report";
+    case "completed":
+      return "Published";
+    case "completed_partial":
+      return "Published with partial coverage";
+    case "completed_zero_data":
+      return "Published with no active roles observed";
+    case "failed":
+      return "Run failed";
+    case "needs_resolution":
+      return "Needs company review";
+    default:
+      return toLabel(value);
+  }
+}
+
+export function presentDataMode(value: string | null | undefined): string {
+  switch (value) {
+    case "completed":
+      return "Complete coverage";
+    case "partial-data":
+      return "Partial coverage";
+    case "zero-data":
+      return "No active roles observed";
+    default:
+      return "In progress";
+  }
+}
+
+export function presentCompanyResolution(value: string): string {
+  switch (value) {
+    case "resolved":
+      return "Resolved";
+    case "resolving":
+      return "In progress";
+    case "needs_resolution":
+      return "Needs company review";
+    default:
+      return toLabel(value);
+  }
+}
+
+export function presentSnapshotStatus(value: string): string {
+  switch (value) {
+    case "captured":
+      return "Snapshot captured";
+    case "zero_data":
+      return "No active roles observed";
+    case "provider_error":
+      return "Provider unavailable";
+    case "skipped":
+      return "Skipped";
+    default:
+      return toLabel(value);
+  }
+}
+
+function getClaimLabel(supportStatus: string): string {
+  if (supportStatus.trim().length > 0) {
+    return supportStatus;
   }
 
-  if (claimType === "inference") {
-    return "Cautious interpretation";
-  }
-
-  return toLabel(claimType);
+  return "Observed hiring signal";
 }
 
 function getCaveatGroupTitle(type: string): string {
+  if (type === "dataset_quality") {
+    return "Evidence strength";
+  }
+
   if (type === "unknown") {
     return "What the evidence does not show";
   }
@@ -69,6 +155,14 @@ function getCaveatGroupTitle(type: string): string {
   }
 
   return "Additional context";
+}
+
+function normalizeCaveatText(value: string) {
+  return value
+    .replace(/\bASHBY\b/g, presentProviderName("ashby"))
+    .replace(/\bGREENHOUSE\b/g, presentProviderName("greenhouse"))
+    .replace(/\bLEVER\b/g, presentProviderName("lever"))
+    .replace(/\bWORKABLE\b/g, presentProviderName("workable"));
 }
 
 export function presentReport(report: ReportJson): PresentedReport {
@@ -101,8 +195,8 @@ export function presentReport(report: ReportJson): PresentedReport {
       ...claim,
       claimNumber,
       evidenceNumbers,
-      claimLabel: getClaimLabel(claim.claimType),
-      confidenceLabel: toLabel(claim.confidence),
+      claimLabel: getClaimLabel(claim.supportStatus),
+      confidenceLabel: `Confidence: ${toLabel(claim.confidence)}`,
     };
 
     claimsById.set(claim.claimId, presentedClaim);
@@ -133,7 +227,7 @@ export function presentReport(report: ReportJson): PresentedReport {
     report.caveats.reduce((groups, caveat) => {
       const title = getCaveatGroupTitle(caveat.type);
       const items = groups.get(title) ?? [];
-      items.push(caveat.text);
+      items.push(normalizeCaveatText(caveat.text));
       groups.set(title, items);
       return groups;
     }, new Map<string, string[]>())

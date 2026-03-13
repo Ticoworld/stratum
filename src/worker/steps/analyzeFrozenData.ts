@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import { db } from "@/db/client";
 import { analysisRuns, claims, citations } from "@/db/schema";
 import { buildAnalysisInput } from "@/lib/analysis/buildAnalysisInput";
+import { getClaimSection } from "@/lib/analysis/claimTaxonomy";
 import {
   ANALYSIS_MODEL_NAME,
   ANALYSIS_MODEL_PROVIDER,
@@ -19,8 +20,43 @@ import { sha256Hex } from "@/lib/storage/checksums";
 import { buildAnalysisInputObjectKey, buildAnalysisOutputObjectKey } from "@/lib/storage/objectKeys";
 import { putObject } from "@/lib/storage/s3";
 
+const TRANSIENT_ANALYSIS_ERROR_PATTERNS = [
+  "429",
+  "500",
+  "502",
+  "503",
+  "504",
+  "deadline exceeded",
+  "timed out",
+  "timeout",
+  "temporarily unavailable",
+  "temporarily overloaded",
+  "connection reset",
+  "connection closed",
+  "network",
+  "socket",
+  "econnreset",
+  "etimedout",
+  "fetch failed",
+  "service unavailable",
+  "rate limit",
+] as const;
+
 function jsonBuffer(value: unknown) {
   return Buffer.from(JSON.stringify(value, null, 2), "utf8");
+}
+
+function resolveCitedJob(
+  citationRef: {
+    rawFieldPaths: string[];
+  } & ({ evidenceRef: string } | { normalizedJobId: string }),
+  context: Awaited<ReturnType<typeof buildAnalysisInput>>
+) {
+  if ("evidenceRef" in citationRef) {
+    return context.jobsByEvidenceRef.get(citationRef.evidenceRef) ?? null;
+  }
+
+  return context.jobsById.get(citationRef.normalizedJobId) ?? null;
 }
 
 function buildEvidenceSha(params: {
@@ -46,6 +82,42 @@ async function getNextAnalysisSequence(reportRunId: string): Promise<number> {
     .limit(1);
 
   return (latestRun?.analysisSequence ?? 0) + 1;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientAnalysisError(error: unknown) {
+  const message =
+    error instanceof Error
+      ? error.message.toLowerCase()
+      : String(error ?? "").toLowerCase();
+
+  return TRANSIENT_ANALYSIS_ERROR_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
+function getAnalysisFailureDetails(error: unknown) {
+  const rawFailureMessage =
+    error instanceof Error ? error.message : "Structured analysis failed for an unknown reason.";
+  const failureCode =
+    error instanceof SyntaxError ||
+    error instanceof ZodError ||
+    (error instanceof Error &&
+      (rawFailureMessage.startsWith("Structured analysis") ||
+        rawFailureMessage.startsWith("Executive summary")))
+      ? "failed_validation"
+      : "failed_model";
+
+  return {
+    failureCode,
+    failureMessage:
+      failureCode === "failed_validation"
+        ? rawFailureMessage
+        : isTransientAnalysisError(error)
+          ? `The analysis model did not respond cleanly after 3 attempts. Last error: ${rawFailureMessage}`
+          : `The analysis model returned a non-recoverable error. ${rawFailureMessage}`,
+  };
 }
 
 export interface AnalyzeFrozenDataResult {
@@ -95,11 +167,61 @@ export async function analyzeFrozenData(params: {
     .where(eq(analysisRuns.id, analysisRunId));
 
   try {
-    const execution = await runStructuredAnalysis(context.input);
-    const parsedOutput = validateAnalysisOutput(
-      parseStructuredAnalysisResponse(execution.rawText),
-      context
-    );
+    let validationFeedback: string | undefined;
+    let execution: Awaited<ReturnType<typeof runStructuredAnalysis>> | null = null;
+    let parsedOutput: ReturnType<typeof validateAnalysisOutput> | null = null;
+    const maxModelAttempts = 3;
+
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      execution = null;
+
+      for (let modelAttempt = 1; modelAttempt <= maxModelAttempts; modelAttempt += 1) {
+        try {
+          console.info(
+            `[worker] Analysis attempt ${attempt}/2 for report run ${params.reportRunId}; model call ${modelAttempt}/${maxModelAttempts}.`
+          );
+          execution = await runStructuredAnalysis(context.input, validationFeedback);
+          break;
+        } catch (modelError) {
+          if (!isTransientAnalysisError(modelError) || modelAttempt === maxModelAttempts) {
+            throw modelError;
+          }
+
+          const waitMs = modelAttempt * 2000;
+          console.warn(
+            `[worker] Transient analysis failure for report run ${params.reportRunId}; retrying in ${waitMs}ms.`,
+            modelError
+          );
+          await sleep(waitMs);
+        }
+      }
+
+      if (!execution) {
+        throw new Error("Structured analysis did not return a model response.");
+      }
+
+      try {
+        parsedOutput = validateAnalysisOutput(
+          parseStructuredAnalysisResponse(execution.rawText),
+          context
+        );
+        break;
+      } catch (validationError) {
+        if (attempt === 2) {
+          throw validationError;
+        }
+
+        validationFeedback =
+          validationError instanceof Error
+            ? validationError.message
+            : "The previous analysis response failed validation.";
+      }
+    }
+
+    if (!execution || !parsedOutput) {
+      throw new Error("Structured analysis did not produce a valid output.");
+    }
+
     const outputBuffer = Buffer.from(execution.rawText, "utf8");
     const outputSha256 = sha256Hex(outputBuffer);
     const outputObjectKey = buildAnalysisOutputObjectKey({
@@ -121,12 +243,12 @@ export async function analyzeFrozenData(params: {
       return {
         id: claimId,
         analysisRunId,
-        section: claim.section,
+        section: getClaimSection(claim.claimType),
         claimType: claim.claimType,
         statement: claim.statement,
-        whyItMatters: claim.whyThisMatters,
+        whyItMatters: claim.whyItMatters,
         confidence: claim.confidence,
-        supportStatus: "supported",
+        supportStatus: claim.label,
         displayOrder: index + 1,
       };
     });
@@ -144,10 +266,10 @@ export async function analyzeFrozenData(params: {
         }
 
         return claim.citationRefs.map((citationRef, index) => {
-          const job = context.jobsById.get(citationRef.normalizedJobId);
+          const job = resolveCitedJob(citationRef, context);
 
           if (!job) {
-            throw new Error(`Missing normalized job ${citationRef.normalizedJobId} during citation persist.`);
+            throw new Error("Missing normalized job during citation persist.");
           }
 
           const snapshot = context.snapshotsById.get(job.sourceSnapshotId);
@@ -212,16 +334,7 @@ export async function analyzeFrozenData(params: {
       ),
     };
   } catch (error) {
-    const failureMessage =
-      error instanceof Error ? error.message : "Structured analysis failed for an unknown reason.";
-    const failureCode =
-      error instanceof SyntaxError ||
-      error instanceof ZodError ||
-      (error instanceof Error &&
-        (failureMessage.startsWith("Structured analysis") ||
-          failureMessage.startsWith("Executive summary")))
-        ? "failed_validation"
-        : "failed_model";
+    const { failureCode, failureMessage } = getAnalysisFailureDetails(error);
 
     await db
       .update(analysisRuns)
@@ -233,6 +346,6 @@ export async function analyzeFrozenData(params: {
       })
       .where(eq(analysisRuns.id, analysisRunId));
 
-    throw error;
+    throw new Error(failureMessage);
   }
 }

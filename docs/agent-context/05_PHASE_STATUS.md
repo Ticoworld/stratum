@@ -304,6 +304,7 @@ No recurring monitoring, share links, analytics dashboards, collaborative featur
 - Phase 6: complete
 - Phase 7: complete
 - Phase 8: complete
+- Phase C: complete
 - Next approved phase: none recorded
 
 ## Phase 8 status
@@ -353,3 +354,65 @@ No Phase 9 work, recurring monitoring, share-link expansion, analytics dashboard
 - broad visual redesign
 - backend redesign
 - redesign of Phases 1 through 7
+
+## Phase C status
+Completed.
+
+Phase C scope was limited to deployment readiness and production rollout hardening:
+- env contract separation for shared, web-only, worker-only, and optional/local variables
+- explicit web runtime vs worker runtime deployment roles
+- worker startup env validation
+- honest report creation gating when the worker dependency is not healthy
+- operator-facing deployment readiness reporting
+- production deployment documentation and rollout checklist
+
+No product-model redesign, new queue system, new report features, live ATS read paths, branding work, or architecture replacement was added in Phase C.
+
+## Exact files created in Phase C
+- `docs/agent-context/11_DEPLOYMENT_READINESS_CHECKLIST.md`
+- `src/app/api/deployment/readiness/route.ts`
+- `src/components/system/DeploymentReadinessNotice.tsx`
+- `src/db/migrations/0005_quiet_gamora.sql`
+- `src/db/migrations/meta/0005_snapshot.json`
+- `src/db/schema/workerHeartbeats.ts`
+- `src/lib/deployment/readiness.ts`
+
+## Exact files modified in Phase C
+- `.env.example`
+- `README.md`
+- `docs/agent-context/00_README.md`
+- `docs/agent-context/05_PHASE_STATUS.md`
+- `docs/agent-context/08_CANONICAL_DECISIONS.md`
+- `docs/agent-context/10_MACHINE_SUMMARY.json`
+- `package.json`
+- `src/app/api/reports/[reportVersionId]/artifacts/[artifactType]/ensure/route.ts`
+- `src/app/api/reports/[reportVersionId]/artifacts/[artifactType]/route.ts`
+- `src/app/api/report-runs/route.ts`
+- `src/app/layout.tsx`
+- `src/app/page.tsx`
+- `src/app/report-runs/[reportRunId]/page.tsx`
+- `src/auth.ts`
+- `src/db/client.ts`
+- `src/db/migrations/meta/_journal.json`
+- `src/db/schema/index.ts`
+- `src/lib/analysis/runStructuredAnalysis.ts`
+- `src/lib/env.ts`
+- `src/lib/reports/createReportRun.ts`
+- `src/lib/reports/executeReportRun.ts`
+- `src/lib/storage/s3.ts`
+- `src/worker/loop.ts`
+- `src/worker/main.ts`
+
+## What Phase C changed architecturally
+- Split runtime assumptions between the web app and the worker instead of pretending one deployment was enough.
+- Added a worker heartbeat table so the web app can gate report creation on a real worker dependency signal.
+- Moved env validation to role-specific contracts with clearer runtime failure messages.
+- Added a minimal readiness surface and explicit rollout gate documentation.
+
+## What Phase C explicitly did not touch
+- product model
+- queue architecture
+- report schema
+- report publication rules
+- live ATS-to-LLM product paths
+- branding or marketing work

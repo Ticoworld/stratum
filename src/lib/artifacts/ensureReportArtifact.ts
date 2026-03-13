@@ -12,6 +12,56 @@ import {
 } from "@/lib/storage/objectKeys";
 import { getObjectText, putObject } from "@/lib/storage/s3";
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientArtifactError(error: unknown) {
+  const message =
+    error instanceof Error
+      ? error.message.toLowerCase()
+      : String(error ?? "").toLowerCase();
+
+  return [
+    "timeout",
+    "timed out",
+    "service unavailable",
+    "temporarily unavailable",
+    "connection reset",
+    "network",
+    "socket",
+    "econnreset",
+    "etimedout",
+  ].some((pattern) => message.includes(pattern));
+}
+
+async function withArtifactRetries<T>(
+  artifactType: ReportArtifactType,
+  reportVersionId: string,
+  action: () => Promise<T>
+) {
+  const maxAttempts = artifactType === "pdf" ? 2 : 1;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await action();
+    } catch (error) {
+      if (!isTransientArtifactError(error) || attempt === maxAttempts) {
+        throw error;
+      }
+
+      const waitMs = attempt * 1500;
+      console.warn(
+        `[artifacts] Transient ${artifactType.toUpperCase()} render failure for report ${reportVersionId}; retrying in ${waitMs}ms.`,
+        error
+      );
+      await sleep(waitMs);
+    }
+  }
+
+  throw new Error(`Unexpected ${artifactType.toUpperCase()} artifact retry exhaustion.`);
+}
+
 export type ReportArtifactType = "html" | "pdf";
 
 export interface EnsuredReportArtifact {
@@ -109,31 +159,36 @@ async function ensureHtmlArtifact(reportVersionId: string): Promise<EnsuredRepor
     reportVersionId,
     artifactType: "html",
     status: "rendering",
+    failureCode: null,
+    failureMessage: null,
+    completedAt: null,
   });
 
   try {
-    const reportVersion = await getPublishedReport(reportVersionId);
-    const html = renderReportHtml(reportVersion.report);
-    const objectKey = buildReportHtmlObjectKey(reportVersionId);
-    const buffer = Buffer.from(html, "utf8");
-    const sha256 = sha256Hex(buffer);
-    const completedAt = new Date();
+    await withArtifactRetries("html", reportVersionId, async () => {
+      const reportVersion = await getPublishedReport(reportVersionId);
+      const html = renderReportHtml(reportVersion.report);
+      const objectKey = buildReportHtmlObjectKey(reportVersionId);
+      const buffer = Buffer.from(html, "utf8");
+      const sha256 = sha256Hex(buffer);
+      const completedAt = new Date();
 
-    await putObject({
-      key: objectKey,
-      body: buffer,
-      contentType: "text/html; charset=utf-8",
-    });
+      await putObject({
+        key: objectKey,
+        body: buffer,
+        contentType: "text/html; charset=utf-8",
+      });
 
-    await upsertArtifactStatus({
-      reportVersionId,
-      artifactType: "html",
-      status: "available",
-      objectKey,
-      mimeType: "text/html; charset=utf-8",
-      byteSize: buffer.byteLength,
-      sha256,
-      completedAt,
+      await upsertArtifactStatus({
+        reportVersionId,
+        artifactType: "html",
+        status: "available",
+        objectKey,
+        mimeType: "text/html; charset=utf-8",
+        byteSize: buffer.byteLength,
+        sha256,
+        completedAt,
+      });
     });
   } catch (error) {
     await upsertArtifactStatus({
@@ -167,36 +222,41 @@ async function ensurePdfArtifact(reportVersionId: string): Promise<EnsuredReport
     reportVersionId,
     artifactType: "pdf",
     status: "rendering",
+    failureCode: null,
+    failureMessage: null,
+    completedAt: null,
   });
 
   try {
-    const htmlArtifact = await ensureHtmlArtifact(reportVersionId);
+    await withArtifactRetries("pdf", reportVersionId, async () => {
+      const htmlArtifact = await ensureHtmlArtifact(reportVersionId);
 
-    if (!htmlArtifact.objectKey) {
-      throw new Error(`HTML artifact for ${reportVersionId} is missing its object key.`);
-    }
+      if (!htmlArtifact.objectKey) {
+        throw new Error(`HTML artifact for ${reportVersionId} is missing its object key.`);
+      }
 
-    const html = await getObjectText(htmlArtifact.objectKey);
-    const pdf = await renderReportPdf(html);
-    const objectKey = buildReportPdfObjectKey(reportVersionId);
-    const sha256 = sha256Hex(pdf);
-    const completedAt = new Date();
+      const html = await getObjectText(htmlArtifact.objectKey);
+      const pdf = await renderReportPdf(html);
+      const objectKey = buildReportPdfObjectKey(reportVersionId);
+      const sha256 = sha256Hex(pdf);
+      const completedAt = new Date();
 
-    await putObject({
-      key: objectKey,
-      body: pdf,
-      contentType: "application/pdf",
-    });
+      await putObject({
+        key: objectKey,
+        body: pdf,
+        contentType: "application/pdf",
+      });
 
-    await upsertArtifactStatus({
-      reportVersionId,
-      artifactType: "pdf",
-      status: "available",
-      objectKey,
-      mimeType: "application/pdf",
-      byteSize: pdf.byteLength,
-      sha256,
-      completedAt,
+      await upsertArtifactStatus({
+        reportVersionId,
+        artifactType: "pdf",
+        status: "available",
+        objectKey,
+        mimeType: "application/pdf",
+        byteSize: pdf.byteLength,
+        sha256,
+        completedAt,
+      });
     });
   } catch (error) {
     await upsertArtifactStatus({

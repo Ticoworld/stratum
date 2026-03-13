@@ -1,7 +1,7 @@
 {
-  "current_phase": "Phase 8",
+  "current_phase": "Phase C",
   "phase_status": "completed",
-  "product_truth": "Stratum has completed Phases 1 through 8 of the migration. The product-facing system is now the stored report workflow only: create a report run, track real run status, open stored published reports, and access real artifact availability. The legacy compatibility shim, cache-backed ATS-to-LLM demo orchestration path, and obsolete MCP entrypoint have been removed.",
+  "product_truth": "Stratum has completed Phases 1 through 8 of the migration plus Phase C deployment readiness hardening. The product-facing system remains the stored report workflow only: create a report run, track real run status, open stored published reports, and access real artifact availability. The deployment contract now separates web and worker runtimes, blocks report creation when the worker dependency is not healthy, and exposes an honest minimal readiness surface.",
   "chosen_stack": {
     "web_framework": "Next.js App Router",
     "database": "PostgreSQL",
@@ -54,7 +54,13 @@
     "Legacy StratumInvestigator, unified analyzer, Gemini bootstrap, boards adapter, and cache-backed demo path removed",
     "Legacy MCP entrypoint removed",
     "Dead legacy package scripts removed",
-    "Repo and handoff docs updated to reflect the post-migration stored-report system"
+    "Repo and handoff docs updated to reflect the post-migration stored-report system",
+    "Environment handling split into shared, web-only, worker-only, and optional/local contracts",
+    "Worker startup now validates its own env contract before entering the loop",
+    "Worker heartbeat persistence added in Postgres",
+    "Report creation now fails fast when deployment readiness is incomplete",
+    "Minimal readiness route added at /api/deployment/readiness",
+    "Deployment rollout checklist added with explicit no-go / partial / go gates"
   ],
   "next_phase": null,
   "critical_rules": [
@@ -71,6 +77,7 @@
   ],
   "key_paths": {
     "env": "src/lib/env.ts",
+    "deployment_readiness": "src/lib/deployment/readiness.ts",
     "db_client": "src/db/client.ts",
     "db_schema_index": "src/db/schema/index.ts",
     "auth": "src/auth.ts",
@@ -83,7 +90,7 @@
   "known_risks": [
     "Auth foundation was built but not browser-verified end-to-end in the recorded implementation sessions",
     "One unrelated lint warning remains in src/components/ui/ServiceInterruptionModal.tsx",
-    "AWS vars are optional at foundation time but required for snapshot/artifact storage operation",
-    "A hosted Postgres vendor such as Neon was not actually established in the approved source truth"
+    "A hosted Postgres vendor such as Neon was not actually established in the approved source truth",
+    "The web runtime can verify worker heartbeat freshness, but it still does not inspect worker backlog depth or throughput"
   ]
 }

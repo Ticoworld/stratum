@@ -1,27 +1,26 @@
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { getOptionalS3Config } from "@/lib/env";
+import { getObjectStorageEnv, getObjectStorageEnvStatus } from "@/lib/env";
 
-const s3Config = getOptionalS3Config();
 let s3Client: S3Client | null = null;
 
-export const s3Bucket = s3Config?.bucket ?? null;
-
 export function isS3Configured(): boolean {
-  return s3Config !== null;
+  return getObjectStorageEnvStatus().ok;
+}
+
+export function getS3Bucket(): string {
+  return getObjectStorageEnv().STRATUM_S3_BUCKET;
 }
 
 export function getS3Client(): S3Client {
-  if (!s3Config) {
-    throw new Error("S3 is not configured for this environment.");
-  }
+  const s3Config = getObjectStorageEnv();
 
   if (!s3Client) {
     s3Client = new S3Client({
-      region: s3Config.region,
+      region: s3Config.AWS_REGION,
       endpoint: s3Config.endpoint,
       credentials: {
-        accessKeyId: s3Config.accessKeyId,
-        secretAccessKey: s3Config.secretAccessKey,
+        accessKeyId: s3Config.AWS_ACCESS_KEY_ID,
+        secretAccessKey: s3Config.AWS_SECRET_ACCESS_KEY,
       },
     });
   }
@@ -44,13 +43,11 @@ export async function putObject(params: {
   contentType: string;
   contentEncoding?: string;
 }): Promise<void> {
-  if (!s3Bucket) {
-    throw new Error("S3 is not configured for this environment.");
-  }
+  const bucket = getS3Bucket();
 
   await getS3Client().send(
     new PutObjectCommand({
-      Bucket: s3Bucket,
+      Bucket: bucket,
       Key: params.key,
       Body: params.body,
       ContentType: params.contentType,
@@ -70,13 +67,11 @@ async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
 }
 
 export async function getObjectBuffer(key: string): Promise<Buffer> {
-  if (!s3Bucket) {
-    throw new Error("S3 is not configured for this environment.");
-  }
+  const bucket = getS3Bucket();
 
   const response = await getS3Client().send(
     new GetObjectCommand({
-      Bucket: s3Bucket,
+      Bucket: bucket,
       Key: key,
     })
   );

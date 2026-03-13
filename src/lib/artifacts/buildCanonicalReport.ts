@@ -15,6 +15,7 @@ import {
   type ValidatedAnalysisOutput,
   validateAnalysisOutput,
 } from "@/lib/analysis/validateAnalysisOutput";
+import { presentProviderName } from "@/lib/reports/presentation";
 import { type ReportJson, reportJsonSchema } from "@/lib/reports/reportJson";
 import { sha256Hex } from "@/lib/storage/checksums";
 import { getObjectJson } from "@/lib/storage/s3";
@@ -32,6 +33,18 @@ function getSystemVersion() {
 
 function toIsoString(value: Date | null): string | null {
   return value ? value.toISOString() : null;
+}
+
+function humanizeFailureCode(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  return value
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
 }
 
 function buildReportHash(report: Omit<ReportJson, "integrity"> & { integrity: Omit<ReportJson["integrity"], "reportSha256"> }) {
@@ -211,7 +224,7 @@ export async function buildCanonicalReport(
       ? [
           {
             order: 1,
-            text: "No active jobs observed in captured snapshot.",
+            text: "No active roles were observed in the captured hiring snapshot.",
             claimRefs: [],
           },
         ]
@@ -299,16 +312,23 @@ export async function buildCanonicalReport(
     .filter((value): value is Date => value instanceof Date)
     .sort((a, b) => a.getTime() - b.getTime());
 
-  const caveats = [
-    ...(analysisOutput?.unknowns.map((text) => ({ type: "unknown", text })) ?? []),
-    ...(analysisOutput?.caveats.map((text) => ({ type: "analysis", text })) ?? []),
-    ...snapshots
-      .filter((snapshot) => snapshot.status === "provider_error")
-      .map((snapshot) => ({
-        type: "provider_failure",
-        text: `${snapshot.provider} failed${snapshot.errorCode ? ` (${snapshot.errorCode})` : ""}${snapshot.errorMessage ? `: ${snapshot.errorMessage}` : "."}`,
-      })),
-  ];
+  const caveats = Array.from(
+    new Map(
+      [
+        ...analysisContext.input.datasetAssessment.deterministicCaveats.map((text) => ({
+          type: "dataset_quality",
+          text,
+        })),
+        ...(analysisOutput?.caveats.map((text) => ({ type: "analysis", text })) ?? []),
+        ...snapshots
+          .filter((snapshot) => snapshot.status === "provider_error")
+          .map((snapshot) => ({
+            type: "provider_failure",
+            text: `${presentProviderName(snapshot.provider)} could not be captured for this report${snapshot.errorMessage ? `: ${snapshot.errorMessage}` : snapshot.errorCode ? `: ${humanizeFailureCode(snapshot.errorCode)}.` : "."}`,
+          })),
+      ].map((item) => [item.text, item] as const)
+    ).values()
+  );
 
   const reportWithoutHash = {
     schemaVersion: REPORT_SCHEMA_VERSION,
