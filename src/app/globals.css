@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+/*
+ * Stratum — Zinc-based dark theme
+ * Tailwind zinc: true neutrals, no blue undertone
+ * No grid — clean, premium look
+ */
+
+:root {
+  /* Zinc — neutral, premium dark */
+  --background: #09090b;   /* zinc-950 */
+  --surface: #18181b;      /* zinc-900 */
+  --surface-elevated: #27272a; /* zinc-800 */
+  --border: #27272a;       /* zinc-800 */
+  --border-subtle: #3f3f46;    /* zinc-700 */
+
+  /* Text */
+  --foreground: #fafafa;   /* zinc-50 */
+  --foreground-secondary: #a1a1aa; /* zinc-400 */
+  --foreground-muted: #71717a; /* zinc-500 */
+
+  /* Accent */
+  --accent: #3b82f6;
+
+  /* Fonts */
+  --font-sans: "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, "SFMono-Regular", monospace;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.font-data,
+.tabular-nums {
+  font-family: var(--font-mono);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-subtle);
+}
+
+::selection {
+  background: var(--accent);
+  color: white;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  0% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+  100% { opacity: 0.4; }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
+}

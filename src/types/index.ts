@@ -1,0 +1,3 @@
+/**
+ * Stratum type definitions
+ */

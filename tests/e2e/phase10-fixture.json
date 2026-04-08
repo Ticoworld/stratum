@@ -1,0 +1,14 @@
+{
+  "homeQuery": "https://phase10-home.myworkdayjobs.com/en-US/careers",
+  "noMatchQuery": "Phase10 Missing Company Fixture",
+  "providerFailureQuery": "Phase11 Provider Failure Fixture",
+  "throwErrorQuery": "Phase11 Throw Failure Fixture",
+  "customWatchlistName": "Phase 10 Watchlist Fixture",
+  "providerFailureBriefId": "00000000-0000-4000-8000-000000000101",
+  "ambiguousBriefId": "00000000-0000-4000-8000-000000000102",
+  "phase9HistoryWatchlistId": "00000000-0000-4000-8000-000000000201",
+  "phase9HistoryEntryId": "00000000-0000-4000-8000-000000000202",
+  "phase9OlderBriefId": "00000000-0000-4000-8000-000000000203",
+  "phase9PreviousBriefId": "00000000-0000-4000-8000-000000000204",
+  "phase9LatestBriefId": "00000000-0000-4000-8000-000000000205"
+}

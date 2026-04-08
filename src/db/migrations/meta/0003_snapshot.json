@@ -1,0 +1,756 @@
+{
+  "id": "7c0bd7f5-b19a-4656-9354-f515af0c9db0",
+  "prevId": "23fc64c6-f33e-41d2-899f-084830e5d92c",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.memberships": {
+      "name": "memberships",
+      "schema": "",
+      "columns": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "memberships_tenant_id_tenants_id_fk": {
+          "name": "memberships_tenant_id_tenants_id_fk",
+          "tableFrom": "memberships",
+          "tableTo": "tenants",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "memberships_user_id_users_id_fk": {
+          "name": "memberships_user_id_users_id_fk",
+          "tableFrom": "memberships",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "memberships_pk": {
+          "name": "memberships_pk",
+          "columns": [
+            "tenant_id",
+            "user_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.stratum_briefs": {
+      "name": "stratum_briefs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "watchlist_entry_id": {
+          "name": "watchlist_entry_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "queried_company_name": {
+          "name": "queried_company_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "matched_company_name": {
+          "name": "matched_company_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ats_source_used": {
+          "name": "ats_source_used",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "result_state": {
+          "name": "result_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "company_match_confidence": {
+          "name": "company_match_confidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "company_match_explanation": {
+          "name": "company_match_explanation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_coverage_completeness": {
+          "name": "source_coverage_completeness",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_coverage_explanation": {
+          "name": "source_coverage_explanation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "watchlist_read_label": {
+          "name": "watchlist_read_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "watchlist_read_summary": {
+          "name": "watchlist_read_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "watchlist_read_confidence": {
+          "name": "watchlist_read_confidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "watchlist_read_explanation": {
+          "name": "watchlist_read_explanation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "proof_role_grounding": {
+          "name": "proof_role_grounding",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "proof_role_grounding_explanation": {
+          "name": "proof_role_grounding_explanation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "jobs_observed_count": {
+          "name": "jobs_observed_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "proof_roles_snapshot": {
+          "name": "proof_roles_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "limits_snapshot": {
+          "name": "limits_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "result_snapshot": {
+          "name": "result_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unsupported_source_pattern": {
+          "name": "unsupported_source_pattern",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_failures": {
+          "name": "provider_failures",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.stratum_monitoring_events": {
+      "name": "stratum_monitoring_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "watchlist_entry_id": {
+          "name": "watchlist_entry_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requested_query": {
+          "name": "requested_query",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempt_kind": {
+          "name": "attempt_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempt_origin": {
+          "name": "attempt_origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "outcome_status": {
+          "name": "outcome_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "related_brief_id": {
+          "name": "related_brief_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "result_state": {
+          "name": "result_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "matched_company_name": {
+          "name": "matched_company_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ats_source_used": {
+          "name": "ats_source_used",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "watchlist_read_label": {
+          "name": "watchlist_read_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "watchlist_read_confidence": {
+          "name": "watchlist_read_confidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "company_match_confidence": {
+          "name": "company_match_confidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_coverage_completeness": {
+          "name": "source_coverage_completeness",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_summary": {
+          "name": "error_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "stratum_monitoring_events_entry_created_idx": {
+          "name": "stratum_monitoring_events_entry_created_idx",
+          "columns": [
+            {
+              "expression": "watchlist_entry_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "stratum_monitoring_events_watchlist_entry_id_stratum_watchlist_entries_id_fk": {
+          "name": "stratum_monitoring_events_watchlist_entry_id_stratum_watchlist_entries_id_fk",
+          "tableFrom": "stratum_monitoring_events",
+          "tableTo": "stratum_watchlist_entries",
+          "columnsFrom": [
+            "watchlist_entry_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.stratum_watchlist_entries": {
+      "name": "stratum_watchlist_entries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "watchlist_id": {
+          "name": "watchlist_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requested_query": {
+          "name": "requested_query",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "normalized_query": {
+          "name": "normalized_query",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "latest_brief_id": {
+          "name": "latest_brief_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "latest_matched_company_name": {
+          "name": "latest_matched_company_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "latest_result_state": {
+          "name": "latest_result_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "latest_watchlist_read_label": {
+          "name": "latest_watchlist_read_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "latest_watchlist_read_confidence": {
+          "name": "latest_watchlist_read_confidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "latest_ats_source_used": {
+          "name": "latest_ats_source_used",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "latest_brief_created_at": {
+          "name": "latest_brief_created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "latest_brief_updated_at": {
+          "name": "latest_brief_updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "stratum_watchlist_entries_watchlist_query_unique": {
+          "name": "stratum_watchlist_entries_watchlist_query_unique",
+          "columns": [
+            {
+              "expression": "watchlist_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "normalized_query",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stratum_watchlist_entries_watchlist_updated_idx": {
+          "name": "stratum_watchlist_entries_watchlist_updated_idx",
+          "columns": [
+            {
+              "expression": "watchlist_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "stratum_watchlist_entries_watchlist_id_stratum_watchlists_id_fk": {
+          "name": "stratum_watchlist_entries_watchlist_id_stratum_watchlists_id_fk",
+          "tableFrom": "stratum_watchlist_entries",
+          "tableTo": "stratum_watchlists",
+          "columnsFrom": [
+            "watchlist_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.stratum_watchlists": {
+      "name": "stratum_watchlists",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "stratum_watchlists_slug_unique": {
+          "name": "stratum_watchlists_slug_unique",
+          "columns": [
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.tenants": {
+      "name": "tenants",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "tenants_slug_unique": {
+          "name": "tenants_slug_unique",
+          "columns": [
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.users": {
+      "name": "users",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "auth_provider": {
+          "name": "auth_provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "external_subject": {
+          "name": "external_subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "users_email_unique": {
+          "name": "users_email_unique",
+          "columns": [
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "users_provider_subject_unique": {
+          "name": "users_provider_subject_unique",
+          "columns": [
+            {
+              "expression": "auth_provider",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "external_subject",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
