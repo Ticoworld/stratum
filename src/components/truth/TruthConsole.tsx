@@ -758,8 +758,8 @@ function WatchlistMonitoringCard({
           </p>
         )}
         <p className="mt-3 text-sm leading-relaxed" style={{ color: "var(--foreground-secondary)" }}>
-          Stratum compares saved briefs you actually have for this entry. {automationStatus.summary} Notifications now
-          live in Stratum&apos;s in-product inbox only. No email, push, or Slack delivery exists yet.
+          Stratum compares saved briefs you actually have for this entry. {automationStatus.summary} Meaningful
+          changes stay in Stratum&apos;s in-app inbox. External alerts are not supported yet.
         </p>
       </div>
 
@@ -1044,14 +1044,35 @@ export function TruthConsole({
               className="mt-2 text-lg font-semibold tracking-tight"
               style={{ color: "var(--foreground)" }}
             >
-              Company Watchlist Brief
+              Watch target companies through ATS signals
             </h1>
             <p
               className="mt-2 max-w-2xl text-sm leading-relaxed"
               style={{ color: "var(--foreground-secondary)" }}
             >
-              Observed ATS hiring signals for investors, founders, and corp dev or strategy
-              operators. Narrow, incomplete, and external only.
+              Stratum helps corporate development and investor teams track a finite company list, save point-in-time
+              briefs from supported ATS sources, compare each refresh to the last saved brief, and surface meaningful
+              changes in an in-app inbox.
+            </p>
+            <ul
+              className="mt-4 grid gap-2 text-sm leading-relaxed sm:grid-cols-3"
+              style={{ color: "var(--foreground-secondary)" }}
+            >
+              <li className="rounded border px-3 py-2" style={{ borderColor: "var(--border)" }}>
+                Track a finite list of target companies.
+              </li>
+              <li className="rounded border px-3 py-2" style={{ borderColor: "var(--border)" }}>
+                Compare the latest saved brief to the previous one with repeatable diffs.
+              </li>
+              <li className="rounded border px-3 py-2" style={{ borderColor: "var(--border)" }}>
+                Keep scheduled refresh changes inside Stratum&apos;s in-app inbox.
+              </li>
+            </ul>
+            <p
+              className="mt-4 max-w-2xl text-sm leading-relaxed"
+              style={{ color: "var(--foreground-secondary)" }}
+            >
+              Every brief stays grounded in observed roles, source coverage, and the limits shown on the page.
             </p>
             {willRefreshTrackedEntry && (
               <p
@@ -1104,7 +1125,7 @@ export function TruthConsole({
                   color: "var(--foreground-secondary)",
                 }}
               >
-                Notifications
+                Inbox
               </Link>
               <Link
                 href="/watchlists"
@@ -1474,17 +1495,17 @@ export function TruthConsole({
             <div className="mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center gap-8 px-6 py-12 text-center">
               <div>
                 <h2 className="text-4xl font-semibold tracking-tight" style={{ color: "var(--foreground)" }}>
-                  Company Watchlist Brief
+                  Watchlist intelligence for target companies
                 </h2>
-                <p
-                  className="mx-auto mt-4 max-w-2xl text-base leading-relaxed"
-                  style={{ color: "var(--foreground-secondary)" }}
-                >
-                  Build a short watchlist brief from observed ATS openings on supported sources like Ashby,
-                  Greenhouse, Lever, and Workable. Made for investors, founders, and corp dev or strategy operators.
-                  Stratum does not claim full company coverage.
-                </p>
-              </div>
+              <p
+                className="mx-auto mt-4 max-w-2xl text-base leading-relaxed"
+                style={{ color: "var(--foreground-secondary)" }}
+              >
+                Watch companies that matter through their ATS signals. Stratum saves point-in-time briefs from
+                supported sources like Ashby, Greenhouse, Lever, and Workable, then compares each refresh to the
+                previous saved brief. It does not claim full company coverage.
+              </p>
+            </div>
 
               <div
                 className="w-full rounded border p-5"
@@ -1495,8 +1516,7 @@ export function TruthConsole({
                 }}
               >
                 <p className="text-sm leading-relaxed" style={{ color: "var(--foreground-secondary)" }}>
-                  Search for a company to see a four-part brief: Company Match & Coverage, Watchlist Read, Proof
-                  Roles, and Limits & Caveats.
+                  Search for a company to see coverage, the watchlist read, proof roles, and limits side by side.
                 </p>
               </div>
 
@@ -1505,7 +1525,7 @@ export function TruthConsole({
                   className="text-[10px] font-data uppercase tracking-[0.24em]"
                   style={{ color: "var(--foreground-muted)" }}
                 >
-                  Try one
+                  Try a target company
                 </p>
                 <div className="flex flex-wrap justify-center gap-2">
                   {EXAMPLE_COMPANIES.map((name) => (

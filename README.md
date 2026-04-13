@@ -1,28 +1,32 @@
 # Stratum
 
-Stratum is a Next.js application that analyzes company hiring strategy from public job board data.  
-The repository also includes an MCP server exposing the same analysis as a tool (`analyze_company`).
+Stratum is watchlist intelligence for a finite list of target companies.  
+It monitors supported ATS sources, saves point-in-time briefs, compares each refresh to the previous saved brief, and keeps meaningful changes in an in-app inbox.
 
 ## Project Summary
 
-- User enters a company name in the UI.
+- User enters a company name or source query in the UI.
 - Backend fetches open roles from supported ATS APIs (Greenhouse, Lever, Ashby, Workable).
-- The system derives structured strategy outputs:
-  - `strategicVerdict`
-  - `hiringVelocity`
+- The system creates a point-in-time watchlist brief with:
+  - evidence-backed `strategicVerdict`
   - deterministic `engineeringVsSalesRatio`
-  - `keywordFindings`
-  - `notableRoles`
   - `summary`
+  - proof roles
+  - source coverage and caveats
+- Watchlists preserve the latest saved brief, the previous saved brief, and repeatable change summaries.
+- Meaningful changes stay in the in-app notification inbox.
 
 ## Problem Solved
 
-Public job postings are noisy and hard to interpret quickly.  
-Stratum converts posting data into a compact strategic readout so users can infer hiring direction from one request.
+Target-company hiring signals are easy to miss between spot checks, and manual ATS review is hard to compare over time.  
+Stratum turns those checks into saved briefs and repeatable change records.
 
 ## Features
 
-- Unified analysis API route: `POST /api/analyze-unified`
+- Target-company watchlists with manual and scheduled refreshes
+- Point-in-time saved briefs with latest-vs-previous comparison
+- In-app notification inbox for meaningful monitoring changes
+- Evidence-backed brief view with proof roles, source coverage, and caveats
 - Multi-source job board fetch with priority/fallback logic:
   - Greenhouse
   - Lever
@@ -30,7 +34,7 @@ Stratum converts posting data into a compact strategic readout so users can infe
   - Workable
 - Company alias and fallback token handling (for known slug mismatches)
 - Deterministic engineering vs sales ratio calculation (not AI-generated)
-- AI analysis through Google Gemini (`gemini-3-flash-preview`) with JSON parsing/normalization
+- Brief generation through Google Gemini (`gemini-3-flash-preview`) with JSON parsing/normalization
 - In-memory cache with configurable TTL (`STRATUM_CACHE_TTL_HOURS`, default 24h)
 - Per-IP rate limiting (5 requests/minute, sliding window)
 - Retry logic for network/timeout failures on outbound ATS calls
@@ -148,14 +152,14 @@ scripts/
   - `X-Content-Type-Options: nosniff`
   - `X-Frame-Options: DENY`
   - `Referrer-Policy: strict-origin-when-cross-origin`
-- The only app API route in the current codebase is `/api/analyze-unified`.
+- The app includes watchlist, brief, notification, and scheduled-refresh routes in addition to `/api/analyze-unified`.
 - A `vercel.json` deployment manifest is present in the repository.
 - [Partially inferred] Hosting target is not fixed by code; docs mention platforms like Vercel/Railway as options.
 
 ## Limitations
 
 - Coverage is limited to companies discoverable through the implemented ATS APIs and token mapping logic.
-- No persistent cache/database is wired into the active request path; cache is in-memory and resets on process restart.
+- The brief-generation cache is in-memory and resets on process restart, even though watchlists, briefs, and notifications are persisted.
 - No authentication/authorization layer is present in the analysis API route.
 - `scripts/list_models.js` currently contains a hardcoded API key and fails lint under current ESLint rules.
 - `package.json` defines `generate:sentinel`, but `scripts/generate_sentinel.ts` is not present.

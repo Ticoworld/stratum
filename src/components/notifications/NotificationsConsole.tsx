@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, Bell, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import type {
   NotificationInboxCounts,
   StratumNotificationInboxFilter,
@@ -155,7 +155,7 @@ export function NotificationsConsole({
   };
 
   return (
-    <div className="min-h-screen" style={{ background: "var(--background)" }}>
+    <div className="min-h-full" style={{ background: "var(--background)" }}>
       <header
         className="border-b"
         style={{
@@ -166,35 +166,12 @@ export function NotificationsConsole({
       >
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-[10px] font-data uppercase tracking-[0.24em]" style={{ color: "var(--accent)" }}>
-              STRATUM
-            </p>
             <h1 className="mt-2 text-lg font-semibold tracking-tight" style={{ color: "var(--foreground)" }}>
-              Notifications
+              Inbox
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-relaxed" style={{ color: "var(--foreground-secondary)" }}>
-              Meaningful monitoring changes now surface in Stratum&apos;s in-product inbox. No email, push, Slack, or
-              external delivery channel exists yet.
+              Meaningful monitoring changes stay in Stratum&apos;s in-app inbox. External alerts are not supported yet.
             </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3 text-xs font-data uppercase tracking-[0.18em]">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-2 rounded border px-4 py-2 transition-all duration-200 hover:border-[var(--accent)] hover:text-[var(--accent)]"
-              style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Brief Builder
-            </Link>
-            <Link
-              href="/watchlists"
-              className="inline-flex items-center gap-2 rounded border px-4 py-2 transition-all duration-200 hover:border-[var(--accent)] hover:text-[var(--accent)]"
-              style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
-            >
-              <Bell className="h-4 w-4" />
-              Watchlists
-            </Link>
           </div>
         </div>
       </header>
@@ -422,7 +399,7 @@ export function NotificationsConsole({
                 color: "var(--foreground-secondary)",
               }}
             >
-              No notifications match this inbox view yet. Stratum only creates inbox records for meaningful monitoring changes, and it keeps them in-app only.
+              No notifications match this inbox view yet. Stratum only creates inbox records for meaningful monitoring changes, and it keeps them in-app.
             </div>
           )}
         </section>

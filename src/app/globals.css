@@ -1,28 +1,18 @@
 @import "tailwindcss";
 
-/*
- * Stratum — Zinc-based dark theme
- * Tailwind zinc: true neutrals, no blue undertone
- * No grid — clean, premium look
- */
-
 :root {
-  /* Zinc — neutral, premium dark */
-  --background: #09090b;   /* zinc-950 */
-  --surface: #18181b;      /* zinc-900 */
-  --surface-elevated: #27272a; /* zinc-800 */
-  --border: #27272a;       /* zinc-800 */
-  --border-subtle: #3f3f46;    /* zinc-700 */
+  --background: #f6f8fc;
+  --surface: #ffffff;
+  --surface-elevated: #eef2f7;
+  --border: #d9e0ea;
+  --border-subtle: #c7d0dc;
 
-  /* Text */
-  --foreground: #fafafa;   /* zinc-50 */
-  --foreground-secondary: #a1a1aa; /* zinc-400 */
-  --foreground-muted: #71717a; /* zinc-500 */
+  --foreground: #101828;
+  --foreground-secondary: #475467;
+  --foreground-muted: #667085;
 
-  /* Accent */
   --accent: #3b82f6;
 
-  /* Fonts */
   --font-sans: "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", Consolas, "SFMono-Regular", monospace;
 }
@@ -78,11 +68,16 @@ body {
   outline-offset: 2px;
 }
 
-/* Skeleton shimmer */
 @keyframes shimmer {
-  0% { opacity: 0.4; }
-  50% { opacity: 0.7; }
-  100% { opacity: 0.4; }
+  0% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0.4;
+  }
 }
 
 .animate-shimmer {

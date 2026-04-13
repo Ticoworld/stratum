@@ -1,14 +1,19 @@
 "use client";
 
-import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
-import { WatchlistEntryHistoryPanel } from "@/components/watchlist/WatchlistEntryHistoryPanel";
-import { formatSourceLabel } from "@/lib/briefs/presentation";
+import { WatchlistEntriesTable } from "@/components/watchlist/WatchlistEntriesTable";
+import { WatchlistEntryInspectionPanel } from "@/components/watchlist/WatchlistEntryInspectionPanel";
+import { WatchlistWorkspaceSidebar } from "@/components/watchlist/WatchlistWorkspaceSidebar";
 import type { StratumScheduledAutomationStatus } from "@/lib/watchlists/automation";
+import { formatWatchlistTargetIdentity } from "@/lib/watchlists/identity";
+import {
+  buildWatchlistSourceGrounding,
+  formatWatchlistDateTime,
+  formatWatchlistMetadataLine,
+  formatWatchlistStateHeadline,
+} from "@/lib/watchlists/presentation";
 import type { WatchlistEntryDetail, WatchlistOverview } from "@/lib/watchlists/repository";
-import { formatWatchlistScheduleCadenceLabel } from "@/lib/watchlists/schedules";
 
 interface WatchlistConsoleProps {
   initialWatchlists: WatchlistOverview[];
@@ -16,69 +21,6 @@ interface WatchlistConsoleProps {
   activeWatchlistId: string | null;
   activeEntryId: string | null;
   activeEntryDetail: WatchlistEntryDetail | null;
-}
-
-function formatResultStateLabel(value: string | null): string {
-  switch (value) {
-    case "supported_provider_matched_with_observed_openings":
-      return "Observed openings";
-    case "supported_provider_matched_with_zero_observed_openings":
-      return "Matched provider, zero openings";
-    case "unsupported_ats_or_source_pattern":
-      return "Unsupported source pattern";
-    case "ambiguous_company_match":
-      return "Ambiguous company match";
-    case "provider_failure":
-      return "Provider failure";
-    case "no_matched_provider_found":
-      return "No supported match";
-    default:
-      return "No saved brief yet";
-  }
-}
-
-function formatConfidenceLabel(value: string | null): string {
-  switch (value) {
-    case "high":
-      return "High";
-    case "medium":
-      return "Medium";
-    case "low":
-      return "Low";
-    case "none":
-      return "None";
-    default:
-      return "No read yet";
-  }
-}
-
-function formatDateTimeValue(value: string | null | undefined): string | null {
-  if (!value) return null;
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-
-  return new Intl.DateTimeFormat("en", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function formatScheduledNextRunValue(
-  cadence: string | null | undefined,
-  value: string | null | undefined
-): string {
-  if (cadence === "off" || !value) return "Not scheduled";
-
-  const timestamp = new Date(value).getTime();
-  if (!Number.isNaN(timestamp) && timestamp <= Date.now()) {
-    return `Due now${formatDateTimeValue(value) ? ` (${formatDateTimeValue(value)})` : ""}`;
-  }
-
-  return formatDateTimeValue(value) ?? "Scheduled";
 }
 
 export function WatchlistConsole({
@@ -95,21 +37,67 @@ export function WatchlistConsole({
   const [pendingAdd, setPendingAdd] = useState(false);
   const [pendingScheduledRun, setPendingScheduledRun] = useState(false);
   const [pendingRemovalId, setPendingRemovalId] = useState<string | null>(null);
+  const [pendingRefreshId, setPendingRefreshId] = useState<string | null>(null);
+  const [pendingScheduleSave, setPendingScheduleSave] = useState(false);
+  const [scheduleCadence, setScheduleCadence] = useState(activeEntryDetail?.entry.scheduleCadence ?? "off");
+  const [currentTime, setCurrentTime] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const activeWatchlist =
     initialWatchlists.find((watchlist) => watchlist.id === activeWatchlistId) ?? initialWatchlists[0] ?? null;
+
+  useEffect(() => {
+    setScheduleCadence(activeEntryDetail?.entry.scheduleCadence ?? "off");
+  }, [activeEntryDetail?.entry.id, activeEntryDetail?.entry.scheduleCadence]);
+
+  useEffect(() => {
+    setCurrentTime(Date.now());
+  }, [activeWatchlistId, activeEntryId]);
+
   const scheduledEntryCount =
     activeWatchlist?.entries.filter((entry) => entry.scheduleCadence !== "off").length ?? 0;
   const dueScheduledEntryCount =
-    activeWatchlist?.entries.filter(
-      (entry) =>
-        entry.scheduleCadence !== "off" &&
-        entry.scheduleNextRunAt &&
-        !Number.isNaN(new Date(entry.scheduleNextRunAt).getTime()) &&
-        new Date(entry.scheduleNextRunAt).getTime() <= Date.now()
-    ).length ?? 0;
+    currentTime !== null
+      ? activeWatchlist?.entries.filter(
+          (entry) =>
+            entry.scheduleCadence !== "off" &&
+            entry.scheduleNextRunAt &&
+            !Number.isNaN(new Date(entry.scheduleNextRunAt).getTime()) &&
+            new Date(entry.scheduleNextRunAt).getTime() <= currentTime
+        ).length ?? 0
+      : 0;
+  const activeIdentity = activeEntryDetail
+    ? formatWatchlistTargetIdentity(
+        activeEntryDetail.entry.requestedQuery,
+        activeEntryDetail.monitoring.latestMatchedCompanyName ?? activeEntryDetail.latestBrief?.matchedCompanyName ?? null
+      )
+    : null;
+  const activeSourceGrounding = activeEntryDetail
+    ? buildWatchlistSourceGrounding({
+        requestedQuery: activeEntryDetail.entry.requestedQuery,
+        matchedCompanyName:
+          activeEntryDetail.monitoring.latestMatchedCompanyName ??
+          activeEntryDetail.latestBrief?.matchedCompanyName ??
+          null,
+        atsSourceUsed:
+          activeEntryDetail.monitoring.latestStateAtsSourceUsed ??
+          activeEntryDetail.monitoring.latestAtsSourceUsed,
+      })
+    : null;
+  const activeStateHeadline = activeEntryDetail
+    ? formatWatchlistStateHeadline({
+        watchlistReadLabel: activeEntryDetail.monitoring.latestStateWatchlistReadLabel,
+        resultState: activeEntryDetail.monitoring.latestStateResultState,
+        fallback: "No current state",
+      })
+    : null;
+  const activeFreshness = activeEntryDetail
+    ? formatWatchlistDateTime(
+        activeEntryDetail.monitoring.lastRefreshedAt ?? activeEntryDetail.monitoring.lastMonitoringAttemptAt,
+        "No saved brief yet"
+      )
+    : null;
 
   const handleCreateWatchlist = async () => {
     const name = newWatchlistName.trim();
@@ -167,7 +155,7 @@ export function WatchlistConsole({
 
       setNewQuery("");
       setMessage(`Added "${data.data.entry.requestedQuery}" to ${data.data.watchlist.name}.`);
-      router.refresh();
+      router.push(`/watchlists?watchlistId=${data.data.watchlist.id}&entryId=${data.data.entry.id}`);
     } catch {
       setError("Tracked company could not be added.");
     } finally {
@@ -194,12 +182,7 @@ export function WatchlistConsole({
       }
 
       setMessage("Tracked company removed from watchlist.");
-      if (activeEntryId === entryId) {
-        router.push(`/watchlists?watchlistId=${activeWatchlist.id}`);
-        return;
-      }
-
-      router.refresh();
+      router.push(`/watchlists?watchlistId=${activeWatchlist.id}`);
     } catch {
       setError("Tracked company could not be removed.");
     } finally {
@@ -246,430 +229,240 @@ export function WatchlistConsole({
     }
   };
 
+  const handleRefreshEntry = async (entryId: string) => {
+    if (!activeWatchlist) return;
+
+    const entry = activeWatchlist.entries.find((candidate) => candidate.id === entryId);
+    if (!entry) return;
+
+    setPendingRefreshId(entryId);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/analyze-unified", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyName: entry.requestedQuery,
+          watchlistEntryId: entry.id,
+          forceRefresh: true,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        setError(data.error ?? "Tracked company could not be refreshed.");
+        return;
+      }
+
+      setMessage(`Refreshed "${entry.requestedQuery}".`);
+      router.refresh();
+    } catch {
+      setError("Tracked company could not be refreshed.");
+    } finally {
+      setPendingRefreshId(null);
+    }
+  };
+
+  const handleSaveSchedule = async () => {
+    if (!activeWatchlist || !activeEntryDetail) return;
+
+    setPendingScheduleSave(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await fetch(
+        `/api/watchlists/${activeWatchlist.id}/entries/${activeEntryDetail.entry.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scheduleCadence }),
+        }
+      );
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        setError(data.error ?? "Schedule could not be updated.");
+        return;
+      }
+
+      setMessage(
+        scheduleCadence === "off"
+          ? "Scheduled refresh disabled for this tracked entry."
+          : `Scheduled refresh set to ${scheduleCadence}.`
+      );
+      router.refresh();
+    } catch {
+      setError("Schedule could not be updated.");
+    } finally {
+      setPendingScheduleSave(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen" style={{ background: "var(--background)" }}>
-      <header
-        className="border-b"
-        style={{
-          background: "var(--surface)",
-          borderColor: "var(--border)",
-          borderWidth: "1px",
-        }}
-      >
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-[10px] font-data uppercase tracking-[0.24em]" style={{ color: "var(--accent)" }}>
-              STRATUM
-            </p>
-            <h1 className="mt-2 text-lg font-semibold tracking-tight" style={{ color: "var(--foreground)" }}>
-              Watchlists
-            </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-relaxed" style={{ color: "var(--foreground-secondary)" }}>
-              Saved tracked queries plus the latest saved point-in-time brief, previous brief reference, and
-              deterministic saved-brief change summary for each entry. {automationStatus.summary} Notifications now
-              appear in Stratum&apos;s in-product inbox only. No email, push, or Slack delivery exists yet.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3 text-xs font-data uppercase tracking-[0.18em]">
-            <Link
-              href="/notifications"
-              className="inline-flex items-center gap-2 rounded border px-4 py-2 transition-all duration-200 hover:border-[var(--accent)] hover:text-[var(--accent)]"
-              style={{
-                borderColor: "var(--border)",
-                color: "var(--foreground-secondary)",
-              }}
-            >
-              Notifications
-            </Link>
-            <Link
-              href="/"
-              className="inline-flex items-center gap-2 rounded border px-4 py-2 transition-all duration-200 hover:border-[var(--accent)] hover:text-[var(--accent)]"
-              style={{
-                borderColor: "var(--border)",
-                color: "var(--foreground-secondary)",
-              }}
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Brief Builder
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      <div className="mx-auto max-w-6xl px-6 py-6">
+    <div className="min-h-full bg-[var(--background)]">
+      <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6 lg:py-6">
         {(message || error) && (
           <div
-            className="mb-4 rounded border px-4 py-3 text-sm leading-relaxed"
+            className="mb-5 rounded-2xl border px-4 py-3 text-sm leading-relaxed"
             style={{
               background: "var(--surface)",
-              borderColor: error ? "#7f1d1d" : "var(--border)",
-              borderWidth: "1px",
-              color: error ? "#fca5a5" : "var(--foreground-secondary)",
+              borderColor: error ? "#fca5a5" : "var(--border)",
+              color: error ? "#b91c1c" : "var(--foreground-secondary)",
             }}
           >
             {error ?? message}
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
-          <section
-            className="rounded border p-5"
-            style={{
-              background: "var(--surface)",
-              borderColor: "var(--border)",
-              borderWidth: "1px",
-            }}
-          >
-            <h2 className="text-sm font-data uppercase tracking-[0.18em]" style={{ color: "var(--foreground)" }}>
-              Saved Watchlists
-            </h2>
-            <p className="mt-3 text-sm leading-relaxed" style={{ color: "var(--foreground-secondary)" }}>
-              Use one default watchlist or create separate saved lists. Each entry can now open a manual monitoring
-              detail view with the current latest brief, previous brief reference, and saved-brief comparison only.
-            </p>
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[15rem_minmax(0,1fr)] 2xl:grid-cols-[16rem_minmax(0,1fr)]">
+          <WatchlistWorkspaceSidebar
+            watchlists={initialWatchlists}
+            activeWatchlistId={activeWatchlistId}
+            activeWatchlist={activeWatchlist}
+            automationStatus={automationStatus}
+            dueScheduledEntryCount={dueScheduledEntryCount}
+            newWatchlistName={newWatchlistName}
+            setNewWatchlistName={setNewWatchlistName}
+            pendingCreate={pendingCreate}
+            onCreateWatchlist={handleCreateWatchlist}
+            newQuery={newQuery}
+            setNewQuery={setNewQuery}
+            pendingAdd={pendingAdd}
+            onAddEntry={handleAddEntry}
+            pendingScheduledRun={pendingScheduledRun}
+            onRunDueScheduledRefreshes={handleRunDueScheduledRefreshes}
+          />
 
-            <div className="mt-5 space-y-2">
-              {initialWatchlists.map((watchlist) => {
-                const isActive = activeWatchlist?.id === watchlist.id;
-
-                return (
-                  <Link
-                    key={watchlist.id}
-                    href={`/watchlists?watchlistId=${watchlist.id}`}
-                    className="block rounded border px-4 py-3 transition-all duration-200 hover:border-[var(--accent)]"
-                    style={{
-                      background: isActive ? "var(--background)" : "var(--surface)",
-                      borderColor: isActive ? "var(--accent)" : "var(--border)",
-                      borderWidth: "1px",
-                    }}
+          <section className="min-w-0 space-y-6">
+            <header
+              className="rounded-[24px] border bg-[var(--surface)] px-6 py-5 lg:px-7 lg:py-6"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+                <div className="max-w-2xl">
+                  <p className="text-sm font-medium tracking-tight" style={{ color: "var(--foreground-muted)" }}>
+                    Company watchlist
+                  </p>
+                  <h1
+                    className="mt-2.5 text-[1.85rem] font-semibold tracking-[-0.03em] lg:text-[2.15rem]"
+                    style={{ color: "var(--foreground)" }}
                   >
-                    <p className="text-sm font-data" style={{ color: "var(--foreground)" }}>
-                      {watchlist.name}
-                    </p>
-                    <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--foreground-secondary)" }}>
-                      {watchlist.entryCount} tracked {watchlist.entryCount === 1 ? "entry" : "entries"}
-                    </p>
-                  </Link>
-                );
-              })}
-            </div>
+                    {activeWatchlist?.name ?? "No watchlist selected"}
+                  </h1>
+                </div>
 
-            <div className="mt-6 border-t pt-5" style={{ borderColor: "var(--border)" }}>
-              <label
-                htmlFor="watchlist-name"
-                className="text-[10px] font-data uppercase tracking-[0.22em]"
-                style={{ color: "var(--foreground-muted)" }}
+                <div className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-4">
+                  <div>
+                    <p className="text-[12px]" style={{ color: "var(--foreground-muted)" }}>
+                      Tracked
+                    </p>
+                    <p className="mt-1 text-[1.35rem] font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>
+                      {activeWatchlist?.entryCount ?? 0}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[12px]" style={{ color: "var(--foreground-muted)" }}>
+                      Scheduled
+                    </p>
+                    <p className="mt-1 text-[1.35rem] font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>
+                      {scheduledEntryCount}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[12px]" style={{ color: "var(--foreground-muted)" }}>
+                      Due now
+                    </p>
+                    <p className="mt-1 text-[1.35rem] font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>
+                      {dueScheduledEntryCount}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[12px]" style={{ color: "var(--foreground-muted)" }}>
+                      Selected
+                    </p>
+                    <p className="mt-1 text-[1.35rem] font-semibold" style={{ color: "var(--foreground)" }}>
+                      {activeEntryId ? "1 target" : "None"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                className="mt-5 grid grid-cols-1 gap-4 border-t pt-4 lg:grid-cols-[minmax(0,1.8fr)_minmax(10rem,0.9fr)_minmax(9rem,0.8fr)]"
+                style={{ borderColor: "var(--border)" }}
               >
-                New watchlist
-              </label>
-              <div className="mt-2 flex gap-2">
-                <input
-                  id="watchlist-name"
-                  type="text"
-                  value={newWatchlistName}
-                  onChange={(event) => setNewWatchlistName(event.target.value)}
-                  onKeyDown={(event) => event.key === "Enter" && handleCreateWatchlist()}
-                  placeholder="Name a saved watchlist"
-                  disabled={pendingCreate}
-                  className="w-full rounded border px-3 py-2 text-sm font-data focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
-                  style={{
-                    background: "var(--background)",
-                    borderColor: "var(--border)",
-                    color: "var(--foreground)",
+                <div className="min-w-0">
+                  <p className="text-[12px]" style={{ color: "var(--foreground-muted)" }}>
+                    Selected target
+                  </p>
+                  <p className="mt-1 truncate text-[1rem] font-semibold tracking-tight" style={{ color: "var(--foreground)" }}>
+                    {activeIdentity?.primary ?? "Select a tracked company"}
+                  </p>
+                  <p className="mt-1 text-[12px] leading-5" style={{ color: "var(--foreground-secondary)" }}>
+                    {formatWatchlistMetadataLine([
+                      activeSourceGrounding?.primary,
+                      activeIdentity?.secondary,
+                      activeIdentity?.tertiary,
+                    ]) ?? "No target selected"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[12px]" style={{ color: "var(--foreground-muted)" }}>
+                    Current state
+                  </p>
+                  <p className="mt-1 text-[0.95rem] font-semibold tracking-tight" style={{ color: "var(--foreground)" }}>
+                    {activeStateHeadline ?? "No current state"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[12px]" style={{ color: "var(--foreground-muted)" }}>
+                    Freshness
+                  </p>
+                  <p className="mt-1 text-[0.95rem] font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>
+                    {activeFreshness ?? "No saved brief yet"}
+                  </p>
+                </div>
+              </div>
+            </header>
+
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.7fr)_22rem] 2xl:grid-cols-[minmax(0,1.8fr)_23rem]">
+              <section className="min-w-0">
+                <WatchlistEntriesTable
+                  watchlist={activeWatchlist}
+                  activeEntryId={activeEntryId}
+                  pendingRemovalId={pendingRemovalId}
+                  pendingRefreshId={pendingRefreshId}
+                  currentTime={currentTime}
+                  onRemoveEntry={handleRemoveEntry}
+                  onRefreshEntry={handleRefreshEntry}
+                />
+              </section>
+
+              <div className="min-w-0 xl:sticky xl:top-6 xl:self-start">
+                <WatchlistEntryInspectionPanel
+                  automationStatus={automationStatus}
+                  detail={activeEntryDetail}
+                  pendingScheduleSave={pendingScheduleSave}
+                  pendingRefresh={pendingRefreshId === activeEntryDetail?.entry.id}
+                  scheduleCadence={scheduleCadence}
+                  setScheduleCadence={setScheduleCadence}
+                  onRefreshEntry={() => {
+                    if (activeEntryDetail) {
+                      void handleRefreshEntry(activeEntryDetail.entry.id);
+                    }
+                  }}
+                  onSaveSchedule={handleSaveSchedule}
+                  onCloseDetail={() => {
+                    if (activeWatchlist) {
+                      router.push(`/watchlists?watchlistId=${activeWatchlist.id}`);
+                    }
                   }}
                 />
-                <button
-                  onClick={handleCreateWatchlist}
-                  disabled={pendingCreate || !newWatchlistName.trim()}
-                  className="inline-flex items-center gap-2 rounded px-4 py-2 text-sm font-data transition-all duration-200 disabled:opacity-40"
-                  style={{ background: "var(--accent)", color: "white" }}
-                >
-                  {pendingCreate ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                  Create
-                </button>
               </div>
             </div>
-          </section>
-
-          <section
-            className="rounded border p-5"
-            style={{
-              background: "var(--surface)",
-              borderColor: "var(--border)",
-              borderWidth: "1px",
-            }}
-          >
-            {activeWatchlist ? (
-              <>
-                <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-                  <div>
-                    <p
-                      className="text-[10px] font-data uppercase tracking-[0.22em]"
-                      style={{ color: "var(--foreground-muted)" }}
-                    >
-                      Active watchlist
-                    </p>
-                    <h2 className="mt-2 text-2xl font-semibold tracking-tight" style={{ color: "var(--foreground)" }}>
-                      {activeWatchlist.name}
-                    </h2>
-                    <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--foreground-secondary)" }}>
-                      Track companies or source queries here, then open or refresh their saved briefs when you need a
-                      new point-in-time read. Per-entry schedules can now be configured for due refresh execution, and
-                      Stratum keeps their automation state separate from saved-brief history.
-                    </p>
-                  </div>
-                  <div className="text-sm leading-relaxed" style={{ color: "var(--foreground-secondary)" }}>
-                    <p>
-                      {activeWatchlist.entryCount} tracked {activeWatchlist.entryCount === 1 ? "entry" : "entries"}
-                    </p>
-                    <p className="mt-1">
-                      {scheduledEntryCount} scheduled, {dueScheduledEntryCount} due now
-                    </p>
-                  </div>
-                </div>
-
-                <div
-                  className="mt-5 rounded border p-4"
-                  style={{
-                    background: "var(--background)",
-                    borderColor: "var(--border)",
-                    borderWidth: "1px",
-                  }}
-                >
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
-                      <p
-                        className="text-[10px] font-data uppercase tracking-[0.22em]"
-                        style={{ color: "var(--foreground-muted)" }}
-                      >
-                        Scheduled execution
-                      </p>
-                      <p className="mt-2 text-sm font-data" style={{ color: "var(--foreground)" }}>
-                        {automationStatus.label}
-                      </p>
-                      <p className="mt-3 text-sm leading-relaxed" style={{ color: "var(--foreground-secondary)" }}>
-                        {automationStatus.summary} This button still runs only the due entries in this watchlist.
-                      </p>
-                    </div>
-                    <button
-                      onClick={handleRunDueScheduledRefreshes}
-                      disabled={pendingScheduledRun}
-                      className="inline-flex items-center justify-center gap-2 rounded border px-4 py-2 text-sm font-data uppercase tracking-[0.18em] transition-all duration-200 disabled:opacity-40"
-                      style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
-                    >
-                      {pendingScheduledRun ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                      Run Due Scheduled Refreshes
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-5 rounded border p-4" style={{ background: "var(--background)", borderColor: "var(--border)", borderWidth: "1px" }}>
-                  <label
-                    htmlFor="tracked-query"
-                    className="text-[10px] font-data uppercase tracking-[0.22em]"
-                    style={{ color: "var(--foreground-muted)" }}
-                  >
-                    Add company or query
-                  </label>
-                  <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                    <input
-                      id="tracked-query"
-                      type="text"
-                      value={newQuery}
-                      onChange={(event) => setNewQuery(event.target.value)}
-                      onKeyDown={(event) => event.key === "Enter" && handleAddEntry()}
-                      placeholder="Track a company name or source query"
-                      disabled={pendingAdd}
-                      className="w-full rounded border px-3 py-2 text-sm font-data focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
-                      style={{
-                        background: "var(--surface)",
-                        borderColor: "var(--border)",
-                        color: "var(--foreground)",
-                      }}
-                    />
-                    <button
-                      onClick={handleAddEntry}
-                      disabled={pendingAdd || !newQuery.trim()}
-                      className="inline-flex items-center justify-center gap-2 rounded px-4 py-2 text-sm font-data transition-all duration-200 disabled:opacity-40"
-                      style={{ background: "var(--accent)", color: "white" }}
-                    >
-                      {pendingAdd ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                      Track
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-5 space-y-3">
-                  {activeWatchlist.entries.length > 0 ? (
-                    activeWatchlist.entries.map((entry) => {
-                      const latestBriefTime =
-                        formatDateTimeValue(entry.latestBriefUpdatedAt) ?? formatDateTimeValue(entry.latestBriefCreatedAt);
-                      const isSelected = activeEntryId === entry.id;
-
-                      return (
-                        <article
-                          key={entry.id}
-                          className="rounded border p-5"
-                          style={{
-                            background: "var(--background)",
-                            borderColor: isSelected ? "var(--accent)" : "var(--border)",
-                            borderWidth: "1px",
-                          }}
-                        >
-                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                            <div>
-                              <p
-                                className="text-[10px] font-data uppercase tracking-[0.22em]"
-                                style={{ color: "var(--foreground-muted)" }}
-                              >
-                                Tracked query
-                              </p>
-                              <h3 className="mt-2 text-xl font-semibold tracking-tight" style={{ color: "var(--foreground)" }}>
-                                {entry.requestedQuery}
-                              </h3>
-                              <p className="mt-3 text-sm leading-relaxed" style={{ color: "var(--foreground-secondary)" }}>
-                                {entry.latestMatchedCompanyName
-                                  ? `Latest matched company: ${entry.latestMatchedCompanyName}`
-                                  : "No saved brief has been attached to this tracked query yet."}
-                              </p>
-                            </div>
-
-                            <button
-                              onClick={() => handleRemoveEntry(entry.id)}
-                              disabled={pendingRemovalId === entry.id}
-                              className="inline-flex items-center gap-2 rounded border px-3 py-2 text-xs font-data uppercase tracking-[0.18em] transition-all duration-200 hover:border-[#b91c1c] hover:text-[#fca5a5] disabled:opacity-40"
-                              style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
-                            >
-                              {pendingRemovalId === entry.id ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <Trash2 className="h-3 w-3" />
-                              )}
-                              Remove
-                            </button>
-                          </div>
-
-                          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                            {[
-                              { label: "Latest result state", value: formatResultStateLabel(entry.latestResultState) },
-                              {
-                                label: "Latest watchlist read",
-                                value: entry.latestWatchlistReadLabel ?? "No saved brief yet",
-                              },
-                              {
-                                label: "Read confidence",
-                                value: formatConfidenceLabel(entry.latestWatchlistReadConfidence),
-                              },
-                              {
-                                label: "ATS source used",
-                                value: entry.latestBriefId
-                                  ? formatSourceLabel(
-                                      (entry.latestAtsSourceUsed as
-                                        | "GREENHOUSE"
-                                        | "LEVER"
-                                        | "ASHBY"
-                                        | "WORKABLE"
-                                        | null) ?? null
-                                    )
-                                  : "No saved brief yet",
-                              },
-                              {
-                                label: "Last saved refresh",
-                                value: latestBriefTime ?? "No saved brief yet",
-                              },
-                              {
-                                label: "Schedule",
-                                value: formatWatchlistScheduleCadenceLabel(entry.scheduleCadence),
-                              },
-                              {
-                                label: "Next scheduled run",
-                                value: formatScheduledNextRunValue(
-                                  entry.scheduleCadence,
-                                  entry.scheduleNextRunAt
-                                ),
-                              },
-                            ].map((item) => (
-                              <div
-                                key={`${entry.id}-${item.label}`}
-                                className="rounded border p-4"
-                                style={{
-                                  background: "var(--surface)",
-                                  borderColor: "var(--border)",
-                                  borderWidth: "1px",
-                                }}
-                              >
-                                <p
-                                  className="text-[10px] font-data uppercase tracking-[0.22em]"
-                                  style={{ color: "var(--foreground-muted)" }}
-                                >
-                                  {item.label}
-                                </p>
-                                <p className="mt-3 text-sm leading-relaxed" style={{ color: "var(--foreground)" }}>
-                                  {item.value}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-
-                          <div className="mt-5 flex flex-wrap gap-3 text-xs font-data uppercase tracking-[0.18em]">
-                            <Link
-                              href={`/watchlists?watchlistId=${activeWatchlist.id}&entryId=${entry.id}`}
-                              className="rounded border px-3 py-2 transition-all duration-200 hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                              style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
-                            >
-                              Open Entry Detail
-                            </Link>
-                            {entry.latestBriefId ? (
-                              <Link
-                                href={`/briefs/${entry.latestBriefId}`}
-                                className="rounded border px-3 py-2 transition-all duration-200 hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                                style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
-                              >
-                                Open Latest Brief
-                              </Link>
-                            ) : null}
-                            <Link
-                              href={`/?company=${encodeURIComponent(entry.requestedQuery)}&watchlistId=${activeWatchlist.id}&watchlistEntryId=${entry.id}&autorun=1&manualRefresh=1`}
-                              className="rounded border px-3 py-2 transition-all duration-200 hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                              style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
-                            >
-                              Refresh Manually
-                            </Link>
-                          </div>
-                        </article>
-                      );
-                    })
-                  ) : (
-                    <div
-                      className="rounded border p-5 text-sm leading-relaxed"
-                      style={{
-                        background: "var(--background)",
-                        borderColor: "var(--border)",
-                        borderWidth: "1px",
-                        color: "var(--foreground-secondary)",
-                      }}
-                    >
-                      This watchlist is empty. Add a company or query, then run a brief when you want a new
-                      point-in-time read. Scheduled refreshes can be configured per entry, and automatic execution
-                      depends on a cron-enabled deployment.
-                    </div>
-                  )}
-                </div>
-
-                {activeWatchlist && activeEntryDetail ? (
-                  <WatchlistEntryHistoryPanel
-                    watchlistId={activeWatchlist.id}
-                    automationStatus={automationStatus}
-                    detail={activeEntryDetail}
-                  />
-                ) : null}
-              </>
-            ) : (
-              <div className="text-sm leading-relaxed" style={{ color: "var(--foreground-secondary)" }}>
-                No watchlist is available yet.
-              </div>
-            )}
           </section>
         </div>
       </div>
