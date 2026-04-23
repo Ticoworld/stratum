@@ -23,68 +23,35 @@ function isActivePath(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
+export interface AppShellProps {
+  children: ReactNode;
+  variant?: "full" | "minimal" | "wide";
+}
+
+export function AppShell({ children, variant = "full" }: AppShellProps) {
   const pathname = usePathname();
   const currentSection = getCurrentSection(pathname);
+  const isMinimal = variant === "minimal";
+  const isWide = variant === "wide";
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-      <div className="grid min-h-screen lg:grid-cols-[16rem_minmax(0,1fr)]">
-        <aside className="hidden border-r bg-[var(--surface)] lg:flex lg:flex-col" style={{ borderColor: "var(--border)" }}>
-          <div className="border-b px-5 py-5" style={{ borderColor: "var(--border)" }}>
-            <p className="text-[10px] font-data uppercase tracking-[0.26em]" style={{ color: "var(--foreground-muted)" }}>
-              Stratum
-            </p>
-            <p className="mt-2 text-base font-semibold tracking-tight" style={{ color: "var(--foreground)" }}>
-              Watchlist intelligence
-            </p>
-            <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--foreground-secondary)" }}>
-              Supported ATS monitoring for target companies.
-            </p>
-          </div>
-
-          <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
-            {NAV_ITEMS.map((item) => {
-              const active = isActivePath(pathname, item.href);
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="rounded border px-4 py-3 text-sm transition-colors"
-                  aria-current={active ? "page" : undefined}
-                  style={{
-                    background: active ? "var(--background)" : "transparent",
-                    borderColor: active ? "var(--accent)" : "transparent",
-                    color: active ? "var(--foreground)" : "var(--foreground-secondary)",
-                  }}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-
-          <div className="border-t px-5 py-4 text-xs leading-relaxed" style={{ borderColor: "var(--border)", color: "var(--foreground-muted)" }}>
-            Supported ATS only.
-          </div>
-        </aside>
-
-        <div className="flex min-w-0 flex-col">
-          <header
-            className="flex h-14 items-center justify-between border-b bg-[var(--surface)] px-4 lg:px-6"
-            style={{ borderColor: "var(--border)" }}
-          >
-            <div className="min-w-0">
-              <p className="text-[10px] font-data uppercase tracking-[0.24em]" style={{ color: "var(--foreground-muted)" }}>
-                {currentSection}
+      <div className={`grid min-h-screen ${(isMinimal || isWide) ? "grid-cols-1" : "lg:grid-cols-[16rem_minmax(0,1fr)]"}`}>
+        {(!isMinimal && !isWide) && (
+          <aside className="hidden border-r bg-[var(--surface)] lg:flex lg:flex-col" style={{ borderColor: "var(--border)" }}>
+            <div className="border-b px-5 py-5" style={{ borderColor: "var(--border)" }}>
+              <p className="text-[10px] font-data uppercase tracking-[0.26em]" style={{ color: "var(--foreground-muted)" }}>
+                Stratum
               </p>
-              <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--foreground-secondary)" }}>
-                Target company monitoring workspace
+              <p className="text-[14px] font-semibold tracking-tight" style={{ color: "var(--foreground-secondary)" }}>
+                Watchlists
+              </p>
+              <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--foreground-secondary)" }}>
+                Track companies you care about.
               </p>
             </div>
 
-            <nav className="flex items-center gap-2 lg:hidden" aria-label="Primary">
+            <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
               {NAV_ITEMS.map((item) => {
                 const active = isActivePath(pathname, item.href);
 
@@ -92,11 +59,11 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="rounded border px-3 py-2 text-xs font-data uppercase tracking-[0.18em] transition-colors"
+                    className="rounded border px-4 py-3 text-sm transition-colors"
                     aria-current={active ? "page" : undefined}
                     style={{
                       background: active ? "var(--background)" : "transparent",
-                      borderColor: active ? "var(--accent)" : "var(--border)",
+                      borderColor: active ? "var(--accent)" : "transparent",
                       color: active ? "var(--foreground)" : "var(--foreground-secondary)",
                     }}
                   >
@@ -106,10 +73,51 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
               })}
             </nav>
 
-            <div className="hidden text-xs font-data uppercase tracking-[0.18em] lg:block" style={{ color: "var(--foreground-muted)" }}>
-              Supported ATS only
+            <div className="border-t px-5 py-4 text-[11px] font-medium leading-relaxed opacity-60" style={{ borderColor: "var(--border)", color: "var(--foreground-muted)" }}>
+              Tracking supported hiring sources
             </div>
-          </header>
+          </aside>
+        )}
+
+        <div className="flex min-w-0 flex-col">
+          {!isMinimal && (
+            <header
+              className="flex h-14 items-center justify-between border-b bg-[var(--surface)] px-4 lg:px-6"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium tracking-[0.12em]" style={{ color: "var(--foreground-muted)" }}>
+                  {currentSection.toLowerCase()}
+                </p>
+              </div>
+
+              <nav className="flex items-center gap-2 lg:hidden" aria-label="Primary">
+                {NAV_ITEMS.map((item) => {
+                  const active = isActivePath(pathname, item.href);
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className="rounded border px-3 py-2 text-xs font-data uppercase tracking-[0.18em] transition-colors"
+                      aria-current={active ? "page" : undefined}
+                      style={{
+                        background: active ? "var(--background)" : "transparent",
+                        borderColor: active ? "var(--accent)" : "var(--border)",
+                        color: active ? "var(--foreground)" : "var(--foreground-secondary)",
+                      }}
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </nav>
+
+              <div className="hidden text-[11px] font-medium tracking-[0.05em] opacity-60 lg:block" style={{ color: "var(--foreground-muted)" }}>
+                Tracking supported hiring sources
+              </div>
+            </header>
+          )}
 
           <main className="min-w-0 flex-1">{children}</main>
         </div>

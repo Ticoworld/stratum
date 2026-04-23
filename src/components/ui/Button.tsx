@@ -13,56 +13,51 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant = "primary", size = "md", isLoading, disabled, children, ...props }, ref) => {
     const baseStyles = `
       relative inline-flex items-center justify-center gap-2
-      font-medium tracking-tight
+      font-medium tracking-[0.01em]
       transition-all duration-200 ease-out
       disabled:opacity-50 disabled:cursor-not-allowed
       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background
-      overflow-hidden
     `;
 
     const variants = {
       primary: `
-        bg-primary text-zinc-950
-        hover:bg-primary-light
-        focus-visible:ring-primary
-        shadow-[0_0_20px_rgba(16,185,129,0.15)]
-        hover:shadow-[0_0_30px_rgba(16,185,129,0.25)]
-        before:absolute before:inset-0 before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent
-        before:translate-x-[-200%] hover:before:translate-x-[200%] before:transition-transform before:duration-500
+        bg-[color:var(--accent)]
+        text-white
+        hover:bg-[color:color-mix(in_srgb,var(--accent) 88%,black)]
+        focus-visible:ring-[color:color-mix(in_srgb,var(--accent) 65%,white)]
+        shadow-sm hover:shadow-[0_8px_20px_rgba(16,24,40,0.12)]
       `,
       destructive: `
         bg-danger text-white
         hover:bg-danger-light
         focus-visible:ring-danger
-        shadow-[0_0_20px_rgba(244,63,94,0.15)]
-        hover:shadow-[0_0_30px_rgba(244,63,94,0.25)]
-        before:absolute before:inset-0 before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent
-        before:translate-x-[-200%] hover:before:translate-x-[200%] before:transition-transform before:duration-500
+        shadow-sm hover:shadow
       `,
       ghost: `
         bg-transparent text-muted
-        border border-white/10
-        hover:bg-white/5 hover:text-foreground hover:border-white/20
-        focus-visible:ring-white/20
+        border border-[var(--border)]
+        hover:bg-[var(--surface-elevated)] hover:text-foreground hover:border-[var(--border-subtle)]
+        focus-visible:ring-[var(--border-subtle)]
       `,
     };
 
     const sizes = {
-      sm: "h-8 px-3 text-sm rounded-md",
+      sm: "h-8 px-3 text-sm rounded-lg",
       md: "h-10 px-4 text-sm rounded-lg",
-      lg: "h-12 px-6 text-base rounded-lg",
+      lg: "h-12 px-6 text-base rounded-xl",
     };
 
     return (
       <button
         ref={ref}
         disabled={disabled || isLoading}
+        aria-busy={isLoading || undefined}
         className={cn(baseStyles, variants[variant], sizes[size], className)}
         {...props}
       >
         {isLoading ? (
           <svg
-            className="animate-spin h-4 w-4"
+            className="h-4 w-4 animate-spin shrink-0"
             xmlns="http://www.w3.org/2000/svg"
             fill="none"
             viewBox="0 0 24 24"

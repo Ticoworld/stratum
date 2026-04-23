@@ -7,6 +7,7 @@ import type {
   SourceCoverageCompleteness,
   StratumResultState,
 } from "@/lib/services/StratumInvestigator";
+import { getNormalizedTrackedTargetName } from "@/lib/watchlists/identity";
 
 export interface WatchlistEntryBriefHistoryItem {
   id: string;
@@ -192,10 +193,14 @@ function buildComparisonNotes(
 export function toWatchlistEntryBriefHistoryItem(
   snapshot: StratumBriefSnapshot
 ): WatchlistEntryBriefHistoryItem {
+  const matchedCompanyName =
+    getNormalizedTrackedTargetName(snapshot.queriedCompanyName, snapshot.matchedCompanyName) ??
+    snapshot.matchedCompanyName;
+
   return {
     id: snapshot.id,
     queriedCompanyName: snapshot.queriedCompanyName,
-    matchedCompanyName: snapshot.matchedCompanyName,
+    matchedCompanyName,
     atsSourceUsed: snapshot.atsSourceUsed,
     resultState: snapshot.resultState,
     companyMatchConfidence: snapshot.companyMatchConfidence,

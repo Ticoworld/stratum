@@ -39,7 +39,7 @@ export interface WatchlistMonitoringAttemptHistoryItem {
 export function formatMonitoringAttemptOriginLabel(value: StratumMonitoringAttemptOrigin): string {
   switch (value) {
     case "manual_refresh":
-      return "Manual refresh";
+      return "Latest update";
     case "watchlist_rerun":
       return "Watchlist rerun";
     case "scheduled_refresh":
@@ -50,7 +50,7 @@ export function formatMonitoringAttemptOriginLabel(value: StratumMonitoringAttem
 export function formatMonitoringAttemptOutcomeLabel(value: StratumMonitoringAttemptOutcome): string {
   switch (value) {
     case "saved_brief_created":
-      return "Saved brief created";
+      return "Update completed";
     case "completed_without_saved_brief":
       return "Completed without saved brief";
     case "reused_cached_result":

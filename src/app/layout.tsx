@@ -51,7 +51,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen bg-[var(--background)] text-[var(--foreground)] antialiased">
-        <AppShell>{children}</AppShell>
+        {children}
       </body>
     </html>
   );

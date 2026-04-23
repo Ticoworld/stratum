@@ -1,8 +1,9 @@
 import { createMonitoringAttemptEvent } from "@/lib/watchlists/monitoringEventRepository";
 import { captureNotificationCandidateForMonitoringEvent } from "@/lib/watchlists/notificationCandidates";
+import type { TenantScope } from "@/lib/watchlists/tenantScope";
 
 export async function recordMonitoringAttempt(
-  args: Parameters<typeof createMonitoringAttemptEvent>[0]
+  args: Omit<Parameters<typeof createMonitoringAttemptEvent>[0], "scope"> & { scope: TenantScope }
 ) {
   const event = await createMonitoringAttemptEvent(args);
 
@@ -10,6 +11,7 @@ export async function recordMonitoringAttempt(
     await captureNotificationCandidateForMonitoringEvent({
       watchlistEntryId: event.watchlistEntryId,
       monitoringEventId: event.id,
+      scope: args.scope,
     });
   } catch (error) {
     console.error(

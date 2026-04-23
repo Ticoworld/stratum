@@ -23,15 +23,15 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
     const variants = {
       default: `
         h-10 px-4 text-sm
-        bg-zinc-900 border border-zinc-800 rounded-lg
-        hover:border-zinc-700
-        focus:border-zinc-600 focus:ring-1 focus:ring-zinc-700
+        bg-[var(--background)] border border-[var(--border)] rounded-lg
+        hover:border-[var(--border-subtle)]
+        focus:border-accent focus:ring-1 focus:ring-accent/20
       `,
       command: `
         h-12 text-base font-mono
-        bg-zinc-900 border border-zinc-800 rounded-lg
-        hover:border-zinc-700
-        focus:border-zinc-600 focus:ring-1 focus:ring-zinc-700
+        bg-[var(--background)] border border-[var(--border)] rounded-lg
+        hover:border-[var(--border-subtle)]
+        focus:border-accent focus:ring-1 focus:ring-accent/20
       `,
     };
 

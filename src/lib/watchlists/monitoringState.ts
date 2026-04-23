@@ -17,6 +17,7 @@ export interface DerivedMonitoringState {
   latestStateWatchlistReadLabel: string | null;
   latestStateWatchlistReadConfidence: ConfidenceLevel | null;
   latestStateAtsSourceUsed: JobBoardSource | null;
+  latestStateJobsObservedCount: number | null;
 }
 
 export function deriveMonitoringState(args: {
@@ -30,11 +31,12 @@ export function deriveMonitoringState(args: {
       return {
         latestStateBasis: "saved_brief",
         latestStateSummary:
-          "Current monitoring state comes from the latest saved brief for this tracked entry.",
+          "Baseline is saved. Current monitoring state comes from the latest saved brief for this tracked entry.",
         latestStateResultState: latestBrief.resultState,
         latestStateWatchlistReadLabel: latestBrief.watchlistReadLabel,
         latestStateWatchlistReadConfidence: latestBrief.watchlistReadConfidence,
         latestStateAtsSourceUsed: latestBrief.atsSourceUsed,
+        latestStateJobsObservedCount: latestBrief.jobsObservedCount,
       };
     }
 
@@ -42,12 +44,13 @@ export function deriveMonitoringState(args: {
       return {
         latestStateBasis: "saved_brief",
         latestStateSummary: latestAttempt.errorSummary
-          ? `Current monitoring state still comes from the latest saved brief. The most recent monitoring attempt failed and did not create a replacement brief: ${latestAttempt.errorSummary}`
-          : "Current monitoring state still comes from the latest saved brief. The most recent monitoring attempt failed and did not create a replacement brief.",
+          ? `Baseline is saved, but the most recent monitoring attempt failed and did not create a replacement brief: ${latestAttempt.errorSummary}`
+          : "Baseline is saved, but the most recent monitoring attempt failed and did not create a replacement brief.",
         latestStateResultState: latestBrief.resultState,
         latestStateWatchlistReadLabel: latestBrief.watchlistReadLabel,
         latestStateWatchlistReadConfidence: latestBrief.watchlistReadConfidence,
         latestStateAtsSourceUsed: latestBrief.atsSourceUsed,
+        latestStateJobsObservedCount: latestBrief.jobsObservedCount,
       };
     }
 
@@ -55,34 +58,37 @@ export function deriveMonitoringState(args: {
       return {
         latestStateBasis: "saved_brief",
         latestStateSummary:
-          "Current monitoring state still comes from the latest saved brief. The most recent monitoring attempt reused cached work and did not create a new saved brief.",
+          "Baseline is saved, but the most recent monitoring attempt reused cached work and did not create a new saved brief.",
         latestStateResultState: latestBrief.resultState,
         latestStateWatchlistReadLabel: latestBrief.watchlistReadLabel,
         latestStateWatchlistReadConfidence: latestBrief.watchlistReadConfidence,
         latestStateAtsSourceUsed: latestBrief.atsSourceUsed,
+        latestStateJobsObservedCount: latestBrief.jobsObservedCount,
       };
     }
 
     return {
       latestStateBasis: "saved_brief",
       latestStateSummary: latestAttempt.resultState
-        ? `Current monitoring state still comes from the latest saved brief. The most recent monitoring attempt completed with ${formatAttemptResultStateLabel(latestAttempt.resultState)} and did not create a new saved brief.`
-        : "Current monitoring state still comes from the latest saved brief. The most recent monitoring attempt completed without creating a new saved brief.",
+        ? `Baseline is saved, but the most recent monitoring attempt completed with ${formatAttemptResultStateLabel(latestAttempt.resultState)} and did not create a new saved brief.`
+        : "Baseline is saved, but the most recent monitoring attempt completed without creating a new saved brief.",
       latestStateResultState: latestBrief.resultState,
       latestStateWatchlistReadLabel: latestBrief.watchlistReadLabel,
       latestStateWatchlistReadConfidence: latestBrief.watchlistReadConfidence,
       latestStateAtsSourceUsed: latestBrief.atsSourceUsed,
+      latestStateJobsObservedCount: latestBrief.jobsObservedCount,
     };
   }
 
   if (!latestAttempt) {
     return {
       latestStateBasis: "none",
-      latestStateSummary: "No monitoring attempts have been recorded for this tracked entry yet.",
+      latestStateSummary: "Baseline has not started yet. No monitoring attempts have been recorded for this tracked entry yet.",
       latestStateResultState: null,
       latestStateWatchlistReadLabel: null,
       latestStateWatchlistReadConfidence: null,
       latestStateAtsSourceUsed: null,
+      latestStateJobsObservedCount: null,
     };
   }
 
@@ -90,12 +96,13 @@ export function deriveMonitoringState(args: {
     return {
       latestStateBasis: "latest_attempt_only",
       latestStateSummary: latestAttempt.errorSummary
-        ? `No saved brief exists yet. The latest monitoring state comes only from a failed attempt: ${latestAttempt.errorSummary}`
-        : "No saved brief exists yet. The latest monitoring state comes only from a failed attempt.",
+        ? `Baseline is pending. The latest monitoring state comes only from a failed attempt: ${latestAttempt.errorSummary}`
+        : "Baseline is pending. The latest monitoring state comes only from a failed attempt.",
       latestStateResultState: latestAttempt.resultState,
       latestStateWatchlistReadLabel: latestAttempt.watchlistReadLabel,
       latestStateWatchlistReadConfidence: latestAttempt.watchlistReadConfidence,
       latestStateAtsSourceUsed: latestAttempt.atsSourceUsed,
+      latestStateJobsObservedCount: null,
     };
   }
 
@@ -103,11 +110,12 @@ export function deriveMonitoringState(args: {
     return {
       latestStateBasis: "latest_attempt_only",
       latestStateSummary:
-        "No saved brief exists yet. The latest monitoring state comes only from a cached attempt record, and no saved brief was created.",
+        "Baseline is pending. The latest monitoring state comes only from a cached attempt record, and no saved brief was created.",
       latestStateResultState: latestAttempt.resultState,
       latestStateWatchlistReadLabel: latestAttempt.watchlistReadLabel,
       latestStateWatchlistReadConfidence: latestAttempt.watchlistReadConfidence,
       latestStateAtsSourceUsed: latestAttempt.atsSourceUsed,
+      latestStateJobsObservedCount: null,
     };
   }
 
@@ -115,22 +123,24 @@ export function deriveMonitoringState(args: {
     return {
       latestStateBasis: "saved_brief",
       latestStateSummary:
-        "Current monitoring state comes from the latest saved brief for this tracked entry.",
+        "Baseline is saved. Current monitoring state comes from the latest saved brief for this tracked entry.",
       latestStateResultState: latestAttempt.resultState,
       latestStateWatchlistReadLabel: latestAttempt.watchlistReadLabel,
       latestStateWatchlistReadConfidence: latestAttempt.watchlistReadConfidence,
       latestStateAtsSourceUsed: latestAttempt.atsSourceUsed,
+      latestStateJobsObservedCount: null,
     };
   }
 
   return {
     latestStateBasis: "latest_attempt_only",
     latestStateSummary: latestAttempt.resultState
-      ? `No saved brief exists yet. The latest monitoring state comes only from an unsaved attempt with ${formatAttemptResultStateLabel(latestAttempt.resultState)}.`
-      : "No saved brief exists yet. The latest monitoring state comes only from an unsaved attempt.",
+      ? `Baseline is pending. The latest monitoring state comes only from an unsaved attempt with ${formatAttemptResultStateLabel(latestAttempt.resultState)}.`
+      : "Baseline is pending. The latest monitoring state comes only from an unsaved attempt.",
     latestStateResultState: latestAttempt.resultState,
     latestStateWatchlistReadLabel: latestAttempt.watchlistReadLabel,
     latestStateWatchlistReadConfidence: latestAttempt.watchlistReadConfidence,
     latestStateAtsSourceUsed: latestAttempt.atsSourceUsed,
+    latestStateJobsObservedCount: null,
   };
 }

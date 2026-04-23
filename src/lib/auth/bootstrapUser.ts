@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { memberships } from "@/db/schema/memberships";
 import { tenants } from "@/db/schema/tenants";
 import { users } from "@/db/schema/users";
+import { recoverLegacyTenantDataForTenant } from "@/lib/auth/legacyTenantRecovery";
 import type { MemberRole } from "@/lib/auth/roles";
 
 type BootstrapUserInput = {
@@ -124,6 +125,9 @@ export async function bootstrapUser(
     if (!membership) {
       throw new Error("Failed to bootstrap a default tenant membership.");
     }
+
+    // Trigger one-time legacy data recovery during user bootstrap
+    await recoverLegacyTenantDataForTenant(membership.tenantId);
 
     return {
       userId,

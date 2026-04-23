@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { stratumMonitoringEvents } from "@/db/schema/stratumMonitoringEvents";
 import {
@@ -18,6 +18,12 @@ import type {
   StratumMonitoringAttemptOutcome,
   WatchlistMonitoringAttemptHistoryItem,
 } from "@/lib/watchlists/monitoringEvents";
+import {
+  assertTenantlessCompatibilityAllowed,
+  resolveTenantId,
+  type TenantScope,
+} from "@/lib/watchlists/tenantScope";
+import { getNormalizedTrackedTargetName } from "@/lib/watchlists/identity";
 
 function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
@@ -26,6 +32,9 @@ function toIsoString(value: Date | string): string {
 function mapMonitoringEventRow(
   row: typeof stratumMonitoringEvents.$inferSelect
 ): WatchlistMonitoringAttemptHistoryItem {
+  const matchedCompanyName =
+    getNormalizedTrackedTargetName(row.requestedQuery, row.matchedCompanyName) ?? null;
+
   return {
     id: row.id,
     watchlistEntryId: row.watchlistEntryId,
@@ -35,7 +44,7 @@ function mapMonitoringEventRow(
     outcomeStatus: row.outcomeStatus as StratumMonitoringAttemptOutcome,
     relatedBriefId: row.relatedBriefId ?? null,
     resultState: (row.resultState as StratumResultState | null) ?? null,
-    matchedCompanyName: row.matchedCompanyName ?? null,
+    matchedCompanyName,
     atsSourceUsed: (row.atsSourceUsed as JobBoardSource | null) ?? null,
     watchlistReadLabel: row.watchlistReadLabel ?? null,
     watchlistReadConfidence:
@@ -51,6 +60,7 @@ function mapMonitoringEventRow(
 
 export async function createMonitoringAttemptEvent(args: {
   watchlistEntryId: string;
+  scope: TenantScope;
   requestedQuery: string;
   attemptKind?: StratumMonitoringAttemptKind;
   attemptOrigin: StratumMonitoringAttemptOrigin;
@@ -67,11 +77,24 @@ export async function createMonitoringAttemptEvent(args: {
   createdAt?: Date;
 }): Promise<WatchlistMonitoringAttemptHistoryItem> {
   const createdAt = args.createdAt ?? new Date();
-  const [entry] = await db
-    .select()
+  assertTenantlessCompatibilityAllowed(args.scope);
+  const tenantId = resolveTenantId(args.scope);
+  const entryQuery = db
+    .select({
+      entry: stratumWatchlistEntries,
+    })
     .from(stratumWatchlistEntries)
-    .where(eq(stratumWatchlistEntries.id, args.watchlistEntryId))
+    .innerJoin(stratumWatchlists, eq(stratumWatchlistEntries.watchlistId, stratumWatchlists.id))
+    .where(
+      and(
+        eq(stratumWatchlistEntries.id, args.watchlistEntryId),
+        tenantId ? eq(stratumWatchlists.tenantId, tenantId) : undefined
+      )
+    )
     .limit(1);
+
+  const [entryRow] = await entryQuery;
+  const entry = entryRow?.entry ?? null;
 
   if (!entry) {
     throw new Error("Watchlist entry not found for monitoring event.");
@@ -100,6 +123,30 @@ export async function createMonitoringAttemptEvent(args: {
     })
     .returning();
 
+  const latestResultState =
+    args.resultState ?? (args.outcomeStatus === "failed" ? "provider_failure" : entry.latestResultState);
+  const latestMatchedCompanyName =
+    getNormalizedTrackedTargetName(
+      entry.requestedQuery,
+      args.matchedCompanyName ?? entry.latestMatchedCompanyName
+    ) ?? entry.latestMatchedCompanyName;
+  const latestWatchlistReadLabel = args.watchlistReadLabel ?? entry.latestWatchlistReadLabel;
+  const latestWatchlistReadConfidence =
+    args.watchlistReadConfidence ?? entry.latestWatchlistReadConfidence;
+  const latestAtsSourceUsed = args.atsSourceUsed ?? entry.latestAtsSourceUsed;
+
+  await db
+    .update(stratumWatchlistEntries)
+    .set({
+      latestMatchedCompanyName,
+      latestResultState,
+      latestWatchlistReadLabel,
+      latestWatchlistReadConfidence,
+      latestAtsSourceUsed,
+      updatedAt: createdAt,
+    })
+    .where(eq(stratumWatchlistEntries.id, entry.id));
+
   await db
     .update(stratumWatchlistEntries)
     .set({
@@ -118,13 +165,28 @@ export async function createMonitoringAttemptEvent(args: {
 }
 
 export async function listMonitoringAttemptEventsByWatchlistEntryId(
-  watchlistEntryId: string
+  watchlistEntryId: string,
+  scope: TenantScope
 ): Promise<WatchlistMonitoringAttemptHistoryItem[]> {
+  assertTenantlessCompatibilityAllowed(scope);
+  const tenantId = resolveTenantId(scope);
   const rows = await db
-    .select()
+    .select({
+      event: stratumMonitoringEvents,
+    })
     .from(stratumMonitoringEvents)
-    .where(eq(stratumMonitoringEvents.watchlistEntryId, watchlistEntryId))
+    .innerJoin(
+      stratumWatchlistEntries,
+      eq(stratumMonitoringEvents.watchlistEntryId, stratumWatchlistEntries.id)
+    )
+    .innerJoin(stratumWatchlists, eq(stratumWatchlistEntries.watchlistId, stratumWatchlists.id))
+    .where(
+      and(
+        eq(stratumMonitoringEvents.watchlistEntryId, watchlistEntryId),
+        tenantId ? eq(stratumWatchlists.tenantId, tenantId) : undefined
+      )
+    )
     .orderBy(desc(stratumMonitoringEvents.createdAt), desc(stratumMonitoringEvents.id));
 
-  return rows.map((row) => mapMonitoringEventRow(row));
+  return rows.map((row) => mapMonitoringEventRow(row.event));
 }

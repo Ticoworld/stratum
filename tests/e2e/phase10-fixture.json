@@ -3,6 +3,7 @@
   "noMatchQuery": "Phase10 Missing Company Fixture",
   "providerFailureQuery": "Phase11 Provider Failure Fixture",
   "throwErrorQuery": "Phase11 Throw Failure Fixture",
+  "multiCandidateQuery": "Phase11 Multi Candidate Fixture",
   "customWatchlistName": "Phase 10 Watchlist Fixture",
   "providerFailureBriefId": "00000000-0000-4000-8000-000000000101",
   "ambiguousBriefId": "00000000-0000-4000-8000-000000000102",

@@ -12,29 +12,48 @@ const optionalNonEmptyString = z.preprocess(
   z.string().min(1).optional()
 );
 
+function normalizeOptionalUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
+function resolveSiteUrl(): string | undefined {
+  const explicitSiteUrl = normalizeOptionalUrl(process.env.NEXT_PUBLIC_SITE_URL);
+  if (explicitSiteUrl) {
+    return explicitSiteUrl;
+  }
+
+  const vercelHost =
+    normalizeOptionalUrl(process.env.VERCEL_URL) ??
+    normalizeOptionalUrl(process.env.NEXT_PUBLIC_VERCEL_URL) ??
+    normalizeOptionalUrl(process.env.VERCEL_BRANCH_URL) ??
+    normalizeOptionalUrl(process.env.NEXT_PUBLIC_VERCEL_BRANCH_URL) ??
+    normalizeOptionalUrl(process.env.VERCEL_PROJECT_PRODUCTION_URL) ??
+    normalizeOptionalUrl(process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL);
+
+  return vercelHost ? `https://${vercelHost}` : undefined;
+}
+
 const phase1EnvSchema = z.object({
   DATABASE_URL: z.url(),
   AUTH_SECRET: z.string().min(1),
   AUTH_GOOGLE_ID: z.string().min(1),
   AUTH_GOOGLE_SECRET: z.string().min(1),
-  NEXT_PUBLIC_SITE_URL: z.preprocess(
-    (value) => {
-      if (typeof value !== "string") {
-        return value;
-      }
-
-      const trimmed = value.trim();
-      return trimmed === "" ? undefined : trimmed;
-    },
-    z.url().default("https://stratum.example.com")
-  ),
+  NEXT_PUBLIC_SITE_URL: z.url(),
   AWS_REGION: optionalNonEmptyString,
   AWS_ACCESS_KEY_ID: optionalNonEmptyString,
   AWS_SECRET_ACCESS_KEY: optionalNonEmptyString,
   STRATUM_S3_BUCKET: optionalNonEmptyString,
 });
 
-const parsedPhase1Env = phase1EnvSchema.safeParse(process.env);
+const parsedPhase1Env = phase1EnvSchema.safeParse({
+  ...process.env,
+  NEXT_PUBLIC_SITE_URL: resolveSiteUrl(),
+});
 
 if (!parsedPhase1Env.success) {
   throw new Error(

@@ -12,15 +12,23 @@ import {
   type WatchlistNotificationCandidate,
 } from "@/lib/watchlists/notifications";
 import { didMonitoringAttemptCreateSavedBrief } from "@/lib/watchlists/monitoringEvents";
+import { type TenantScope } from "@/lib/watchlists/tenantScope";
 
 export async function captureNotificationCandidateForMonitoringEvent(args: {
   watchlistEntryId: string;
   monitoringEventId: string;
+  scope: TenantScope;
 }): Promise<WatchlistNotificationCandidate | null> {
-  const existing = await getNotificationCandidateByMonitoringEventId(args.monitoringEventId);
+  const existing = await getNotificationCandidateByMonitoringEventId(
+    args.monitoringEventId,
+    args.scope
+  );
   if (existing) return existing;
 
-  const detail = await getWatchlistEntryDetailById(args.watchlistEntryId);
+  const detail = await getWatchlistEntryDetailById(
+    args.watchlistEntryId,
+    args.scope
+  );
   if (!detail) return null;
 
   const currentIndex = detail.attemptHistory.findIndex(
@@ -68,6 +76,7 @@ export async function captureNotificationCandidateForMonitoringEvent(args: {
 
   return createNotificationCandidate({
     watchlistEntryId: args.watchlistEntryId,
+    scope: args.scope,
     monitoringEventId: currentAttempt.id,
     relatedBriefId: draft.relatedBriefId,
     attemptOrigin: currentAttempt.attemptOrigin,

@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
 import { seedE2eFixtures } from "@/lib/testing/e2eFixtures";
-
-function isEnabled(): boolean {
-  return process.env.STRATUM_ENABLE_TEST_ROUTES === "1";
-}
+import { isEnabledTestRoute } from "@/lib/testing/testRoutes";
 
 export async function POST(request: Request) {
-  if (!isEnabled()) {
+  if (!isEnabledTestRoute(request)) {
     return NextResponse.json({ success: false, error: "Not found." }, { status: 404 });
   }
 

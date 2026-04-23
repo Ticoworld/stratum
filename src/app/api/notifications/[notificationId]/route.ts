@@ -1,5 +1,10 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
+import {
+  canWriteWorkspace,
+  isUnauthorizedError,
+  requireAuthSession,
+} from "@/lib/auth/session";
 import { updateNotificationInboxState } from "@/lib/watchlists/notificationCandidateRepository";
 
 interface NotificationRouteContext {
@@ -10,6 +15,11 @@ interface NotificationRouteContext {
 
 export async function PATCH(request: Request, context: NotificationRouteContext) {
   try {
+    const session = await requireAuthSession();
+    if (!canWriteWorkspace(session.role)) {
+      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    }
+
     const { notificationId } = await context.params;
     const body = await request.json().catch(() => ({}));
     const action = typeof body?.action === "string" ? body.action.trim() : "";
@@ -23,6 +33,7 @@ export async function PATCH(request: Request, context: NotificationRouteContext)
 
     const notification = await updateNotificationInboxState({
       notificationId,
+      scope: { tenantId: session.tenantId },
       action: action as "mark_read" | "mark_unread" | "dismiss",
     });
 
@@ -43,12 +54,17 @@ export async function PATCH(request: Request, context: NotificationRouteContext)
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    console.error("[API] Notification update failed:", error);
+    
+    if (isUnauthorizedError(error)) {
+      return NextResponse.json(
+        { success: false, error: "Your session has expired. Please sign in again." },
+        { status: 401 }
+      );
+    }
+    
     return NextResponse.json(
-      {
-        success: false,
-        error:
-          error instanceof Error ? error.message : "Notification could not be updated.",
-      },
+      { success: false, error: "Notification state could not be updated. Please try again." },
       { status: 500 }
     );
   }

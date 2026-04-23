@@ -1,5 +1,6 @@
 import type { StratumResult } from "@/lib/services/StratumInvestigator";
 import type { JobBoardSource } from "@/lib/api/boards";
+import { getNormalizedTrackedTargetName } from "@/lib/watchlists/identity";
 
 export function formatSourceLabel(source?: JobBoardSource | null): string {
   switch (source) {
@@ -20,7 +21,17 @@ export function getMatchedCompanyName(result: StratumResult): string {
   const persistedMatch = result.matchedCompanyName?.trim();
   const requestedName = result.companyName.trim();
   const matchedName = result.matchedAs?.trim();
-  return persistedMatch || matchedName || requestedName;
+  const normalizedTargetName = getNormalizedTrackedTargetName(
+    requestedName,
+    persistedMatch || matchedName || null
+  );
+
+  return (
+    normalizedTargetName ??
+    persistedMatch ??
+    matchedName ??
+    requestedName
+  );
 }
 
 function formatSourceList(sources: JobBoardSource[]): string {

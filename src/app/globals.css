@@ -10,8 +10,12 @@
   --foreground: #101828;
   --foreground-secondary: #475467;
   --foreground-muted: #667085;
+  --muted: #94a3b8;
 
-  --accent: #3b82f6;
+  --accent: #365b7a;
+
+  --danger: #ef4444;
+  --danger-light: #f87171;
 
   --font-sans: "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", Consolas, "SFMono-Regular", monospace;
@@ -23,6 +27,15 @@
   --color-surface: var(--surface);
   --color-border: var(--border);
   --color-accent: var(--accent);
+  
+  --color-primary: var(--accent);
+  --color-primary-light: #4e7290;
+
+  --color-danger: var(--danger);
+  --color-danger-light: var(--danger-light);
+
+  --color-muted: var(--muted);
+
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
 }

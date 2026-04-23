@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const summary = await runDueScheduledRefreshes({
+      scope: { globalScheduler: true },
       limit: getScheduledCronBatchLimit(),
     });
 

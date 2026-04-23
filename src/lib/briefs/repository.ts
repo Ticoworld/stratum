@@ -1,9 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { stratumBriefs, type StratumBriefSnapshot } from "@/db/schema/stratumBriefs";
+import { stratumWatchlistEntries, stratumWatchlists } from "@/db/schema/stratumWatchlists";
+
 import { buildStratumLimitations, getMatchedCompanyName } from "@/lib/briefs/presentation";
 import type { StratumResult } from "@/lib/services/StratumInvestigator";
+import { getNormalizedTrackedTargetName } from "@/lib/watchlists/identity";
+import {
+  assertTenantlessCompatibilityAllowed,
+  resolveTenantId,
+  type TenantScope,
+} from "@/lib/watchlists/tenantScope";
 
 function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
@@ -124,11 +132,14 @@ export async function createStratumBrief(result: StratumResult): Promise<Stratum
 function mapBriefRowToSnapshot(row: typeof stratumBriefs.$inferSelect): StratumBriefSnapshot {
   const createdAt = toIsoString(row.createdAt);
   const updatedAt = toIsoString(row.updatedAt);
+  const matchedCompanyName =
+    getNormalizedTrackedTargetName(row.queriedCompanyName, row.matchedCompanyName) ??
+    row.matchedCompanyName;
   const resultSnapshot = buildStoredResultSnapshot(row.resultSnapshot, {
     briefId: row.id,
     createdAt,
     updatedAt,
-    matchedCompanyName: row.matchedCompanyName,
+    matchedCompanyName,
     limitsSnapshot: row.limitsSnapshot,
   });
 
@@ -136,7 +147,7 @@ function mapBriefRowToSnapshot(row: typeof stratumBriefs.$inferSelect): StratumB
     id: row.id,
     watchlistEntryId: row.watchlistEntryId,
     queriedCompanyName: row.queriedCompanyName,
-    matchedCompanyName: row.matchedCompanyName,
+    matchedCompanyName,
     atsSourceUsed: (row.atsSourceUsed as StratumBriefSnapshot["atsSourceUsed"]) ?? null,
     resultState: row.resultState as StratumBriefSnapshot["resultState"],
     companyMatchConfidence: row.companyMatchConfidence as StratumBriefSnapshot["companyMatchConfidence"],
@@ -162,21 +173,61 @@ function mapBriefRowToSnapshot(row: typeof stratumBriefs.$inferSelect): StratumB
   };
 }
 
-export async function getStratumBriefById(briefId: string): Promise<StratumBriefSnapshot | null> {
-  const [row] = await db.select().from(stratumBriefs).where(eq(stratumBriefs.id, briefId)).limit(1);
+export async function getStratumBriefById(
+  briefId: string,
+  scope: TenantScope
+): Promise<StratumBriefSnapshot | null> {
+  assertTenantlessCompatibilityAllowed(scope);
+  const tenantId = resolveTenantId(scope);
+
+  const query = db
+    .select({
+      brief: stratumBriefs,
+    })
+    .from(stratumBriefs)
+    .innerJoin(
+      stratumWatchlistEntries,
+      eq(stratumBriefs.watchlistEntryId, stratumWatchlistEntries.id)
+    )
+    .innerJoin(stratumWatchlists, eq(stratumWatchlistEntries.watchlistId, stratumWatchlists.id))
+    .where(
+      and(
+        eq(stratumBriefs.id, briefId),
+        tenantId ? eq(stratumWatchlists.tenantId, tenantId) : undefined
+      )
+    )
+    .limit(1);
+
+  const [row] = await query;
   if (!row) return null;
 
-  return mapBriefRowToSnapshot(row);
+  return mapBriefRowToSnapshot(row.brief);
 }
 
 export async function listStratumBriefsByWatchlistEntryId(
-  watchlistEntryId: string
+  watchlistEntryId: string,
+  scope: TenantScope
 ): Promise<StratumBriefSnapshot[]> {
+  assertTenantlessCompatibilityAllowed(scope);
+  const tenantId = resolveTenantId(scope);
+
   const rows = await db
-    .select()
+    .select({
+      brief: stratumBriefs,
+    })
     .from(stratumBriefs)
-    .where(eq(stratumBriefs.watchlistEntryId, watchlistEntryId))
+    .innerJoin(
+      stratumWatchlistEntries,
+      eq(stratumBriefs.watchlistEntryId, stratumWatchlistEntries.id)
+    )
+    .innerJoin(stratumWatchlists, eq(stratumWatchlistEntries.watchlistId, stratumWatchlists.id))
+    .where(
+      and(
+        eq(stratumBriefs.watchlistEntryId, watchlistEntryId),
+        tenantId ? eq(stratumWatchlists.tenantId, tenantId) : undefined
+      )
+    )
     .orderBy(desc(stratumBriefs.createdAt), desc(stratumBriefs.updatedAt), desc(stratumBriefs.id));
 
-  return rows.map((row) => mapBriefRowToSnapshot(row));
+  return rows.map((row) => mapBriefRowToSnapshot(row.brief));
 }

@@ -5,7 +5,11 @@
 
 import { getGeminiClient, isGeminiAvailable } from "@/lib/gemini";
 import type { Job } from "@/lib/api/boards";
-import { APPROVED_WATCHLIST_LABELS } from "@/lib/signals/watchlistTaxonomy";
+import {
+  APPROVED_WATCHLIST_LABELS,
+  buildApprovedWatchlistSummary,
+  deriveApprovedWatchlistLabel,
+} from "@/lib/signals/watchlistTaxonomy";
 
 export interface StratumAnalysisResult {
   hiringVelocity: string;
@@ -89,13 +93,49 @@ function buildJobsText(jobs: Job[]): string {
     .join("\n");
 }
 
+function buildLocalFallbackAnalysis(companyName: string, jobs: Job[]): StratumAnalysisResult {
+  const proofRoles = jobs.slice(0, Math.min(3, jobs.length));
+  const watchlistReadConfidence = jobs.length <= 2 ? "low" : "medium";
+  const companyMatchConfidence = jobs.length <= 1 ? "low" : "medium";
+  const label = deriveApprovedWatchlistLabel({
+    jobs,
+    watchlistReadConfidence,
+    companyMatchConfidence,
+  });
+
+  const summary =
+    jobs.length > 0
+      ? buildApprovedWatchlistSummary({
+          label,
+          jobs,
+          proofRoles,
+          apiSource: jobs[0]?.source ?? null,
+          watchlistReadConfidence,
+          companyMatchConfidence,
+          proofRoleGrounding: jobs.length >= 3 ? "partial" : "fallback",
+        })
+      : `Stratum observed no open roles for ${companyName}. This local fallback is used when AI analysis is unavailable.`;
+
+  return {
+    hiringVelocity:
+      jobs.length >= 6 ? "High" : jobs.length >= 3 ? "Moderate" : jobs.length >= 1 ? "Low" : "Unknown",
+    strategicVerdict: label,
+    keywordFindings:
+      jobs.length > 0
+        ? [`Local fallback analysis derived from ${jobs.length} observed role${jobs.length === 1 ? "" : "s"}.`]
+        : ["Local fallback analysis found no observed roles."],
+    notableRoles: proofRoles.map((job) => job.title).filter(Boolean),
+    summary,
+  };
+}
+
 export async function runStratumAnalysis(
   companyName: string,
   jobs: Job[]
 ): Promise<StratumAnalysisResult | null> {
-  if (!isGeminiAvailable()) return null;
+  if (!isGeminiAvailable()) return buildLocalFallbackAnalysis(companyName, jobs);
   const ai = getGeminiClient();
-  if (!ai) return null;
+  if (!ai) return buildLocalFallbackAnalysis(companyName, jobs);
 
   const prompt = `Company: ${companyName}\n\nObserved ATS Roles:\n${buildJobsText(jobs)}\n\nAnalyze and return JSON as specified.`;
 
@@ -124,6 +164,6 @@ export async function runStratumAnalysis(
     return result;
   } catch (error) {
     console.error("[Stratum] Analysis failed:", error);
-    return null;
+    return buildLocalFallbackAnalysis(companyName, jobs);
   }
 }

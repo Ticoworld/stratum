@@ -24,6 +24,7 @@ import {
   buildApprovedWatchlistSummary,
   deriveApprovedWatchlistLabel,
 } from "@/lib/signals/watchlistTaxonomy";
+import { getNormalizedTrackedTargetName } from "@/lib/watchlists/identity";
 import type { WatchlistMonitoringSnapshot } from "@/lib/watchlists/repository";
 
 export interface DepartmentBreakdown {
@@ -434,7 +435,8 @@ function deriveCompanyResolutionAssessment(args: {
     requestedSourceHint,
     attempts,
   } = args;
-  const matchedCompanyName = matchedAs?.trim() || companyName.trim();
+  const matchedCompanyName =
+    getNormalizedTrackedTargetName(companyName, matchedAs?.trim() || null) ?? companyName.trim();
 
   if (!source || !resolutionKind) {
     return {

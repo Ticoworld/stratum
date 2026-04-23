@@ -8,23 +8,38 @@ export interface StratumScheduledAutomationStatus {
 export function getScheduledAutomationStatus(): StratumScheduledAutomationStatus {
   const runningOnVercel =
     process.env.VERCEL === "1" || process.env.VERCEL === "true" || Boolean(process.env.VERCEL_URL);
+  const vercelEnv = process.env.VERCEL_ENV?.trim().toLowerCase();
+  const vercelTargetEnv = process.env.VERCEL_TARGET_ENV?.trim().toLowerCase();
+  const vercelCronActive =
+    runningOnVercel &&
+    (vercelEnv === "production" || vercelTargetEnv === "production");
 
-  if (runningOnVercel) {
+  if (vercelCronActive) {
     return {
       mode: "vercel_cron",
       alwaysOnActive: true,
-      label: "Automatic execution active",
+      label: "Scheduled refresh active",
       summary:
-        "Automatic scheduled execution is active through the deployment cron entrypoint. The manual runner remains available for explicit reruns.",
+        "Companies will be checked automatically based on their schedule.",
+    };
+  }
+
+  if (runningOnVercel) {
+    return {
+      mode: "manual_only",
+      alwaysOnActive: false,
+      label: "Scheduled refresh (manual trigger)",
+      summary:
+        "This Vercel deployment is not production, so scheduled checks are triggered manually here.",
     };
   }
 
   return {
     mode: "manual_only",
     alwaysOnActive: false,
-    label: "Automatic execution not active here",
+    label: "Scheduled refresh (manual trigger)",
     summary:
-      "Automatic scheduled execution is wired for cron-enabled deployments. In this environment, due entries still require invoking the scheduled runner route explicitly.",
+      "Checks are triggered manually in this environment.",
   };
 }
 

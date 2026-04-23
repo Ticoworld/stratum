@@ -6,7 +6,7 @@ It monitors supported ATS sources, saves point-in-time briefs, compares each ref
 ## Project Summary
 
 - User enters a company name or source query in the UI.
-- Backend fetches open roles from supported ATS APIs (Greenhouse, Lever, Ashby, Workable).
+- Backend fetches open roles from supported ATS APIs and normalizes the target identity.
 - The system creates a point-in-time watchlist brief with:
   - evidence-backed `strategicVerdict`
   - deterministic `engineeringVsSalesRatio`
@@ -67,17 +67,23 @@ npm install
 cp .env.example .env.local
 ```
 
-Minimum required:
+Required for production/runtime:
 
 ```env
-GEMINI_API_KEY=your_key
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/stratum
+AUTH_SECRET=replace_me_with_a_long_random_secret
+AUTH_GOOGLE_ID=replace_me_with_google_client_id
+AUTH_GOOGLE_SECRET=replace_me_with_google_client_secret
 ```
 
 Optional:
 
 ```env
-STRATUM_CACHE_TTL_HOURS=24
 NEXT_PUBLIC_SITE_URL=https://your-domain.example
+GEMINI_API_KEY=your_key
+STRATUM_CACHE_TTL_HOURS=24
+CRON_SECRET=your_cron_secret
+STRATUM_SCHEDULED_CRON_SECRET=your_cron_secret
 ```
 
 3. Run the app:
@@ -148,6 +154,12 @@ scripts/
 ## Deployment and Runtime Notes (Confirmed)
 
 - This is a standard Next.js app with `dev`, `build`, and `start` scripts.
+- Production runtime requires `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOOGLE_ID`, and `AUTH_GOOGLE_SECRET`.
+- `NEXT_PUBLIC_SITE_URL` is optional for boot but should be set for correct canonical metadata.
+- `GEMINI_API_KEY` is optional; when unset, AI analysis is disabled and the rest of the product still boots.
+- Scheduled refresh cron authorization accepts `CRON_SECRET` or `STRATUM_SCHEDULED_CRON_SECRET`; in Vercel cron deployments it can also use the platform cron header.
+- Test-only routes and preview inbox data are gated behind `STRATUM_ENABLE_TEST_ROUTES=1` or `STRATUM_E2E_MODE=1` and local-host checks.
+- Local E2E verification uses `STRATUM_DB_DRIVER=pglite`, `STRATUM_PGLITE_DATA_DIR`, and `AUTH_TRUST_HOST=1`; those are test harness settings, not production requirements.
 - Security headers are configured in `next.config.ts`:
   - `X-Content-Type-Options: nosniff`
   - `X-Frame-Options: DENY`
@@ -160,9 +172,9 @@ scripts/
 
 - Coverage is limited to companies discoverable through the implemented ATS APIs and token mapping logic.
 - The brief-generation cache is in-memory and resets on process restart, even though watchlists, briefs, and notifications are persisted.
-- No authentication/authorization layer is present in the analysis API route.
 - `scripts/list_models.js` currently contains a hardcoded API key and fails lint under current ESLint rules.
 - `package.json` defines `generate:sentinel`, but `scripts/generate_sentinel.ts` is not present.
+- Test-only routes should not be enabled in production; the repo now gates them on explicit flags plus local-host checks, but deployment hygiene still matters.
 
 ## Partial Inference Index
 

@@ -50,6 +50,20 @@
       "when": 1775158125734,
       "tag": "0006_curved_loki",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1776169200000,
+      "tag": "0007_fair_corsair",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1776169260000,
+      "tag": "0008_bold_legacy_recovery",
+      "breakpoints": true
     }
   ]
 }

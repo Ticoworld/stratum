@@ -27,6 +27,10 @@ export interface ScheduledRefreshRunResultItem {
   errorSummary: string | null;
 }
 
+type ScheduledRefreshScope =
+  | { tenantId: string }
+  | { globalScheduler: true };
+
 export interface ScheduledRefreshRunSummary {
   dueCount: number;
   processedCount: number;
@@ -36,15 +40,17 @@ export interface ScheduledRefreshRunSummary {
   results: ScheduledRefreshRunResultItem[];
 }
 
-export async function runDueScheduledRefreshes(args?: {
+export async function runDueScheduledRefreshes(args: {
+  scope: ScheduledRefreshScope;
   watchlistId?: string | null;
   limit?: number;
 }): Promise<ScheduledRefreshRunSummary> {
   const now = new Date();
   const dueEntries = await listDueScheduledWatchlistEntries({
-    watchlistId: args?.watchlistId ?? null,
+    scope: args.scope,
+    watchlistId: args.watchlistId ?? null,
     now,
-    limit: args?.limit ?? 10,
+    limit: args.limit ?? 10,
   });
   const results: ScheduledRefreshRunResultItem[] = [];
 
@@ -82,11 +88,31 @@ export async function runDueScheduledRefreshes(args?: {
     let relatedBriefId: string | null = null;
     let resultState: string | null = null;
     let errorSummary: string | null = null;
+    const watchlistTenantId = dueEntry.watchlistTenantId;
 
     try {
+      if (!watchlistTenantId) {
+        results.push({
+          watchlistId: dueEntry.watchlistId,
+          watchlistEntryId: dueEntry.id,
+          requestedQuery: dueEntry.requestedQuery,
+          cadence,
+          scheduledForAt: dueEntry.scheduleNextRunAt,
+          nextScheduledRunAt: dueEntry.scheduleNextRunAt,
+          processed: false,
+          skippedReason: "tenantless_legacy_entry",
+          outcomeStatus: null,
+          relatedBriefId: null,
+          resultState: null,
+          errorSummary: null,
+        });
+        continue;
+      }
+
       const refresh = await runStratumRefresh({
         companyName: claimed.requestedQuery,
         watchlistEntryId: claimed.id,
+        tenantId: watchlistTenantId as string,
         attemptOrigin: "scheduled_refresh",
         bypassCache: true,
         manualRefreshRequested: false,
@@ -111,7 +137,9 @@ export async function runDueScheduledRefreshes(args?: {
       outcomeStatus,
       now: new Date(),
     });
-    const detail = await getWatchlistEntryDetailById(claimed.id);
+    const detail = await getWatchlistEntryDetailById(claimed.id, {
+      tenantId: watchlistTenantId as string,
+    });
     const schedule = detail?.monitoring.schedule;
     const latestAttempt = detail?.latestAttempt ?? null;
 

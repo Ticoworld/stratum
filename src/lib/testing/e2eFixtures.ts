@@ -25,6 +25,11 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+const tenantlessCompatibilityScope = {
+  tenantlessCompatibility: true as const,
+  compatibilityReason: "e2e_fixture",
+};
+
 function toDate(value: string): Date {
   return new Date(value);
 }
@@ -502,6 +507,7 @@ export async function seedE2eFixtures(runKey: string): Promise<SeededE2eFixtures
 
   await createMonitoringAttemptEvent({
     watchlistEntryId: entryId,
+    scope: tenantlessCompatibilityScope,
     requestedQuery: phase9HistoryQuery,
     attemptOrigin: "manual_refresh",
     outcomeStatus: "saved_brief_created",
@@ -518,6 +524,7 @@ export async function seedE2eFixtures(runKey: string): Promise<SeededE2eFixtures
 
   await createMonitoringAttemptEvent({
     watchlistEntryId: entryId,
+    scope: tenantlessCompatibilityScope,
     requestedQuery: phase9HistoryQuery,
     attemptOrigin: "manual_refresh",
     outcomeStatus: "saved_brief_created",
@@ -534,6 +541,7 @@ export async function seedE2eFixtures(runKey: string): Promise<SeededE2eFixtures
 
   await recordMonitoringAttempt({
     watchlistEntryId: entryId,
+    scope: tenantlessCompatibilityScope,
     requestedQuery: phase9HistoryQuery,
     attemptOrigin: "manual_refresh",
     outcomeStatus: "saved_brief_created",
@@ -550,6 +558,7 @@ export async function seedE2eFixtures(runKey: string): Promise<SeededE2eFixtures
 
   await createMonitoringAttemptEvent({
     watchlistEntryId: entryId,
+    scope: tenantlessCompatibilityScope,
     requestedQuery: phase9HistoryQuery,
     attemptOrigin: "watchlist_rerun",
     outcomeStatus: "reused_cached_result",
@@ -566,6 +575,7 @@ export async function seedE2eFixtures(runKey: string): Promise<SeededE2eFixtures
 
   await createMonitoringAttemptEvent({
     watchlistEntryId: entryId,
+    scope: tenantlessCompatibilityScope,
     requestedQuery: phase9HistoryQuery,
     attemptOrigin: "manual_refresh",
     outcomeStatus: "failed",

@@ -7,6 +7,7 @@
 import { fetchWithRetry } from "./fetchWithRetry";
 import { fetchFromAshby } from "./ashby";
 import { fetchFromWorkable } from "./workable";
+import { humanizeIdentityToken } from "../watchlists/identity";
 
 export type JobBoardSource = "GREENHOUSE" | "LEVER" | "ASHBY" | "WORKABLE";
 export type JobSourceTimestampType = "published_at" | "updated_at" | "created_at";
@@ -51,6 +52,14 @@ export interface FetchAttempt {
   status: FetchAttemptStatus;
   jobsCount: number;
   errorMessage?: string;
+}
+
+export interface SourceCandidateMatch {
+  source: JobBoardSource;
+  token: string;
+  jobsCount: number;
+  resolutionKind: CompanyResolutionKind;
+  matchedAs: string | null;
 }
 
 export interface SupportedSourceHint {
@@ -115,6 +124,9 @@ function toBoardToken(companyName: string): string {
 
 function toDisplayName(token: string): string {
   if (RESOLVED_DISPLAY[token]) return RESOLVED_DISPLAY[token];
+
+  const normalized = humanizeIdentityToken(token);
+  if (normalized) return normalized;
 
   return token
     .trim()
@@ -351,7 +363,7 @@ const COMPANY_MAP: Record<string, JobBoardSource> = {
   vanta: "ASHBY",
   remote: "ASHBY",
   brex: "ASHBY",
-  vercel: "ASHBY",
+  vercel: "GREENHOUSE",
   perplexity: "ASHBY",
   duolingo: "ASHBY",
   jobgether: "WORKABLE",
@@ -373,6 +385,7 @@ export interface FetchCompanyJobsResult {
   matchedAs?: string;
   resolutionKind: CompanyResolutionKind | null;
   attempts: FetchAttempt[];
+  candidateMatches: SourceCandidateMatch[];
   sourceInputMode: SourceInputMode;
   requestedSourceHint: JobBoardSource | null;
   unsupportedSourcePattern: UnsupportedSourcePattern | null;
@@ -482,6 +495,7 @@ function buildE2ENoMatchOverride(companyName: string): FetchCompanyJobsResult | 
       status: "not_found" as const,
       jobsCount: 0,
     })),
+    candidateMatches: [],
     sourceInputMode: "company_name",
     requestedSourceHint: null,
     unsupportedSourcePattern: null,
@@ -533,6 +547,90 @@ function buildE2EProviderFailureOverride(companyName: string): FetchCompanyJobsR
         jobsCount: 0,
       },
     ],
+    candidateMatches: [],
+    sourceInputMode: "company_name",
+    requestedSourceHint: null,
+    unsupportedSourcePattern: null,
+  };
+}
+
+function buildE2EMultiCandidateOverride(companyName: string): FetchCompanyJobsResult | null {
+  if (process.env.STRATUM_E2E_MODE !== "1") {
+    return null;
+  }
+
+  const expectedQuery = "Phase11 Multi Candidate Fixture";
+  if (companyName.trim() !== expectedQuery) {
+    return null;
+  }
+
+  const token = toRawBoardToken(companyName) || "notion";
+
+  return {
+    jobs: [
+      {
+        title: "Platform Engineer",
+        location: "Remote",
+        department: "Engineering",
+        source: "ASHBY",
+        roleId: "ashby-001",
+        roleIdType: "posting_id",
+        requisitionId: null,
+        jobUrl: `https://jobs.ashbyhq.com/${token}/platform-engineer`,
+        applyUrl: `https://jobs.ashbyhq.com/${token}/platform-engineer`,
+        sourceTimestamp: new Date().toISOString(),
+        sourceTimestampType: "updated_at",
+        observedAt: new Date().toISOString(),
+      },
+    ],
+    source: "ASHBY",
+    requestedToken: token,
+    normalizedToken: token,
+    resolvedToken: token,
+    matchedAs: "Notion",
+    resolutionKind: "direct",
+    attempts: [
+      {
+        token,
+        source: "ASHBY",
+        status: "jobs_found",
+        jobsCount: 1,
+      },
+      {
+        token,
+        source: "GREENHOUSE",
+        status: "jobs_found",
+        jobsCount: 1,
+      },
+      {
+        token,
+        source: "LEVER",
+        status: "not_found",
+        jobsCount: 0,
+      },
+      {
+        token,
+        source: "WORKABLE",
+        status: "zero_jobs",
+        jobsCount: 0,
+      },
+    ],
+    candidateMatches: [
+      {
+        source: "ASHBY",
+        token,
+        jobsCount: 1,
+        resolutionKind: "direct",
+        matchedAs: "Notion",
+      },
+      {
+        source: "GREENHOUSE",
+        token,
+        jobsCount: 1,
+        resolutionKind: "direct",
+        matchedAs: "Notion",
+      },
+    ],
     sourceInputMode: "company_name",
     requestedSourceHint: null,
     unsupportedSourcePattern: null,
@@ -545,6 +643,11 @@ function buildE2EProviderFailureOverride(companyName: string): FetchCompanyJobsR
  * and no-supported-provider matches.
  */
 export async function fetchCompanyJobs(companyName: string): Promise<FetchCompanyJobsResult> {
+  const e2eMultiCandidateOverride = buildE2EMultiCandidateOverride(companyName);
+  if (e2eMultiCandidateOverride) {
+    return e2eMultiCandidateOverride;
+  }
+
   const supportedSourceHint = detectSupportedSourceHint(companyName);
   const requestedToken = supportedSourceHint ? supportedSourceHint.token : toRawBoardToken(companyName);
   const normalizedToken = toBoardToken(supportedSourceHint?.token ?? companyName);
@@ -556,31 +659,33 @@ export async function fetchCompanyJobs(companyName: string): Promise<FetchCompan
       : "company_name";
 
   if (!normalizedToken) {
-    return {
-      jobs: [],
-      source: null,
-      requestedToken,
-      normalizedToken,
-      resolutionKind: null,
-      attempts: [],
-      sourceInputMode,
-      requestedSourceHint: supportedSourceHint?.source ?? null,
-      unsupportedSourcePattern,
+      return {
+        jobs: [],
+        source: null,
+        requestedToken,
+        normalizedToken,
+        resolutionKind: null,
+        attempts: [],
+        candidateMatches: [],
+        sourceInputMode,
+        requestedSourceHint: supportedSourceHint?.source ?? null,
+        unsupportedSourcePattern,
     };
   }
 
   if (unsupportedSourcePattern) {
-    return {
-      jobs: [],
-      source: null,
-      requestedToken,
-      normalizedToken,
-      resolutionKind: null,
-      attempts: buildNotApplicableAttempts(normalizedToken, null),
-      sourceInputMode,
-      requestedSourceHint: null,
-      unsupportedSourcePattern,
-    };
+      return {
+        jobs: [],
+        source: null,
+        requestedToken,
+        normalizedToken,
+        resolutionKind: null,
+        attempts: buildNotApplicableAttempts(normalizedToken, null),
+        candidateMatches: [],
+        sourceInputMode,
+        requestedSourceHint: null,
+        unsupportedSourcePattern,
+      };
   }
 
   const e2eNoMatchOverride = buildE2ENoMatchOverride(companyName);
@@ -598,6 +703,16 @@ export async function fetchCompanyJobs(companyName: string): Promise<FetchCompan
   const tokensToTry = [normalizedToken, ...(FALLBACK_TOKENS[normalizedToken] ?? [])];
   const attempts: FetchAttempt[] = [];
   let zeroMatch: { source: JobBoardSource; token: string } | null = null;
+  const candidateMatches: SourceCandidateMatch[] = [];
+  let primaryMatch:
+    | {
+        jobs: Job[];
+        source: JobBoardSource;
+        token: string;
+        matchedAs: string | undefined;
+        resolutionKind: CompanyResolutionKind;
+      }
+    | null = null;
 
   for (const token of tokensToTry) {
     for (const source of sourceOrder) {
@@ -611,43 +726,60 @@ export async function fetchCompanyJobs(companyName: string): Promise<FetchCompan
         errorMessage: outcome.status === "error" ? outcome.errorMessage : undefined,
       });
 
-      if (outcome.status === "jobs_found") {
+      if (outcome.status === "jobs_found" || outcome.status === "zero_jobs") {
         const resolutionKind = getResolutionKind(requestedToken, normalizedToken, token);
         const matchedAs = getMatchedAs(requestedToken, normalizedToken, token, sourceInputMode);
-        const trailingAttempts =
-          sourceInputMode === "supported_source_input"
-            ? buildNotApplicableAttempts(normalizedToken, supportedSourceHint?.source ?? null)
-            : buildNotAttemptedAfterMatchAttempts({
-                attempts,
-                matchedSource: source,
-                token,
-              });
+        candidateMatches.push({
+          source,
+          token,
+          jobsCount: outcome.jobs.length,
+          resolutionKind,
+          matchedAs: matchedAs ?? null,
+        });
 
-        if (primarySource && source !== primarySource) {
+        if (outcome.status === "jobs_found" && !primaryMatch) {
+          primaryMatch = {
+            jobs: outcome.jobs,
+            source,
+            token,
+            matchedAs,
+            resolutionKind,
+          };
+        }
+
+        if (outcome.status === "jobs_found" && primarySource && source !== primarySource) {
           console.warn(
             `[Stratum:COMPANY_MAP] Primary source ${primarySource} failed, returned 0 jobs, or did not match for "${companyName}" (token: ${normalizedToken}). Fallback ${source} succeeded. Consider updating COMPANY_MAP.`
           );
         }
-
-        return {
-          jobs: outcome.jobs,
-          source,
-          requestedToken,
-          normalizedToken,
-          resolvedToken: token,
-          matchedAs,
-          resolutionKind,
-          attempts: [...attempts, ...trailingAttempts],
-          sourceInputMode,
-          requestedSourceHint: supportedSourceHint?.source ?? null,
-          unsupportedSourcePattern,
-        };
       }
 
       if (outcome.status === "zero_jobs" && !zeroMatch) {
         zeroMatch = { source, token };
       }
     }
+  }
+
+  if (primaryMatch) {
+    const trailingAttempts =
+      sourceInputMode === "supported_source_input"
+        ? buildNotApplicableAttempts(normalizedToken, supportedSourceHint?.source ?? null)
+        : [];
+
+    return {
+      jobs: primaryMatch.jobs,
+      source: primaryMatch.source,
+      requestedToken,
+      normalizedToken,
+      resolvedToken: primaryMatch.token,
+      matchedAs: primaryMatch.matchedAs,
+      resolutionKind: primaryMatch.resolutionKind,
+      attempts: [...attempts, ...trailingAttempts],
+      candidateMatches,
+      sourceInputMode,
+      requestedSourceHint: supportedSourceHint?.source ?? null,
+      unsupportedSourcePattern,
+    };
   }
 
   if (zeroMatch) {
@@ -665,6 +797,7 @@ export async function fetchCompanyJobs(companyName: string): Promise<FetchCompan
       matchedAs: getMatchedAs(requestedToken, normalizedToken, zeroMatch.token, sourceInputMode),
       resolutionKind: getResolutionKind(requestedToken, normalizedToken, zeroMatch.token),
       attempts: [...attempts, ...trailingAttempts],
+      candidateMatches,
       sourceInputMode,
       requestedSourceHint: supportedSourceHint?.source ?? null,
       unsupportedSourcePattern,
@@ -683,6 +816,7 @@ export async function fetchCompanyJobs(companyName: string): Promise<FetchCompan
     normalizedToken,
     resolutionKind: null,
     attempts: [...attempts, ...trailingAttempts],
+    candidateMatches,
     sourceInputMode,
     requestedSourceHint: supportedSourceHint?.source ?? null,
     unsupportedSourcePattern,

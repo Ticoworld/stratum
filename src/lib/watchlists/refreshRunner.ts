@@ -1,6 +1,7 @@
 import { StratumInvestigator, type StratumResult } from "@/lib/services/StratumInvestigator";
 import { canPersistStratumBrief, createStratumBrief } from "@/lib/briefs/repository";
 import { getCached, setCached } from "@/lib/cache/stratum-cache";
+import { getNormalizedTrackedTargetName } from "@/lib/watchlists/identity";
 import { attachWatchlistMonitoringToResult } from "@/lib/watchlists/monitoring";
 import { recordMonitoringAttempt } from "@/lib/watchlists/monitoringAttemptRecorder";
 import {
@@ -20,12 +21,20 @@ export interface RunStratumRefreshResult {
 
 function getMatchedCompanyName(result: StratumResult): string | null {
   const matchedCompanyName = result.matchedCompanyName?.trim() || result.matchedAs?.trim();
-  return matchedCompanyName || result.companyName?.trim() || null;
+  const normalizedTargetName = getNormalizedTrackedTargetName(result.companyName ?? "", matchedCompanyName);
+
+  return (
+    normalizedTargetName ??
+    matchedCompanyName ??
+    result.companyName?.trim() ??
+    null
+  );
 }
 
 export async function runStratumRefresh(args: {
   companyName: string;
   watchlistEntryId?: string | null;
+  tenantId: string;
   attemptOrigin?: StratumMonitoringAttemptOrigin | null;
   bypassCache?: boolean;
   manualRefreshRequested?: boolean;
@@ -33,7 +42,7 @@ export async function runStratumRefresh(args: {
   const trimmed = args.companyName.trim();
   const sanitized = trimmed.replace(/[<>"']/g, "").slice(0, 100).trim() || trimmed;
   const trackedEntry = args.watchlistEntryId
-    ? await getWatchlistEntryOverviewById(args.watchlistEntryId)
+    ? await getWatchlistEntryOverviewById(args.watchlistEntryId, { tenantId: args.tenantId })
     : null;
   const watchlistEntryId = trackedEntry?.id ?? null;
   const trackingContext =
@@ -56,6 +65,7 @@ export async function runStratumRefresh(args: {
         const linked = await attachBriefToWatchlistEntry({
           watchlistEntryId,
           briefId: cachedResult.briefId,
+          scope: { tenantId: args.tenantId },
         });
 
         if (linked) {
@@ -71,6 +81,7 @@ export async function runStratumRefresh(args: {
       if (trackingContext) {
         await recordMonitoringAttempt({
           watchlistEntryId: trackingContext.entryId,
+          scope: { tenantId: args.tenantId },
           requestedQuery: trackingContext.requestedQuery,
           attemptOrigin: trackingContext.attemptOrigin,
           outcomeStatus: "reused_cached_result",
@@ -84,7 +95,9 @@ export async function runStratumRefresh(args: {
           sourceCoverageCompleteness: cachedResult.sourceCoverageCompleteness,
         });
 
-        const detail = await getWatchlistEntryDetailById(trackingContext.entryId);
+        const detail = await getWatchlistEntryDetailById(trackingContext.entryId, {
+          tenantId: args.tenantId,
+        });
         watchlistMonitoring = detail?.monitoring ?? null;
       }
 
@@ -117,7 +130,7 @@ export async function runStratumRefresh(args: {
         }
       | null = null;
 
-    if (canPersistStratumBrief(freshResult)) {
+    if (watchlistEntryId && canPersistStratumBrief(freshResult)) {
       const brief = await createStratumBrief(freshResult);
       if (!brief) {
         throw new Error("Stratum could not persist a completed brief artifact.");
@@ -133,6 +146,7 @@ export async function runStratumRefresh(args: {
         const linked = await attachBriefToWatchlistEntry({
           watchlistEntryId,
           briefId: brief.id,
+          scope: { tenantId: args.tenantId },
         });
 
         if (linked) {
@@ -148,6 +162,7 @@ export async function runStratumRefresh(args: {
     if (trackingContext) {
       await recordMonitoringAttempt({
         watchlistEntryId: trackingContext.entryId,
+        scope: { tenantId: args.tenantId },
         requestedQuery: trackingContext.requestedQuery,
         attemptOrigin: trackingContext.attemptOrigin,
         outcomeStatus: savedBriefId ? "saved_brief_created" : "completed_without_saved_brief",
@@ -169,9 +184,12 @@ export async function runStratumRefresh(args: {
         ? (await getWatchlistBriefReplayContext({
             watchlistEntryId: linkedWatchlist.entryId,
             briefId: persistedResult.briefId,
+            scope: { tenantId: args.tenantId },
           }))?.monitoring ?? null
         : trackingContext
-          ? (await getWatchlistEntryDetailById(trackingContext.entryId))?.monitoring ?? null
+          ? (await getWatchlistEntryDetailById(trackingContext.entryId, {
+              tenantId: args.tenantId,
+            }))?.monitoring ?? null
           : null;
 
     const result = attachWatchlistMonitoringToResult(
@@ -205,6 +223,7 @@ export async function runStratumRefresh(args: {
       try {
         await recordMonitoringAttempt({
           watchlistEntryId: trackingContext.entryId,
+          scope: { tenantId: args.tenantId },
           requestedQuery: trackingContext.requestedQuery,
           attemptOrigin: trackingContext.attemptOrigin,
           outcomeStatus: "failed",

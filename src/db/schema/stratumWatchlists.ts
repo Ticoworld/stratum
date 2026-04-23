@@ -1,4 +1,5 @@
 import { index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { tenants } from "@/db/schema/tenants";
 import type { JobBoardSource } from "@/lib/api/boards";
 import type {
   ConfidenceLevel,
@@ -8,6 +9,7 @@ import type { StratumWatchlistScheduleCadence } from "@/lib/watchlists/schedules
 
 export interface StratumWatchlist {
   id: string;
+  tenantId: string | null;
   name: string;
   slug: string;
   createdAt: string;
@@ -40,13 +42,15 @@ export const stratumWatchlists = pgTable(
   "stratum_watchlists",
   {
     id: uuid("id").primaryKey().notNull(),
+    tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
-    slugUnique: uniqueIndex("stratum_watchlists_slug_unique").on(table.slug),
+    tenantSlugUnique: uniqueIndex("stratum_watchlists_tenant_slug_unique").on(table.tenantId, table.slug),
+    tenantUpdatedIdx: index("stratum_watchlists_tenant_updated_idx").on(table.tenantId, table.updatedAt),
   })
 );
 

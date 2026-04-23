@@ -2,16 +2,13 @@
 
 import Link from "next/link";
 import { Loader2, RotateCcw, Trash2 } from "lucide-react";
-import { formatWatchlistTargetIdentity } from "@/lib/watchlists/identity";
 import {
-  buildWatchlistSourceGrounding,
+  buildWatchlistDisplayIdentity,
   formatWatchlistDateTime,
   formatWatchlistMetadataLine,
-  formatWatchlistStateHeadline,
-  formatWatchlistStateSupportingText,
+  formatWatchlistTrackingState,
 } from "@/lib/watchlists/presentation";
 import type { WatchlistOverview } from "@/lib/watchlists/repository";
-import { formatWatchlistScheduleCadenceLabel } from "@/lib/watchlists/schedules";
 
 interface WatchlistEntriesTableProps {
   watchlist: WatchlistOverview | null;
@@ -21,7 +18,10 @@ interface WatchlistEntriesTableProps {
   currentTime: number | null;
   onRemoveEntry: (entryId: string) => void;
   onRefreshEntry: (entryId: string) => void;
+  onSelectEntry: (entryId: string) => void;
 }
+
+type WatchlistEntry = WatchlistOverview["entries"][number];
 
 function formatScheduledNextRunValue(
   cadence: string | null | undefined,
@@ -45,10 +45,11 @@ export function WatchlistEntriesTable({
   currentTime,
   onRemoveEntry,
   onRefreshEntry,
+  onSelectEntry,
 }: WatchlistEntriesTableProps) {
   if (!watchlist) {
     return (
-      <div className="rounded-[28px] border bg-[var(--surface)] p-6 text-sm leading-relaxed" style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}>
+      <div className="rounded-[24px] border bg-[var(--surface)] p-4 text-[13px] leading-6" style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}>
         No watchlist is available yet.
       </div>
     );
@@ -56,66 +57,71 @@ export function WatchlistEntriesTable({
 
   if (watchlist.entries.length === 0) {
     return (
-      <div className="rounded-[28px] border bg-[var(--surface)] p-6 text-sm leading-relaxed" style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}>
-        This watchlist is empty. Add a target company in the sidebar to start tracking.
+      <div className="rounded-[24px] border bg-[var(--surface)] p-4 text-[13px] leading-6" style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}>
+        This watchlist is empty. Add a company to start tracking.
       </div>
     );
   }
 
   const scheduledCount = watchlist.entries.filter((entry) => entry.scheduleCadence !== "off").length;
   const unsavedCount = watchlist.entries.filter((entry) => !entry.latestBriefId).length;
+  const unsavedLabel = unsavedCount === 1 ? "no saved brief" : "no saved briefs";
 
   return (
-    <section className="overflow-hidden rounded-[28px] border bg-[var(--surface)]" style={{ borderColor: "var(--border)" }}>
-      <div className="flex flex-col gap-3 border-b px-6 py-5 lg:flex-row lg:items-end lg:justify-between" style={{ borderColor: "var(--border)" }}>
+    <section className="overflow-hidden rounded-[24px] border bg-[var(--surface)]" style={{ borderColor: "var(--border)" }}>
+      <div className="flex flex-col gap-2 border-b px-5 py-4 lg:flex-row lg:items-end lg:justify-between" style={{ borderColor: "var(--border)" }}>
         <div>
-          <p className="text-sm font-medium tracking-tight" style={{ color: "var(--foreground-muted)" }}>
+          <p className="text-[11px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
             Tracked companies
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-5 text-[13px]" style={{ color: "var(--foreground-secondary)" }}>
+        <div className="flex flex-wrap gap-4 text-[13px]" style={{ color: "var(--foreground-secondary)" }}>
           <span>
             <strong style={{ color: "var(--foreground)" }}>{watchlist.entryCount}</strong> tracked
           </span>
           <span>
             <strong style={{ color: "var(--foreground)" }}>{scheduledCount}</strong> scheduled
           </span>
-          <span>
-            <strong style={{ color: "var(--foreground)" }}>{unsavedCount}</strong> without brief
-          </span>
+            <span>
+              <strong style={{ color: "var(--foreground)" }}>{unsavedCount}</strong> {unsavedLabel}
+            </span>
         </div>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1080px] border-collapse">
+        <table className="w-full border-collapse">
+          <colgroup>
+            <col style={{ width: "34%", minWidth: "200px" }} />
+            <col style={{ width: "22%", minWidth: "150px" }} />
+            <col style={{ width: "16%", minWidth: "120px" }} />
+            <col style={{ width: "14%", minWidth: "100px" }} />
+            <col style={{ width: "14%", minWidth: "130px" }} />
+          </colgroup>
           <thead>
-            <tr className="border-b text-left text-[12px]" style={{ borderColor: "var(--border)", color: "var(--foreground-muted)" }}>
-              <th className="px-6 py-4 font-medium">Target</th>
-              <th className="px-6 py-4 font-medium">Current state</th>
-              <th className="px-6 py-4 font-medium">Freshness</th>
-              <th className="px-6 py-4 font-medium">Source grounding</th>
-              <th className="px-6 py-4 font-medium">Cadence</th>
-              <th className="px-6 py-4 font-medium">Next action</th>
+            <tr className="border-b text-left text-[10px] font-medium tracking-[0.02em]" style={{ borderColor: "var(--border)", color: "var(--foreground-muted)" }}>
+              <th className="px-5 py-3.5">Company</th>
+              <th className="px-5 py-3.5">State</th>
+              <th className="px-5 py-3.5">Last checked</th>
+              <th className="px-5 py-3.5">Source</th>
+              <th className="px-5 py-3.5">Action</th>
             </tr>
           </thead>
           <tbody>
             {watchlist.entries.map((entry) => {
               const active = activeEntryId === entry.id;
-              const identity = formatWatchlistTargetIdentity(entry.requestedQuery, entry.latestMatchedCompanyName);
-              const identityMeta = formatWatchlistMetadataLine([identity.secondary, identity.tertiary]);
-              const sourceGrounding = buildWatchlistSourceGrounding({
+              const displayIdentity = buildWatchlistDisplayIdentity({
                 requestedQuery: entry.requestedQuery,
                 matchedCompanyName: entry.latestMatchedCompanyName,
                 atsSourceUsed: entry.latestAtsSourceUsed,
               });
               const sourceMeta = formatWatchlistMetadataLine([
-                sourceGrounding.secondary,
-                sourceGrounding.tertiary,
+                displayIdentity.sourceGrounding.secondary,
+                displayIdentity.sourceGrounding.tertiary,
               ]);
               const freshnessLabel = formatWatchlistDateTime(
-                entry.latestBriefUpdatedAt ?? entry.latestBriefCreatedAt,
-                "Not yet saved"
+                entry.latestBriefId || entry.latestResultState ? entry.updatedAt : null,
+                "Not checked yet"
               );
               const scheduleLabel = formatScheduledNextRunValue(
                 entry.scheduleCadence,
@@ -124,131 +130,106 @@ export function WatchlistEntriesTable({
               );
               const pendingRefresh = pendingRefreshId === entry.id;
               const pendingRemoval = pendingRemovalId === entry.id;
-              const stateHeadline = formatWatchlistStateHeadline({
-                watchlistReadLabel: entry.latestWatchlistReadLabel,
-                resultState: entry.latestResultState,
-                fallback: "Awaiting first read",
-              });
-              const stateSupport = formatWatchlistStateSupportingText({
-                resultState: entry.latestResultState,
-                confidence: entry.latestWatchlistReadConfidence,
+              const trackingState = formatWatchlistTrackingState({
+                latestBriefId: entry.latestBriefId,
+                latestResultState: entry.latestResultState,
+                latestAtsSourceUsed: entry.latestAtsSourceUsed,
+                isChecking: pendingRefresh,
               });
 
               return (
                 <tr
                   key={entry.id}
-                  className="border-b last:border-b-0"
+                  onClick={() => onSelectEntry(entry.id)}
+                  className="group cursor-pointer border-b last:border-b-0 transition-colors hover:bg-[rgba(16,24,40,0.02)]"
                   style={{
                     borderColor: "var(--border)",
                     background: active ? "rgba(16,24,40,0.05)" : "transparent",
                     boxShadow: active ? "inset 3px 0 0 var(--foreground)" : "none",
                   }}
                 >
-                  <td className="px-6 py-5 align-top">
-                    <div className="space-y-1.5">
+                  <td className="px-5 py-3.5 align-top">
+                    <div className="space-y-0.5">
                       <Link
-                        href={`/watchlists?watchlistId=${watchlist.id}&entryId=${entry.id}`}
-                        className="block text-[17px] font-semibold tracking-[-0.02em] transition-colors"
+                        href={`/watchlists/${watchlist.id}/entries/${entry.id}`}
+                        className="block max-w-full truncate text-[15px] font-semibold leading-5 tracking-[-0.02em] transition-colors hover:text-[color:var(--accent)]"
                         style={{ color: "var(--foreground)" }}
+                        title={displayIdentity.primary}
                       >
-                        {identity.primary}
+                        {displayIdentity.primary}
                       </Link>
-                      {identityMeta ? (
-                        <p className="text-[12px] leading-5" style={{ color: "var(--foreground-secondary)" }}>
-                          {identityMeta}
+                      {displayIdentity.meta ? (
+                        <p className="truncate text-[11px] leading-5" style={{ color: "var(--foreground-secondary)" }} title={displayIdentity.meta}>
+                          {displayIdentity.meta}
                         </p>
-                      ) : identity.uncertain ? (
-                        <p className="text-[12px] leading-5" style={{ color: "var(--foreground-secondary)" }}>
-                          Identity unresolved
+                      ) : displayIdentity.uncertain ? (
+                        <p className="text-[11px] leading-5" style={{ color: "var(--foreground-secondary)" }}>
+                          Company not confirmed
                         </p>
                       ) : null}
                     </div>
                   </td>
-                  <td className="px-6 py-5 align-top">
-                    <div className="space-y-1.5">
-                      <p className="text-[15px] font-semibold tracking-tight" style={{ color: "var(--foreground)" }}>
-                        {stateHeadline}
+                  <td className="px-5 py-3.5 align-top">
+                    <div className="space-y-0.5">
+                      <p className="truncate text-[14px] font-semibold tracking-tight lg:text-[15px]" style={{ color: "var(--foreground)" }} title={trackingState.headline}>
+                        {trackingState.headline}
                       </p>
-                      <p className="text-[12px] leading-5" style={{ color: "var(--foreground-secondary)" }}>
-                        {stateSupport ?? "No saved brief yet"}
-                      </p>
-                    </div>
-                  </td>
-                  <td className="px-6 py-5 align-top">
-                    <div className="space-y-1.5">
-                      <p className="text-[15px] font-semibold tracking-tight tabular-nums" style={{ color: "var(--foreground)" }}>
-                        {freshnessLabel}
-                      </p>
-                      <p className="text-[12px] leading-5" style={{ color: "var(--foreground-secondary)" }}>
-                        {entry.latestBriefId ? "Latest brief" : "No brief"}
-                      </p>
-                    </div>
-                  </td>
-                  <td className="px-6 py-5 align-top">
-                    <div className="space-y-1.5">
-                      <p className="text-[15px] font-semibold tracking-tight" style={{ color: "var(--foreground)" }}>
-                        {sourceGrounding.primary}
-                      </p>
-                      {sourceMeta ? (
-                        <p className="text-[12px] leading-5" style={{ color: "var(--foreground-secondary)" }}>
-                          {sourceMeta}
-                        </p>
-                      ) : (
-                        <p className="text-[12px] leading-5" style={{ color: "var(--foreground-secondary)" }}>
-                          No detail
+                      {trackingState.supportingText && (
+                        <p className="truncate text-[11px] leading-5" style={{ color: "var(--foreground-secondary)" }} title={trackingState.supportingText}>
+                          {trackingState.supportingText}
                         </p>
                       )}
                     </div>
                   </td>
-                  <td className="px-6 py-5 align-top">
-                    <div className="space-y-1.5">
-                      <p className="text-[15px] font-semibold tracking-tight" style={{ color: "var(--foreground)" }}>
-                        {formatWatchlistScheduleCadenceLabel(entry.scheduleCadence)}
+                  <td className="px-5 py-3.5 align-top">
+                    <div className="space-y-1">
+                      <p className="truncate text-[14px] font-semibold tracking-tight tabular-nums lg:text-[15px]" style={{ color: "var(--foreground)" }} title={freshnessLabel}>
+                        {freshnessLabel}
                       </p>
-                      <p className="text-[12px] leading-5" style={{ color: scheduleLabel === "Due now" ? "var(--foreground)" : "var(--foreground-secondary)" }}>
+                      <p className="text-[11px] leading-5" style={{ color: scheduleLabel === "Due now" ? "var(--foreground)" : "var(--foreground-muted)" }}>
                         {scheduleLabel}
                       </p>
                     </div>
                   </td>
-                  <td className="px-6 py-5 align-top">
-                    <div className="flex flex-wrap gap-2 text-[12px]">
-                      <Link
-                        href={`/watchlists?watchlistId=${watchlist.id}&entryId=${entry.id}`}
-                        className="rounded-full border px-3 py-2 transition-colors"
-                        style={{
-                          borderColor: active ? "var(--foreground)" : "var(--border)",
-                          color: active ? "var(--foreground)" : "var(--foreground-secondary)",
-                          background: active ? "rgba(16,24,40,0.06)" : "transparent",
-                        }}
-                      >
-                        Inspect
-                      </Link>
+                  <td className="px-5 py-3.5 align-top">
+                    <div className="space-y-1">
+                      <p className="truncate text-[14px] font-semibold tracking-tight lg:text-[15px]" style={{ color: "var(--foreground)" }} title={trackingState.sourceLabel}>
+                        {trackingState.sourceLabel}
+                      </p>
+                      {sourceMeta ? (
+                        <p className="truncate text-[10px] leading-4" style={{ color: "var(--foreground-secondary)" }} title={sourceMeta}>
+                          {sourceMeta}
+                        </p>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="px-5 py-3.5 align-top">
+                    <div className="flex flex-wrap gap-2 text-[11px] lg:justify-end">
                       <button
-                        onClick={() => onRefreshEntry(entry.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRefreshEntry(entry.id);
+                        }}
                         disabled={pendingRefresh}
-                        className="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition-colors disabled:opacity-40"
+                        aria-busy={pendingRefresh || undefined}
+                        className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 transition-colors disabled:opacity-40 hover:bg-[rgba(16,24,40,0.04)]"
                         style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
                       >
                         {pendingRefresh ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
-                        Refresh
+                        {pendingRefresh ? "Refreshing" : "Refresh"}
                       </button>
-                      {entry.latestBriefId ? (
-                        <Link
-                          href={`/briefs/${entry.latestBriefId}`}
-                          className="rounded-full border px-3 py-2 transition-colors"
-                          style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
-                        >
-                          Latest brief
-                        </Link>
-                      ) : null}
                       <button
-                        onClick={() => onRemoveEntry(entry.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRemoveEntry(entry.id);
+                        }}
                         disabled={pendingRemoval}
-                        className="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition-colors disabled:opacity-40"
+                        aria-busy={pendingRemoval || undefined}
+                        className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 transition-colors disabled:opacity-40 hover:bg-[rgba(16,24,40,0.04)]"
                         style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
                       >
                         {pendingRemoval ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-                        Remove
+                        {pendingRemoval ? "Removing" : "Remove"}
                       </button>
                     </div>
                   </td>

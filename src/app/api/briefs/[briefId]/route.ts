@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import {
+  isUnauthorizedError,
+  requireAuthSession,
+} from "@/lib/auth/session";
 import { getStratumBriefById } from "@/lib/briefs/repository";
 import { attachWatchlistMonitoringToResult } from "@/lib/watchlists/monitoring";
 import { getWatchlistBriefReplayContext } from "@/lib/watchlists/repository";
@@ -17,13 +21,15 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 
   try {
-    const brief = await getStratumBriefById(briefId);
+    const session = await requireAuthSession();
+    const brief = await getStratumBriefById(briefId, { tenantId: session.tenantId });
     if (!brief) {
       return NextResponse.json({ success: false, error: "Brief not found" }, { status: 404 });
     }
 
     const replayContext = brief.watchlistEntryId
       ? await getWatchlistBriefReplayContext({
+          scope: { tenantId: session.tenantId },
           watchlistEntryId: brief.watchlistEntryId,
           briefId: brief.id,
         })
@@ -46,13 +52,17 @@ export async function GET(_request: Request, context: RouteContext) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("[Stratum Brief API] Error:", error);
+    console.error("[API] Brief load failed:", error);
+    
+    if (isUnauthorizedError(error)) {
+      return NextResponse.json(
+        { success: false, error: "Your session has expired. Please sign in again." },
+        { status: 401 }
+      );
+    }
 
     return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : "An unexpected error occurred",
-      },
+      { success: false, error: "The requested brief could not be loaded. Please refresh the page." },
       { status: 500 }
     );
   }

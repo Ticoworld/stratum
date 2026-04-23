@@ -9,6 +9,11 @@
 
 import { revalidatePath } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  canWriteWorkspace,
+  isUnauthorizedError,
+  requireAuthSession,
+} from "@/lib/auth/session";
 import { recordMonitoringAttempt } from "@/lib/watchlists/monitoringAttemptRecorder";
 import { getWatchlistEntryOverviewById } from "@/lib/watchlists/repository";
 import { runStratumRefresh } from "@/lib/watchlists/refreshRunner";
@@ -27,6 +32,9 @@ function resolveAttemptOrigin(forceRefresh: boolean): StratumMonitoringAttemptOr
 }
 
 export async function POST(request: NextRequest) {
+  let session:
+    | Awaited<ReturnType<typeof requireAuthSession>>
+    | null = null;
   let trackingContext:
     | {
         entryId: string;
@@ -36,6 +44,7 @@ export async function POST(request: NextRequest) {
     | null = null;
 
   try {
+    session = await requireAuthSession();
     const body = await request.json();
     const { companyName } = body;
     const requestedWatchlistEntryId =
@@ -61,8 +70,21 @@ export async function POST(request: NextRequest) {
 
     const sanitized = trimmed.replace(/[<>"']/g, "").slice(0, 100).trim() || trimmed;
     const trackedEntry = requestedWatchlistEntryId
-      ? await getWatchlistEntryOverviewById(requestedWatchlistEntryId)
+      ? await getWatchlistEntryOverviewById(requestedWatchlistEntryId, {
+          tenantId: session.tenantId,
+        })
       : null;
+
+    if (requestedWatchlistEntryId && !trackedEntry) {
+      return NextResponse.json(
+        { success: false, error: "Watchlist entry not found." },
+        { status: 404 }
+      );
+    }
+
+    if (trackedEntry && !canWriteWorkspace(session.role)) {
+      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    }
 
     trackingContext = trackedEntry
       ? {
@@ -78,6 +100,7 @@ export async function POST(request: NextRequest) {
     const refresh = await runStratumRefresh({
       companyName: sanitized,
       watchlistEntryId: trackedEntry?.id ?? null,
+      tenantId: session.tenantId,
       attemptOrigin: trackingContext?.attemptOrigin ?? null,
       bypassCache: forceRefresh,
       manualRefreshRequested: forceRefresh,
@@ -95,10 +118,20 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    if (isUnauthorizedError(error)) {
+      return NextResponse.json(
+        { success: false, error: "Your session has expired. Please sign in again." },
+        { status: 401 }
+      );
+    }
     if (trackingContext && error instanceof RateLimitExceededError) {
       try {
+        if (!session) {
+          throw new Error("Authenticated session was not available for rate-limit recovery.");
+        }
         await recordMonitoringAttempt({
           watchlistEntryId: trackingContext.entryId,
+          scope: { tenantId: session.tenantId },
           requestedQuery: trackingContext.requestedQuery,
           attemptOrigin: trackingContext.attemptOrigin,
           outcomeStatus: "failed",
@@ -118,11 +151,8 @@ export async function POST(request: NextRequest) {
 
     console.error("[Stratum API] Error:", error);
 
-    const message =
-      error instanceof Error ? error.message : "An unexpected error occurred";
-
     return NextResponse.json(
-      { success: false, error: message },
+      { success: false, error: "Company analysis could not be completed. Please try again or check the source URL." },
       { status: 500 }
     );
   }

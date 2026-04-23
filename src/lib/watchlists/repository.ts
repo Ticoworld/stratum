@@ -36,6 +36,12 @@ import {
   type WatchlistEntryScheduleSnapshot,
 } from "@/lib/watchlists/schedules";
 import type { WatchlistNotificationCandidate } from "@/lib/watchlists/notifications";
+import { getNormalizedTrackedTargetName } from "@/lib/watchlists/identity";
+import {
+  assertTenantlessCompatibilityAllowed,
+  resolveTenantId,
+  type TenantScope,
+} from "@/lib/watchlists/tenantScope";
 
 const DEFAULT_WATCHLIST_NAME = "Default Watchlist";
 const DEFAULT_WATCHLIST_SLUG = "default";
@@ -69,6 +75,11 @@ export interface WatchlistOverview {
   updatedAt: string;
   entryCount: number;
   entries: WatchlistEntryOverview[];
+}
+
+interface ResolveWatchlistArgs {
+  tenantId: string;
+  watchlistId?: string | null;
 }
 
 export interface WatchlistEntryDetail {
@@ -105,6 +116,7 @@ export interface WatchlistMonitoringSnapshot {
   latestStateWatchlistReadLabel: string | null;
   latestStateWatchlistReadConfidence: string | null;
   latestStateAtsSourceUsed: string | null;
+  latestStateJobsObservedCount: number | null;
   lastRefreshedAt: string | null;
   lastMonitoringAttemptAt: string | null;
   lastMonitoringAttemptOrigin: StratumMonitoringAttemptOrigin | null;
@@ -176,6 +188,9 @@ function mapWatchlistRow(row: typeof stratumWatchlists.$inferSelect, entries: Wa
 }
 
 function mapEntryRow(row: typeof stratumWatchlistEntries.$inferSelect): WatchlistEntryOverview {
+  const latestMatchedCompanyName =
+    getNormalizedTrackedTargetName(row.requestedQuery, row.latestMatchedCompanyName) ?? null;
+
   return {
     id: row.id,
     watchlistId: row.watchlistId,
@@ -186,7 +201,7 @@ function mapEntryRow(row: typeof stratumWatchlistEntries.$inferSelect): Watchlis
     scheduleConsecutiveFailures: row.scheduleConsecutiveFailures ?? 0,
     scheduleLeaseExpiresAt: toIsoString(row.scheduleLeaseExpiresAt),
     latestBriefId: row.latestBriefId ?? null,
-    latestMatchedCompanyName: row.latestMatchedCompanyName ?? null,
+    latestMatchedCompanyName,
     latestResultState: row.latestResultState ?? null,
     latestWatchlistReadLabel: row.latestWatchlistReadLabel ?? null,
     latestWatchlistReadConfidence: row.latestWatchlistReadConfidence ?? null,
@@ -199,15 +214,29 @@ function mapEntryRow(row: typeof stratumWatchlistEntries.$inferSelect): Watchlis
 }
 
 export async function getWatchlistEntryOverviewById(
-  entryId: string
+  entryId: string,
+  scope: TenantScope
 ): Promise<WatchlistEntryOverview | null> {
-  const [entry] = await db
-    .select()
+  assertTenantlessCompatibilityAllowed(scope);
+  const tenantId = resolveTenantId(scope);
+
+  const query = db
+    .select({
+      entry: stratumWatchlistEntries,
+    })
     .from(stratumWatchlistEntries)
-    .where(eq(stratumWatchlistEntries.id, entryId))
+    .innerJoin(stratumWatchlists, eq(stratumWatchlistEntries.watchlistId, stratumWatchlists.id))
+    .where(
+      and(
+        eq(stratumWatchlistEntries.id, entryId),
+        tenantId ? eq(stratumWatchlists.tenantId, tenantId) : undefined
+      )
+    )
     .limit(1);
 
-  return entry ? mapEntryRow(entry) : null;
+  const [row] = await query;
+
+  return row?.entry ? mapEntryRow(row.entry) : null;
 }
 
 async function touchWatchlist(watchlistId: string): Promise<void> {
@@ -227,6 +256,23 @@ async function getBriefRow(briefId: string) {
     .limit(1);
 
   return brief ?? null;
+}
+
+async function getScopedBriefRow(briefId: string, tenantId: string) {
+  const [row] = await db
+    .select({
+      brief: stratumBriefs,
+    })
+    .from(stratumBriefs)
+    .innerJoin(
+      stratumWatchlistEntries,
+      eq(stratumBriefs.watchlistEntryId, stratumWatchlistEntries.id)
+    )
+    .innerJoin(stratumWatchlists, eq(stratumWatchlistEntries.watchlistId, stratumWatchlists.id))
+    .where(and(eq(stratumBriefs.id, briefId), eq(stratumWatchlists.tenantId, tenantId)))
+    .limit(1);
+
+  return row?.brief ?? null;
 }
 
 function buildEntryBriefFields(brief: NonNullable<Awaited<ReturnType<typeof getBriefRow>>>) {
@@ -285,21 +331,33 @@ function entryAlreadyReflectsBrief(
   );
 }
 
-async function getWatchlistRowById(watchlistId: string) {
+async function getWatchlistRowById(watchlistId: string, scope: TenantScope) {
+  assertTenantlessCompatibilityAllowed(scope);
+  const tenantId = resolveTenantId(scope);
   const [watchlist] = await db
     .select()
     .from(stratumWatchlists)
-    .where(eq(stratumWatchlists.id, watchlistId))
+    .where(
+      and(
+        eq(stratumWatchlists.id, watchlistId),
+        tenantId ? eq(stratumWatchlists.tenantId, tenantId) : undefined
+      )
+    )
     .limit(1);
 
   return watchlist ?? null;
 }
 
-export async function ensureDefaultWatchlist(): Promise<WatchlistOverview> {
+export async function ensureDefaultWatchlist(tenantId: string): Promise<WatchlistOverview> {
   const [existing] = await db
     .select()
     .from(stratumWatchlists)
-    .where(eq(stratumWatchlists.slug, DEFAULT_WATCHLIST_SLUG))
+    .where(
+      and(
+        eq(stratumWatchlists.slug, DEFAULT_WATCHLIST_SLUG),
+        eq(stratumWatchlists.tenantId, tenantId)
+      )
+    )
     .limit(1);
 
   const watchlist =
@@ -309,6 +367,7 @@ export async function ensureDefaultWatchlist(): Promise<WatchlistOverview> {
         .insert(stratumWatchlists)
         .values({
           id: randomUUID(),
+          tenantId,
           name: DEFAULT_WATCHLIST_NAME,
           slug: DEFAULT_WATCHLIST_SLUG,
         })
@@ -319,20 +378,23 @@ export async function ensureDefaultWatchlist(): Promise<WatchlistOverview> {
 }
 
 export async function resolveWatchlistByIdOrDefault(
-  watchlistId?: string | null
+  args: ResolveWatchlistArgs
 ): Promise<WatchlistOverview | null> {
-  if (!watchlistId || watchlistId === DEFAULT_WATCHLIST_SLUG) {
-    return ensureDefaultWatchlist();
+  if (!args.watchlistId || args.watchlistId === DEFAULT_WATCHLIST_SLUG) {
+    return ensureDefaultWatchlist(args.tenantId);
   }
 
-  const watchlist = await getWatchlistRowById(watchlistId);
+  const watchlist = await getWatchlistRowById(args.watchlistId, { tenantId: args.tenantId });
   if (!watchlist) return null;
 
   return mapWatchlistRow(watchlist, []);
 }
 
-export async function createWatchlist(name: string): Promise<WatchlistOverview> {
-  const sanitizedName = sanitizeWatchlistName(name);
+export async function createWatchlist(args: {
+  tenantId: string;
+  name: string;
+}): Promise<WatchlistOverview> {
+  const sanitizedName = sanitizeWatchlistName(args.name);
   if (!sanitizedName) {
     throw new Error("Watchlist name is required.");
   }
@@ -343,6 +405,7 @@ export async function createWatchlist(name: string): Promise<WatchlistOverview> 
     .insert(stratumWatchlists)
     .values({
       id: randomUUID(),
+      tenantId: args.tenantId,
       name: sanitizedName,
       slug,
     })
@@ -351,20 +414,27 @@ export async function createWatchlist(name: string): Promise<WatchlistOverview> 
   return mapWatchlistRow(watchlist, []);
 }
 
-export async function listWatchlistsWithEntries(): Promise<WatchlistOverview[]> {
-  await ensureDefaultWatchlist();
+export async function listWatchlistsWithEntries(tenantId: string): Promise<WatchlistOverview[]> {
+  await ensureDefaultWatchlist(tenantId);
 
-  const watchlists = await db.select().from(stratumWatchlists);
-  const entries = await db
+  const watchlists = await db
     .select()
+    .from(stratumWatchlists)
+    .where(eq(stratumWatchlists.tenantId, tenantId));
+  const entries = await db
+    .select({
+      entry: stratumWatchlistEntries,
+    })
     .from(stratumWatchlistEntries)
+    .innerJoin(stratumWatchlists, eq(stratumWatchlistEntries.watchlistId, stratumWatchlists.id))
+    .where(eq(stratumWatchlists.tenantId, tenantId))
     .orderBy(desc(stratumWatchlistEntries.updatedAt));
 
   const entriesByWatchlist = new Map<string, WatchlistEntryOverview[]>();
-  for (const entry of entries) {
-    const mapped = mapEntryRow(entry);
-    if (!entriesByWatchlist.has(entry.watchlistId)) entriesByWatchlist.set(entry.watchlistId, []);
-    entriesByWatchlist.get(entry.watchlistId)!.push(mapped);
+  for (const row of entries) {
+    const mapped = mapEntryRow(row.entry);
+    if (!entriesByWatchlist.has(row.entry.watchlistId)) entriesByWatchlist.set(row.entry.watchlistId, []);
+    entriesByWatchlist.get(row.entry.watchlistId)!.push(mapped);
   }
 
   return [...watchlists]
@@ -402,6 +472,13 @@ function buildWatchlistMonitoringSnapshot(args: {
     leaseExpiresAt: args.entry.scheduleLeaseExpiresAt,
     attemptHistory: args.attemptHistory,
   });
+  const lastMonitoringAttemptMatchedCompanyName =
+    latestAttempt
+      ? getNormalizedTrackedTargetName(
+          latestAttempt.requestedQuery,
+          latestAttempt.matchedCompanyName
+        ) ?? null
+      : null;
 
   return {
     entryId: args.entry.id,
@@ -421,6 +498,7 @@ function buildWatchlistMonitoringSnapshot(args: {
     latestStateWatchlistReadLabel: monitoringState.latestStateWatchlistReadLabel,
     latestStateWatchlistReadConfidence: monitoringState.latestStateWatchlistReadConfidence,
     latestStateAtsSourceUsed: monitoringState.latestStateAtsSourceUsed,
+    latestStateJobsObservedCount: monitoringState.latestStateJobsObservedCount,
     lastRefreshedAt: latestBrief?.createdAt ?? null,
     lastMonitoringAttemptAt: latestAttempt?.createdAt ?? null,
     lastMonitoringAttemptOrigin: latestAttempt?.attemptOrigin ?? null,
@@ -429,7 +507,7 @@ function buildWatchlistMonitoringSnapshot(args: {
     lastMonitoringAttemptUsedCache: didMonitoringAttemptReuseCache(latestAttempt),
     lastMonitoringAttemptBriefId: latestAttempt?.relatedBriefId ?? null,
     lastMonitoringAttemptResultState: latestAttempt?.resultState ?? null,
-    lastMonitoringAttemptMatchedCompanyName: latestAttempt?.matchedCompanyName ?? null,
+    lastMonitoringAttemptMatchedCompanyName,
     lastMonitoringAttemptAtsSourceUsed: latestAttempt?.atsSourceUsed ?? null,
     lastMonitoringAttemptErrorSummary: latestAttempt?.errorSummary ?? null,
     lastMonitoringAttemptSummary: latestAttempt
@@ -462,18 +540,21 @@ function buildWatchlistMonitoringSnapshot(args: {
 }
 
 async function buildWatchlistEntryDetailFromRow(
-  entry: typeof stratumWatchlistEntries.$inferSelect
+  entry: typeof stratumWatchlistEntries.$inferSelect,
+  scope: TenantScope
 ): Promise<WatchlistEntryDetail | null> {
-  const watchlistRow = await getWatchlistRowById(entry.watchlistId);
+  const [watchlistRow, historyRaw, attemptHistory, notificationCandidates] = await Promise.all([
+    getWatchlistRowById(entry.watchlistId, scope).catch(() => null),
+    listStratumBriefsByWatchlistEntryId(entry.id, scope).catch(() => []),
+    listMonitoringAttemptEventsByWatchlistEntryId(entry.id, scope).catch(() => []),
+    listNotificationCandidatesByWatchlistEntryId(entry.id, scope).catch(() => []),
+  ]);
+
   if (!watchlistRow) return null;
 
+  const history = historyRaw.map((brief) => toWatchlistEntryBriefHistoryItem(brief));
   const mappedEntry = mapEntryRow(entry);
   const watchlist = mapWatchlistRow(watchlistRow, []);
-  const history = (await listStratumBriefsByWatchlistEntryId(entry.id)).map((brief) =>
-    toWatchlistEntryBriefHistoryItem(brief)
-  );
-  const attemptHistory = await listMonitoringAttemptEventsByWatchlistEntryId(entry.id);
-  const notificationCandidates = await listNotificationCandidatesByWatchlistEntryId(entry.id);
   const latestBrief = history[0] ?? null;
   const previousBrief = history[1] ?? null;
   const latestAttempt = attemptHistory[0] ?? null;
@@ -503,15 +584,21 @@ async function buildWatchlistEntryDetailFromRow(
 
 export async function addWatchlistEntry(args: {
   requestedQuery: string;
+  tenantId: string;
   watchlistId?: string | null;
   briefId?: string | null;
+  latestMatchedCompanyName?: string | null;
+  latestAtsSourceUsed?: string | null;
 }): Promise<{ watchlist: WatchlistOverview; entry: WatchlistEntryOverview }> {
   const requestedQuery = args.requestedQuery.trim().slice(0, 200);
   if (!requestedQuery) {
     throw new Error("Tracked company or query is required.");
   }
 
-  const watchlist = await resolveWatchlistByIdOrDefault(args.watchlistId);
+  const watchlist = await resolveWatchlistByIdOrDefault({
+    tenantId: args.tenantId,
+    watchlistId: args.watchlistId,
+  });
   if (!watchlist) {
     throw new Error("Watchlist not found.");
   }
@@ -528,9 +615,19 @@ export async function addWatchlistEntry(args: {
     )
     .limit(1);
 
-  const brief = args.briefId ? await getBriefRow(args.briefId) : null;
+  const brief = args.briefId ? await getScopedBriefRow(args.briefId, args.tenantId) : null;
+  if (args.briefId && !brief) {
+    throw new Error("Brief not found.");
+  }
   const now = new Date();
   const briefFields = brief ? buildEntryBriefFields(brief) : null;
+  const initialEntryFields =
+    !brief && (args.latestMatchedCompanyName || args.latestAtsSourceUsed)
+      ? {
+          latestMatchedCompanyName: args.latestMatchedCompanyName ?? null,
+          latestAtsSourceUsed: args.latestAtsSourceUsed ?? null,
+        }
+      : null;
 
   let entryRow: typeof stratumWatchlistEntries.$inferSelect;
 
@@ -539,6 +636,7 @@ export async function addWatchlistEntry(args: {
       .update(stratumWatchlistEntries)
       .set({
         requestedQuery,
+        ...(initialEntryFields ?? {}),
         ...(brief && briefFields && shouldUpdateLatestBrief(existing, brief) ? briefFields : {}),
         updatedAt: now,
       })
@@ -554,6 +652,7 @@ export async function addWatchlistEntry(args: {
         watchlistId: watchlist.id,
         requestedQuery,
         normalizedQuery,
+        ...(initialEntryFields ?? {}),
         ...(briefFields ?? {}),
         createdAt: now,
         updatedAt: now,
@@ -573,11 +672,12 @@ export async function addWatchlistEntry(args: {
   }
 
   await touchWatchlist(watchlist.id);
-  const watchlistRow = await getWatchlistRowById(watchlist.id);
+  const watchlistRow = await getWatchlistRowById(watchlist.id, { tenantId: args.tenantId });
 
   return {
     watchlist: mapWatchlistRow(watchlistRow ?? {
       id: watchlist.id,
+      tenantId: args.tenantId,
       name: watchlist.name,
       slug: watchlist.slug,
       createdAt: new Date(watchlist.createdAt),
@@ -588,27 +688,33 @@ export async function addWatchlistEntry(args: {
 }
 
 export async function updateWatchlistEntrySchedule(args: {
+  tenantId: string;
   watchlistId: string;
   entryId: string;
   cadence: StratumWatchlistScheduleCadence;
 }): Promise<WatchlistEntryDetail | null> {
   const [existing] = await db
-    .select()
+    .select({
+      entry: stratumWatchlistEntries,
+    })
     .from(stratumWatchlistEntries)
+    .innerJoin(stratumWatchlists, eq(stratumWatchlistEntries.watchlistId, stratumWatchlists.id))
     .where(
       and(
         eq(stratumWatchlistEntries.id, args.entryId),
-        eq(stratumWatchlistEntries.watchlistId, args.watchlistId)
+        eq(stratumWatchlistEntries.watchlistId, args.watchlistId),
+        eq(stratumWatchlists.tenantId, args.tenantId)
       )
     )
     .limit(1);
 
-  if (!existing) return null;
+  if (!existing?.entry) return null;
+  const existingEntry = existing.entry;
 
   const now = new Date();
   const nextRunAt = isWatchlistScheduleEnabled(args.cadence)
-    ? existing.scheduleCadence === args.cadence && existing.scheduleNextRunAt
-      ? existing.scheduleNextRunAt
+    ? existingEntry.scheduleCadence === args.cadence && existingEntry.scheduleNextRunAt
+      ? existingEntry.scheduleNextRunAt
       : now
     : null;
 
@@ -622,25 +728,28 @@ export async function updateWatchlistEntrySchedule(args: {
       scheduleLeaseExpiresAt: null,
       updatedAt: now,
     })
-    .where(eq(stratumWatchlistEntries.id, existing.id));
+    .where(eq(stratumWatchlistEntries.id, existingEntry.id));
 
-  await touchWatchlist(existing.watchlistId);
+  await touchWatchlist(existingEntry.watchlistId);
 
   return getWatchlistEntryDetail({
-    watchlistId: existing.watchlistId,
-    entryId: existing.id,
+    scope: { tenantId: args.tenantId },
+    watchlistId: existingEntry.watchlistId,
+    entryId: existingEntry.id,
   });
 }
 
-export async function listDueScheduledWatchlistEntries(args?: {
+export async function listDueScheduledWatchlistEntries(args: {
+  scope: { tenantId: string } | { globalScheduler: true };
   watchlistId?: string | null;
   now?: Date;
   limit?: number;
-}): Promise<WatchlistEntryOverview[]> {
-  const now = args?.now ?? new Date();
-  const limit = Math.max(1, Math.min(args?.limit ?? 10, 50));
+}): Promise<(WatchlistEntryOverview & { watchlistTenantId: string | null })[]> {
+  const tenantId = "tenantId" in args.scope ? args.scope.tenantId : null;
+  const now = args.now ?? new Date();
+  const limit = Math.max(1, Math.min(args.limit ?? 10, 50));
 
-  const whereClause = args?.watchlistId
+  const whereClause = args.watchlistId
     ? and(
         eq(stratumWatchlistEntries.watchlistId, args.watchlistId),
         lte(stratumWatchlistEntries.scheduleNextRunAt, now),
@@ -658,11 +767,16 @@ export async function listDueScheduledWatchlistEntries(args?: {
       );
 
   const rows = await db
-    .select()
+    .select({
+      entry: stratumWatchlistEntries,
+      watchlistTenantId: stratumWatchlists.tenantId,
+    })
     .from(stratumWatchlistEntries)
+    .innerJoin(stratumWatchlists, eq(stratumWatchlistEntries.watchlistId, stratumWatchlists.id))
     .where(
       and(
         whereClause,
+        tenantId ? eq(stratumWatchlists.tenantId, tenantId) : undefined,
         or(
           eq(stratumWatchlistEntries.scheduleCadence, "daily"),
           eq(stratumWatchlistEntries.scheduleCadence, "weekly")
@@ -676,7 +790,10 @@ export async function listDueScheduledWatchlistEntries(args?: {
     )
     .limit(limit);
 
-  return rows.map((row) => mapEntryRow(row));
+  return rows.map((row) => ({
+    ...mapEntryRow(row.entry),
+    watchlistTenantId: row.watchlistTenantId,
+  }));
 }
 
 export async function claimDueScheduledWatchlistEntry(args: {
@@ -762,7 +879,11 @@ export async function finalizeScheduledWatchlistEntryRun(args: {
 export async function attachBriefToWatchlistEntry(args: {
   watchlistEntryId: string;
   briefId: string;
+  scope: TenantScope;
 }): Promise<{ watchlist: WatchlistOverview; entry: WatchlistEntryOverview } | null> {
+  assertTenantlessCompatibilityAllowed(args.scope);
+  const tenantId = resolveTenantId(args.scope);
+
   const [entry] = await db
     .select()
     .from(stratumWatchlistEntries)
@@ -805,7 +926,7 @@ export async function attachBriefToWatchlistEntry(args: {
     await touchWatchlist(entry.watchlistId);
   }
 
-  const watchlistRow = await getWatchlistRowById(entry.watchlistId);
+  const watchlistRow = await getWatchlistRowById(entry.watchlistId, args.scope);
   if (!watchlistRow) return null;
 
   return {
@@ -815,44 +936,65 @@ export async function attachBriefToWatchlistEntry(args: {
 }
 
 export async function getWatchlistEntryDetail(args: {
+  scope: TenantScope;
   watchlistId: string;
   entryId: string;
 }): Promise<WatchlistEntryDetail | null> {
-  const [entry] = await db
-    .select()
+  assertTenantlessCompatibilityAllowed(args.scope);
+  const tenantId = resolveTenantId(args.scope);
+
+  const [row] = await db
+    .select({
+      entry: stratumWatchlistEntries,
+    })
     .from(stratumWatchlistEntries)
+    .innerJoin(stratumWatchlists, eq(stratumWatchlistEntries.watchlistId, stratumWatchlists.id))
     .where(
       and(
         eq(stratumWatchlistEntries.id, args.entryId),
-        eq(stratumWatchlistEntries.watchlistId, args.watchlistId)
+        eq(stratumWatchlistEntries.watchlistId, args.watchlistId),
+        tenantId ? eq(stratumWatchlists.tenantId, tenantId) : undefined
       )
     )
     .limit(1);
 
-  if (!entry) return null;
+  if (!row?.entry) return null;
 
-  return buildWatchlistEntryDetailFromRow(entry);
+  return buildWatchlistEntryDetailFromRow(row.entry, args.scope);
 }
 
 export async function getWatchlistEntryDetailById(
-  entryId: string
+  entryId: string,
+  scope: TenantScope
 ): Promise<WatchlistEntryDetail | null> {
-  const [entry] = await db
-    .select()
+  assertTenantlessCompatibilityAllowed(scope);
+  const tenantId = resolveTenantId(scope);
+
+  const [row] = await db
+    .select({
+      entry: stratumWatchlistEntries,
+    })
     .from(stratumWatchlistEntries)
-    .where(eq(stratumWatchlistEntries.id, entryId))
+    .innerJoin(stratumWatchlists, eq(stratumWatchlistEntries.watchlistId, stratumWatchlists.id))
+    .where(
+      and(
+        eq(stratumWatchlistEntries.id, entryId),
+        tenantId ? eq(stratumWatchlists.tenantId, tenantId) : undefined
+      )
+    )
     .limit(1);
 
-  if (!entry) return null;
+  if (!row?.entry) return null;
 
-  return buildWatchlistEntryDetailFromRow(entry);
+  return buildWatchlistEntryDetailFromRow(row.entry, scope);
 }
 
 export async function getWatchlistBriefReplayContext(args: {
+  scope: TenantScope;
   watchlistEntryId: string;
   briefId: string;
 }): Promise<WatchlistBriefReplayContext | null> {
-  const detail = await getWatchlistEntryDetailById(args.watchlistEntryId);
+  const detail = await getWatchlistEntryDetailById(args.watchlistEntryId, args.scope);
   if (!detail) return null;
 
   const historyIndex = detail.history.findIndex((brief) => brief.id === args.briefId);
@@ -870,21 +1012,27 @@ export async function getWatchlistBriefReplayContext(args: {
 }
 
 export async function removeWatchlistEntry(args: {
+  tenantId: string;
   watchlistId: string;
   entryId: string;
 }): Promise<boolean> {
-  const [existing] = await db
-    .select()
+  const [row] = await db
+    .select({
+      entry: stratumWatchlistEntries,
+    })
     .from(stratumWatchlistEntries)
+    .innerJoin(stratumWatchlists, eq(stratumWatchlistEntries.watchlistId, stratumWatchlists.id))
     .where(
       and(
         eq(stratumWatchlistEntries.id, args.entryId),
-        eq(stratumWatchlistEntries.watchlistId, args.watchlistId)
+        eq(stratumWatchlistEntries.watchlistId, args.watchlistId),
+        eq(stratumWatchlists.tenantId, args.tenantId)
       )
     )
     .limit(1);
 
-  if (!existing) return false;
+  if (!row?.entry) return false;
+  const existing = row.entry;
 
   await db.delete(stratumWatchlistEntries).where(eq(stratumWatchlistEntries.id, existing.id));
   await touchWatchlist(existing.watchlistId);

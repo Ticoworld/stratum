@@ -67,6 +67,147 @@ export interface NotificationCandidateDraft {
   summary: string;
 }
 
+function isoFromNow(offsetMs: number): string {
+  return new Date(Date.now() - offsetMs).toISOString();
+}
+
+export function buildDevelopmentNotificationInboxPreview(args: {
+  status: StratumNotificationInboxFilter;
+}): {
+  counts: NotificationInboxCounts;
+  notifications: WatchlistNotificationInboxItem[];
+} {
+  const previewItems: WatchlistNotificationInboxItem[] = [
+    {
+      id: "00000000-0000-4000-8000-000000000901",
+      watchlistEntryId: "00000000-0000-4000-8000-000000000911",
+      monitoringEventId: "00000000-0000-4000-8000-000000000921",
+      relatedBriefId: "00000000-0000-4000-8000-000000000931",
+      attemptOrigin: "manual_refresh",
+      candidateKind: "meaningful_monitoring_change",
+      status: "unread",
+      changeTypes: ["result_state_changed", "saved_brief_material_change"],
+      summary:
+        "Result state changed from No result state to Supported provider matched with observed openings. Saved brief comparison shows broader product and GTM hiring.",
+      createdAt: isoFromNow(18 * 60 * 1000),
+      readAt: null,
+      dismissedAt: null,
+      externalDeliveryAt: null,
+      deliveryMode: "in_app_inbox_only",
+      watchlistId: "00000000-0000-4000-8000-000000000941",
+      watchlistName: "Phase 10 Watchlist Fixture",
+      requestedQuery: "https://phase10-home.myworkdayjobs.com/en-US/careers",
+      latestMatchedCompanyName: null,
+      latestBriefId: "00000000-0000-4000-8000-000000000931",
+    },
+    {
+      id: "00000000-0000-4000-8000-000000000902",
+      watchlistEntryId: "00000000-0000-4000-8000-000000000912",
+      monitoringEventId: "00000000-0000-4000-8000-000000000922",
+      relatedBriefId: "00000000-0000-4000-8000-000000000932",
+      attemptOrigin: "manual_refresh",
+      candidateKind: "meaningful_monitoring_change",
+      status: "unread",
+      changeTypes: ["watchlist_read_changed", "saved_brief_material_change"],
+      summary:
+        'Watchlist read changed from "Focused product hiring" to "Broader product and GTM buildout". Saved brief comparison now shows commercial hiring mixed into the same target.',
+      createdAt: isoFromNow(2 * 60 * 60 * 1000),
+      readAt: null,
+      dismissedAt: null,
+      externalDeliveryAt: null,
+      deliveryMode: "in_app_inbox_only",
+      watchlistId: "00000000-0000-4000-8000-000000000942",
+      watchlistName: "Phase 9 History Review",
+      requestedQuery: "Phase9 History Company",
+      latestMatchedCompanyName: "Phase9 History Company",
+      latestBriefId: "00000000-0000-4000-8000-000000000932",
+    },
+    {
+      id: "00000000-0000-4000-8000-000000000903",
+      watchlistEntryId: "00000000-0000-4000-8000-000000000913",
+      monitoringEventId: "00000000-0000-4000-8000-000000000923",
+      relatedBriefId: null,
+      attemptOrigin: "watchlist_rerun",
+      candidateKind: "meaningful_monitoring_change",
+      status: "unread",
+      changeTypes: ["ats_source_changed", "result_state_changed"],
+      summary:
+        "ATS source changed from No supported ATS source to Greenhouse. Result state changed to supported provider matched with observed openings.",
+      createdAt: isoFromNow(9 * 60 * 60 * 1000),
+      readAt: null,
+      dismissedAt: null,
+      externalDeliveryAt: null,
+      deliveryMode: "in_app_inbox_only",
+      watchlistId: "00000000-0000-4000-8000-000000000943",
+      watchlistName: "Coverage Expansion",
+      requestedQuery: "https://boards.greenhouse.io/harbor-robotics/jobs",
+      latestMatchedCompanyName: null,
+      latestBriefId: null,
+    },
+    {
+      id: "00000000-0000-4000-8000-000000000904",
+      watchlistEntryId: "00000000-0000-4000-8000-000000000914",
+      monitoringEventId: "00000000-0000-4000-8000-000000000924",
+      relatedBriefId: null,
+      attemptOrigin: "manual_refresh",
+      candidateKind: "meaningful_monitoring_change",
+      status: "read",
+      changeTypes: ["refresh_failed"],
+      summary:
+        "Manual refresh failed and did not replace the current monitoring state: simulated provider timeout during review.",
+      createdAt: isoFromNow(26 * 60 * 60 * 1000),
+      readAt: isoFromNow(23 * 60 * 60 * 1000),
+      dismissedAt: null,
+      externalDeliveryAt: null,
+      deliveryMode: "in_app_inbox_only",
+      watchlistId: "00000000-0000-4000-8000-000000000944",
+      watchlistName: "Manual Exceptions",
+      requestedQuery: "https://apply.workable.com/north-coast-payments/",
+      latestMatchedCompanyName: null,
+      latestBriefId: null,
+    },
+    {
+      id: "00000000-0000-4000-8000-000000000905",
+      watchlistEntryId: "00000000-0000-4000-8000-000000000915",
+      monitoringEventId: "00000000-0000-4000-8000-000000000925",
+      relatedBriefId: "00000000-0000-4000-8000-000000000935",
+      attemptOrigin: "manual_refresh",
+      candidateKind: "meaningful_monitoring_change",
+      status: "dismissed",
+      changeTypes: ["watchlist_read_changed"],
+      summary:
+        'Watchlist read changed from "Steady engineering hiring" to "Commercial hiring mixed in with platform roles".',
+      createdAt: isoFromNow(4 * 24 * 60 * 60 * 1000),
+      readAt: isoFromNow(4 * 24 * 60 * 60 * 1000 - 45 * 60 * 1000),
+      dismissedAt: isoFromNow(3 * 24 * 60 * 60 * 1000),
+      externalDeliveryAt: null,
+      deliveryMode: "in_app_inbox_only",
+      watchlistId: "00000000-0000-4000-8000-000000000945",
+      watchlistName: "Commercial Buildout",
+      requestedQuery: "https://jobs.ashbyhq.com/copper-bridge",
+      latestMatchedCompanyName: null,
+      latestBriefId: "00000000-0000-4000-8000-000000000935",
+    },
+  ];
+
+  const counts: NotificationInboxCounts = {
+    totalCount: previewItems.length,
+    unreadCount: previewItems.filter((item) => item.status === "unread").length,
+    readCount: previewItems.filter((item) => item.status === "read").length,
+    dismissedCount: previewItems.filter((item) => item.status === "dismissed").length,
+  };
+
+  const notifications =
+    args.status === "all"
+      ? previewItems
+      : previewItems.filter((item) => item.status === args.status);
+
+  return {
+    counts,
+    notifications,
+  };
+}
+
 export function formatNotificationCandidateKindLabel(
   value: StratumNotificationCandidateKind
 ): string {
