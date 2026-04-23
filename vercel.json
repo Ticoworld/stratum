@@ -1,8 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/scheduled-refreshes",
-      "schedule": "*/15 * * * *"
-    }
-  ]
-}
+{}
