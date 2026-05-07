@@ -138,14 +138,17 @@ export interface WatchlistMonitoringSnapshot {
   dismissedNotificationCount: number;
   latestNotificationCandidateAt: string | null;
   latestNotificationCandidateSummary: string | null;
+  comparisonAvailable: boolean;
+  diff: WatchlistEntryDiff;
+  comparisonStrength: "standard" | "weak" | "unavailable";
+  comparisonSummary: string;
+  comparisonWeak: boolean;
+  comparisonSignificant: boolean;
+  significanceDrivers: Array<"count" | "roles" | "mix" | "geography">;
   historyCount: number;
   attemptHistoryCount: number;
   recentFailuresObserved: boolean;
   recentFailureCount: number;
-  comparisonAvailable: boolean;
-  comparisonStrength: WatchlistEntryDiff["comparisonStrength"];
-  comparisonSummary: string;
-  comparisonWeak: boolean;
 }
 
 export interface WatchlistBriefReplayContext {
@@ -533,9 +536,12 @@ function buildWatchlistMonitoringSnapshot(args: {
     recentFailuresObserved: recentFailureCount > 0,
     recentFailureCount,
     comparisonAvailable: args.diff.comparisonAvailable,
+    diff: args.diff,
     comparisonStrength: args.diff.comparisonStrength,
     comparisonSummary: args.diff.summary,
     comparisonWeak: args.diff.comparisonStrength === "weak",
+    comparisonSignificant: args.diff.hasSignificantChange,
+    significanceDrivers: args.diff.significanceDrivers,
   };
 }
 

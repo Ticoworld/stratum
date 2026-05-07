@@ -28,6 +28,14 @@ export type ApprovedWatchlistLabel =
   | "Thin hiring signal"
   | "Tentative hiring signal";
 
+export type BriefPublicReadinessLevel = "strong" | "cautious" | "internal_only";
+
+export interface BriefPublicReadiness {
+  level: BriefPublicReadinessLevel;
+  reasons: string[];
+  blockers: string[];
+}
+
 export const APPROVED_WATCHLIST_SIGNAL_TAXONOMY: Array<{
   category: WatchlistSignalCategory;
   label: ApprovedWatchlistLabel;
@@ -94,7 +102,7 @@ export const BANNED_WATCHLIST_LABELS = [
   "Recruiting analytics",
 ] as const;
 
-type FunctionalSignal =
+export type FunctionalSignal =
   | "product_engineering_buildout"
   | "go_to_market"
   | "platform_infrastructure"
@@ -103,7 +111,7 @@ type FunctionalSignal =
   | "leadership"
   | "unclassified";
 
-const SIGNAL_PRIORITY: FunctionalSignal[] = [
+export const SIGNAL_PRIORITY: FunctionalSignal[] = [
   "security_compliance",
   "data_ai",
   "platform_infrastructure",
@@ -150,7 +158,7 @@ function includesAny(text: string, keywords: string[]): boolean {
   return keywords.some((keyword) => text.includes(keyword));
 }
 
-function getFunctionalSignal(job: Job): FunctionalSignal {
+export function getFunctionalSignal(job: Job): FunctionalSignal {
   const text = buildRoleText(job);
 
   if (
@@ -297,7 +305,7 @@ function getUniqueExplicitLocations(jobs: Job[]): string[] {
   );
 }
 
-function getSignalCounts(jobs: Job[]): Record<FunctionalSignal, number> {
+export function getSignalCounts(jobs: Job[]): Record<FunctionalSignal, number> {
   const counts: Record<FunctionalSignal, number> = {
     product_engineering_buildout: 0,
     go_to_market: 0,
@@ -315,7 +323,7 @@ function getSignalCounts(jobs: Job[]): Record<FunctionalSignal, number> {
   return counts;
 }
 
-function getDominantFunctionalSignal(jobs: Job[]): {
+export function getDominantFunctionalSignal(jobs: Job[]): {
   signal: FunctionalSignal;
   count: number;
   ratio: number;
@@ -405,27 +413,27 @@ export function deriveApprovedWatchlistLabel(args: {
 function getLabelSuggestionSentence(label: ApprovedWatchlistLabel): string {
   switch (label) {
     case "Product and engineering buildout signal":
-      return "The visible role mix may point to current product and engineering buildout.";
+      return "Visible roles currently emphasize product and engineering work.";
     case "Go-to-market hiring signal":
-      return "The visible role mix may point to current go-to-market hiring across sales, growth, marketing, or customer-facing work.";
+      return "Visible roles currently emphasize go-to-market functions (sales, marketing, customer-facing).";
     case "Platform and infrastructure signal":
-      return "The visible role mix may point to platform, infrastructure, or reliability work.";
+      return "Visible roles currently emphasize platform and infrastructure work.";
     case "Security and compliance signal":
-      return "The visible role mix may point to security, risk, or compliance work.";
+      return "Visible roles currently emphasize security and compliance work.";
     case "Data and AI signal":
-      return "The visible role mix may point to data, analytics, or AI-related hiring.";
+      return "Visible roles currently emphasize data and AI work.";
     case "Leadership hiring signal":
-      return "The visible role mix includes senior hiring that may point to leadership buildout.";
+      return "The current board includes senior hiring that points toward leadership or management activity.";
     case "Multi-location hiring signal":
-      return "The visible roles span multiple explicit locations, which may point to broader geographic hiring.";
+      return "The board currently shows roles spanning multiple explicit locations.";
     case "Mixed hiring signal":
-      return "The visible roles span several functions, so the current ATS signal is mixed rather than concentrated in one area.";
+      return "Visible roles span several functions, suggesting a mixed functional hiring focus at this time.";
     case "Limited hiring signal":
-      return "The visible ATS activity is present but narrow, so Stratum cannot read much beyond limited current hiring activity.";
+      return "Visible ATS activity is present but narrow, suggesting limited current hiring volume.";
     case "Thin hiring signal":
-      return "The visible ATS activity is too thin for a strong functional read.";
+      return "The current board state is too thin for a confirmed functional read.";
     case "Tentative hiring signal":
-      return "There may be a hiring signal here, but the match or evidence is weak enough that the brief stays tentative.";
+      return "There is a visible hiring signal, but the match or evidence is currently tentative.";
   }
 }
 
@@ -478,4 +486,85 @@ export function buildApprovedWatchlistSummary(args: {
   }
 
   return `${observedSentence} ${suggestionSentence} ${limitSentence}`;
+}
+
+export function deriveBriefPublicReadiness(args: {
+  jobsCount: number;
+  watchlistReadConfidence: WatchlistConfidenceLevel;
+  companyMatchConfidence: WatchlistConfidenceLevel;
+  proofRoleGrounding: WatchlistProofGrounding;
+  label: ApprovedWatchlistLabel;
+  hasComparison: boolean;
+  hasMaterialChange: boolean;
+  hasSignificantChange: boolean;
+  significanceDrivers: Array<"count" | "roles" | "mix" | "geography">;
+  comparisonStrength: "standard" | "weak" | "unavailable";
+}): BriefPublicReadiness {
+  const blockers: string[] = [];
+  const reasons: string[] = [];
+
+  // internal_only Blockers
+  if (args.jobsCount <= 2) blockers.push("Insufficient evidence volume (3+ roles required).");
+  if (args.companyMatchConfidence === "low" || args.companyMatchConfidence === "none") {
+    blockers.push("Weak company match confidence.");
+  }
+  if (args.watchlistReadConfidence === "low" || args.watchlistReadConfidence === "none") {
+    blockers.push("Low interpretation confidence.");
+  }
+  if (args.proofRoleGrounding === "none" || args.proofRoleGrounding === "fallback") {
+    blockers.push("Proof roles qualify rather than strongly support the read.");
+  }
+  if (args.label === "Thin hiring signal" || args.label === "Tentative hiring signal") {
+    blockers.push("Read is too thin or tentative for a definitive strategic claim.");
+  }
+
+  if (blockers.length > 0) {
+    return { level: "internal_only", reasons: [], blockers };
+  }
+
+  // Cautious Factors
+  if (args.jobsCount <= 4) {
+    reasons.push("Evidence volume is moderate (under 5 roles).");
+  }
+  if (args.watchlistReadConfidence === "medium") {
+    reasons.push("Interpretation confidence is moderate.");
+  }
+  if (args.proofRoleGrounding === "partial") {
+    reasons.push("Read is only partially grounded in visible examples.");
+  }
+  if (
+    args.label === "Mixed hiring signal" ||
+    args.label === "Limited hiring signal" ||
+    args.label === "Multi-location hiring signal"
+  ) {
+    reasons.push(`The "${args.label}" is broad or non-concentrated.`);
+  }
+  if (!args.hasComparison) {
+    reasons.push("First baseline scan; no historical comparison available yet.");
+  } else if (!args.hasSignificantChange) {
+    reasons.push("Hiring changes are minor or reflect normal board churn.");
+  }
+  
+  if (args.comparisonStrength === "weak") {
+    reasons.push("Historical comparison is limited by missing legacy data.");
+  }
+
+  if (reasons.length > 0) {
+    return { level: "cautious", reasons, blockers: [] };
+  }
+
+  // Strong
+  if (args.significanceDrivers.length === 0) {
+    return {
+      level: "cautious",
+      reasons: ["Hiring changes are minor or reflect normal board churn."],
+      blockers: [],
+    };
+  }
+
+  return {
+    level: "strong",
+    reasons: ["High confidence, clear functional signal, and material growth detected."],
+    blockers: [],
+  };
 }

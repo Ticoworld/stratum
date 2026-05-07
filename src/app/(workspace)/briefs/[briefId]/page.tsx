@@ -6,6 +6,7 @@ import { buildSignInRedirectPath, requireAuthSession } from "@/lib/auth/session"
 import { getStratumBriefById } from "@/lib/briefs/repository";
 import { buildStratumLimitations, formatSourceLabel } from "@/lib/briefs/presentation";
 import { getWatchlistBriefReplayContext } from "@/lib/watchlists/repository";
+import { deriveBriefPublicReadiness, type ApprovedWatchlistLabel, type WatchlistConfidenceLevel, type WatchlistProofGrounding } from "@/lib/signals/watchlistTaxonomy";
 
 type BriefPageProps = {
   params: Promise<{
@@ -73,13 +74,22 @@ function getGeographySpread(roles: any[]) {
 
 function getNotableOpenings(roles: any[]) {
   const signalKeywords = ["senior", "lead", "manager", "director", "head", "staff", "principal", "architect", "vp", "chief"];
-  const notable = roles.filter((r) =>
-    signalKeywords.some((k) => r.title.toLowerCase().includes(k))
-  );
-  return notable.length > 0 ? notable.slice(0, 8) : roles.slice(0, 8);
+  return [...roles].sort((a, b) => {
+    const aNotable = signalKeywords.some((k) => a.title.toLowerCase().includes(k));
+    const bNotable = signalKeywords.some((k) => b.title.toLowerCase().includes(k));
+    if (aNotable && !bNotable) return -1;
+    if (!aNotable && bNotable) return 1;
+    return 0;
+  });
 }
 
-function getInterpretation(hiringMix: [string, number][], rawExplanation: string): string {
+function getInterpretation(
+  hiringMix: [string, number][], 
+  rawExplanation: string, 
+  confidence: string,
+  totalObserved: number,
+  hasPriorComparison: boolean
+): string {
   // Strip pipeline language aggressively
   const systemKeywords = /\b(read confidence|grounding|proof|timestamp|match|direct|exact|provider|matched|confidence)\b/gi;
   let interpretation = rawExplanation.split(/[.!?]/).filter(s => !systemKeywords.test(s)).join(". ").trim();
@@ -87,14 +97,29 @@ function getInterpretation(hiringMix: [string, number][], rawExplanation: string
   if (interpretation.length < 20) {
     // Synthesize grounded interpretation if the explanation is thin or system-heavy
     const topBuckets = hiringMix.slice(0, 3).map(([b]) => b.toLowerCase());
-    if (topBuckets.length === 0) return "Observed hiring patterns suggest a coordinated functional focus across the organization.";
+    if (topBuckets.length === 0) return "No clear functional hiring pattern is visible from the current board.";
     
     const focus = topBuckets.join(", ");
-    const isGTM = topBuckets.includes("sales") || topBuckets.includes("marketing") || topBuckets.includes("product");
     
-    return `Visible hiring is concentrated across ${focus} roles, which suggests ${isGTM ? "continued go-to-market and product" : "coordinated organizational"} expansion rather than isolated backfill.`;
+    if (totalObserved < 5 || confidence === "low" || confidence === "none") {
+      return `Visible openings currently lean toward ${focus} roles, though the total evidence is currently too thin for a high-confidence read of organizational strategy.`;
+    }
+    
+    if (!hasPriorComparison) {
+      return `Visible hiring is currently weighted toward ${focus} roles. As this is a baseline read, these observations represent the current board state rather than a change in strategy.`;
+    }
+
+    return `Visible hiring is currently weighted toward ${focus} roles across the organization.`;
   }
   
+  // Clean aggressive words from AI explanation if they survived the filter
+  interpretation = interpretation
+    .replace(/\b(continued|coordinated)\b/gi, "visible")
+    .replace(/\bexpansion\b/gi, "activity")
+    .replace(/\b(confirmed|confirms|proves|betting on)\b/gi, "points toward")
+    .replace(/\bdoubling down\b/gi, "increasing focus")
+    .replace(/\b(isolated backfill|strategic pivot|aggressive push)\b/gi, "current hiring focus");
+
   return interpretation.endsWith(".") ? interpretation : interpretation + ".";
 }
 
@@ -147,9 +172,12 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
   const monitoring = replayContext?.monitoring ?? null;
   const limitations =
     brief.limitsSnapshot.length > 0 ? brief.limitsSnapshot : buildStratumLimitations(brief.resultSnapshot);
+  const allJobs = brief.resultSnapshot?.jobs || [];
+  const hasFullData = allJobs.length > 0;
   const roles = brief.proofRolesSnapshot || [];
-  const hiringMix = getHiringMix(roles);
-  const geography = getGeographySpread(roles);
+  
+  const hiringMix = getHiringMix(hasFullData ? allJobs : roles);
+  const geography = getGeographySpread(hasFullData ? allJobs : roles);
   const notableOpenings = getNotableOpenings(roles);
   
   // Editorial Hero Logic
@@ -157,16 +185,36 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
   const topBuckets = hiringMix.slice(0, 2).map(([b]) => b.toLowerCase());
   const isGTMFocus = topBuckets.includes("sales") || topBuckets.includes("marketing");
   
-  const heroSentence = roles.length > 0
-    ? `${isGTMFocus ? "Go-to-market hiring read" : "Active hiring read"} from ${roles.length} ${sourceLabel} openings.`
+  const observedCount = brief.jobsObservedCount ?? allJobs.length ?? roles.length;
+  const heroSentence = observedCount > 0
+    ? `${isGTMFocus ? "Go-to-market hiring read" : "Active hiring read"} from ${observedCount} ${sourceLabel} openings.`
     : "No active hiring signals detected for this company.";
   const summarySentences = splitIntoSentences(brief.watchlistReadSummary);
-  const interpretationSentences = splitIntoSentences(getInterpretation(hiringMix, brief.watchlistReadExplanation));
+  const interpretationSentences = splitIntoSentences(getInterpretation(
+    hiringMix, 
+    brief.watchlistReadExplanation, 
+    brief.watchlistReadConfidence,
+    observedCount,
+    !!monitoring?.comparisonAvailable
+  ));
+  const readiness = deriveBriefPublicReadiness({
+    jobsCount: observedCount,
+    watchlistReadConfidence: brief.watchlistReadConfidence as WatchlistConfidenceLevel,
+    companyMatchConfidence: brief.companyMatchConfidence as WatchlistConfidenceLevel,
+    proofRoleGrounding: brief.proofRoleGrounding as WatchlistProofGrounding,
+    label: brief.watchlistReadLabel as ApprovedWatchlistLabel,
+    hasComparison: !!monitoring?.comparisonAvailable,
+    hasMaterialChange: !!monitoring?.diff?.hasMaterialChange,
+    hasSignificantChange: !!monitoring?.diff?.hasSignificantChange,
+    significanceDrivers: (monitoring?.diff?.significanceDrivers ?? []) as Array<"count" | "roles" | "mix" | "geography">,
+    comparisonStrength: (monitoring?.diff?.comparisonStrength ?? "unavailable") as "standard" | "weak" | "unavailable",
+  });
+
   const heroFacts = [
     ["Snapshot", formatDateTimeValue(brief.createdAt)],
     ["Source", sourceLabel],
+    ["Public Read", readiness.level === "strong" ? "Strong" : readiness.level === "cautious" ? "Cautious" : "Internal-only"],
     ["Confidence", brief.watchlistReadConfidence],
-    ["Proof basis", brief.proofRoleGrounding],
   ] as const;
 
   return (
@@ -212,6 +260,35 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
           </div>
         </header>
 
+        {/* Post-Worthiness Gate */}
+        {readiness.level !== "strong" && (
+          <div className="mb-6 rounded-xl border p-5" style={{ borderColor: readiness.level === "internal_only" ? "rgba(239, 68, 68, 0.2)" : "var(--border)", backgroundColor: readiness.level === "internal_only" ? "rgba(239, 68, 68, 0.02)" : "rgba(54, 91, 122, 0.02)" }}>
+            <div className="flex items-start gap-4">
+               <div className="mt-0.5 rounded-lg border bg-[var(--surface)] p-2 shadow-sm" style={{ borderColor: readiness.level === "internal_only" ? "rgba(239, 68, 68, 0.3)" : "var(--border)" }}>
+                 {readiness.level === "internal_only" ? <ShieldAlert className="h-5 w-5 text-red-500" /> : <Info className="h-5 w-5 text-amber-500" />}
+               </div>
+               <div className="space-y-2">
+                 <h3 className="text-sm font-bold tracking-tight" style={{ color: "var(--foreground)" }}>
+                   {readiness.level === "internal_only" ? "Internal-only read: Brief is not yet post-ready" : "Cautious read: Brief has quality caveats"}
+                 </h3>
+                 <p className="text-xs leading-5" style={{ color: "var(--foreground-secondary)" }}>
+                   {readiness.level === "internal_only" 
+                     ? "This brief is not yet ready for external strategic content due to critical data blockers:" 
+                     : "This brief is grounded but should be qualified in public strategic posts due to these factors:"}
+                 </p>
+                 <ul className="mt-3 grid gap-1.5 sm:grid-cols-2">
+                   {(readiness.level === "internal_only" ? readiness.blockers : readiness.reasons).map((text, i) => (
+                     <li key={i} className="flex items-start gap-2 text-[11px] font-medium leading-4" style={{ color: "var(--foreground-muted)" }}>
+                       <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-current opacity-40" />
+                       {text}
+                     </li>
+                   ))}
+                 </ul>
+               </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 gap-8">
           
           {/* Executive Summary & Interpretation */}
@@ -244,14 +321,14 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                       ))
                     ) : (
                       <p className="text-[14px] leading-6" style={{ color: "var(--foreground-secondary)" }}>
-                        {getInterpretation(hiringMix, brief.watchlistReadExplanation)}
+                        {getInterpretation(hiringMix, brief.watchlistReadExplanation, brief.watchlistReadConfidence, observedCount, !!monitoring?.comparisonAvailable)}
                       </p>
                     )}
                   </div>
                 </div>
               </BriefSection>
 
-              <BriefSection title="Notable openings" icon={ShieldCheck}>
+              <BriefSection title="Example openings from the observed board" icon={ShieldCheck}>
                 <div className="space-y-1.5">
                   {notableOpenings.map((role, idx) => (
                     <div key={idx} className="group flex items-start gap-3 rounded-xl border bg-[var(--surface)] px-3 py-2.5 transition-colors hover:border-[var(--accent)]" style={{ borderColor: "var(--border)" }}>
@@ -285,7 +362,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
             <BriefSection title="Hiring mix and geography" icon={MapPin}>
               <div className="grid gap-4 xl:grid-cols-2">
                 <div className="space-y-2">
-                  <h3 className="text-[11px] font-medium uppercase tracking-[0.02em] opacity-40">Hiring mix</h3>
+                  <h3 className="text-[11px] font-medium uppercase tracking-[0.02em] opacity-40">Hiring mix {!hasFullData && <span className="lowercase font-normal italic">(examples only)</span>}</h3>
                   <div className="space-y-1.5">
                     {hiringMix.map(([bucket, count]) => (
                       <div key={bucket} className="flex items-center justify-between rounded-lg border px-3 py-2 text-[13px]" style={{ borderColor: "var(--border)" }}>
@@ -298,7 +375,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                 </div>
 
                 <div className="space-y-2">
-                  <h3 className="text-[11px] font-medium uppercase tracking-[0.02em] opacity-40">Geography</h3>
+                  <h3 className="text-[11px] font-medium uppercase tracking-[0.02em] opacity-40">Geography {!hasFullData && <span className="lowercase font-normal italic">(examples only)</span>}</h3>
                   <div className="space-y-1.5">
                     {geography.map(([loc, count]) => (
                       <div key={loc} className="flex items-center justify-between rounded-lg border px-3 py-2 text-[12px]" style={{ borderColor: "var(--border)" }}>
@@ -340,8 +417,8 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
             <details className="group">
               <summary className="flex cursor-pointer list-none items-center justify-between transition-colors hover:text-[var(--accent)]" style={{ borderColor: "var(--border)" }}>
                 <div className="flex items-center gap-3">
-                  <h2 className="text-[13px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground)" }}>Evidence archive</h2>
-                  <span className="text-[10px] font-medium opacity-45" style={{ color: "var(--foreground-muted)" }}>{roles.length} roles</span>
+                  <h2 className="text-[13px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground)" }}>Displayed proof roles</h2>
+                  <span className="text-[10px] font-medium opacity-45" style={{ color: "var(--foreground-muted)" }}>{roles.length} examples</span>
                 </div>
                 <div className="flex items-center gap-2 text-[11px] font-medium tracking-[0.02em] opacity-25">
                   <span className="group-open:hidden">Show archive</span>

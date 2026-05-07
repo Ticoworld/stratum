@@ -6,6 +6,7 @@ import type {
   ProofRoleGrounding,
   SourceCoverageCompleteness,
   StratumResultState,
+  DepartmentBreakdown,
 } from "@/lib/services/StratumInvestigator";
 import { getNormalizedTrackedTargetName } from "@/lib/watchlists/identity";
 
@@ -22,6 +23,8 @@ export interface WatchlistEntryBriefHistoryItem {
   watchlistReadConfidence: ConfidenceLevel;
   proofRoleGrounding: ProofRoleGrounding;
   jobsObservedCount: number;
+  hiringMix: DepartmentBreakdown[];
+  allJobsSnapshot: Job[];
   proofRolesSnapshot: Job[];
   createdAt: string;
   updatedAt: string;
@@ -51,6 +54,8 @@ export interface WatchlistEntryDiff {
   summary: string;
   changes: WatchlistEntryDiffChange[];
   hasMaterialChange: boolean;
+  hasSignificantChange: boolean;
+  significanceDrivers: Array<"count" | "roles" | "mix" | "geography">;
 }
 
 const CONFIDENCE_RANK: Record<ConfidenceLevel, number> = {
@@ -61,7 +66,23 @@ const CONFIDENCE_RANK: Record<ConfidenceLevel, number> = {
 };
 
 function normalizeText(value: string | null | undefined): string {
-  return value?.trim().toLowerCase() ?? "";
+  return (value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "");
+}
+
+function normalizeLocation(value: string | null | undefined): string {
+  const norm = normalizeText(value);
+  if (norm === "remote us" || norm === "remote, us" || norm === "remote  us") return "remote";
+  return norm;
+}
+
+function normalizeTitle(value: string | null | undefined): string {
+  return normalizeText(value)
+    .replace(/\bsr\b/g, "senior")
+    .replace(/\beng\b/g, "engineering");
 }
 
 function formatResultStateLabel(value: StratumResultState): string {
@@ -127,17 +148,28 @@ function formatSourceDisplay(source: JobBoardSource | null): string {
 }
 
 function buildRoleSignature(role: Job): string {
+  // Prefer stable identifiers if the provider exposes them
+  if (role.roleId) return `id::${role.source}::${role.roleId}`;
+  if (role.jobUrl) return `url::${role.jobUrl}`;
+  if (role.requisitionId) return `req::${role.source}::${role.requisitionId}`;
+
+  // Fallback to normalized content-based signature
   return [
-    normalizeText(role.title),
+    "text",
+    normalizeTitle(role.title),
     normalizeText(role.department),
-    normalizeText(role.location),
+    normalizeLocation(role.location),
     normalizeText(role.source),
   ].join("::");
 }
 
 function buildRoleLabel(role: Job): string {
-  const details = [role.department?.trim(), role.location?.trim()].filter(Boolean);
-  return details.length > 0 ? `${role.title} (${details.join(", ")})` : role.title;
+  const details: string[] = [];
+  if (role.department) details.push(role.department);
+  if (role.location) details.push(role.location);
+  
+  const title = role.title || "Unknown Role";
+  return details.length > 0 ? `${title} (${details.join(", ")})` : title;
 }
 
 function buildUniqueProofRoleMap(roles: Job[]): Map<string, string> {
@@ -201,7 +233,7 @@ export function toWatchlistEntryBriefHistoryItem(
     id: snapshot.id,
     queriedCompanyName: snapshot.queriedCompanyName,
     matchedCompanyName,
-    atsSourceUsed: snapshot.atsSourceUsed,
+    atsSourceUsed: snapshot.atsSourceUsed ?? null,
     resultState: snapshot.resultState,
     companyMatchConfidence: snapshot.companyMatchConfidence,
     sourceCoverageCompleteness: snapshot.sourceCoverageCompleteness,
@@ -209,8 +241,10 @@ export function toWatchlistEntryBriefHistoryItem(
     watchlistReadSummary: snapshot.watchlistReadSummary,
     watchlistReadConfidence: snapshot.watchlistReadConfidence,
     proofRoleGrounding: snapshot.proofRoleGrounding,
-    jobsObservedCount: snapshot.jobsObservedCount,
-    proofRolesSnapshot: snapshot.proofRolesSnapshot,
+    jobsObservedCount: snapshot.jobsObservedCount ?? 0,
+    hiringMix: snapshot.resultSnapshot?.hiringMix ?? [],
+    allJobsSnapshot: snapshot.resultSnapshot?.jobs ?? [],
+    proofRolesSnapshot: snapshot.proofRolesSnapshot ?? [],
     createdAt: snapshot.createdAt,
     updatedAt: snapshot.updatedAt,
   };
@@ -228,10 +262,15 @@ export function buildWatchlistEntryDiff(
       summary: "No comparison available yet. This tracked entry has only one saved brief.",
       changes: [],
       hasMaterialChange: false,
+      hasSignificantChange: false,
+      significanceDrivers: [],
     };
   }
 
   const changes: WatchlistEntryDiffChange[] = [];
+  let hasSignificantChange = false;
+  const comparisonNotes: string[] = buildComparisonNotes(latest, previous);
+  let comparisonStrength: "standard" | "weak" = comparisonNotes.length > 0 ? "weak" : "standard";
 
   if (latest.resultState !== previous.resultState) {
     changes.push({
@@ -294,7 +333,31 @@ export function buildWatchlistEntryDiff(
     });
   }
 
+  const significanceDrivers: Array<"count" | "roles" | "mix" | "geography"> = [];
+
   if (latest.jobsObservedCount !== previous.jobsObservedCount) {
+    const delta = Math.abs(latest.jobsObservedCount - previous.jobsObservedCount);
+    const maxCount = Math.max(latest.jobsObservedCount, previous.jobsObservedCount);
+    const percentChange = maxCount > 0 ? (delta / maxCount) : 0;
+    
+    let isSignificant = false;
+    if (maxCount < 10) {
+      isSignificant = delta >= 1;
+    } else if (maxCount < 50) {
+      isSignificant = delta >= 2 || percentChange >= 0.10;
+    } else if (maxCount < 200) {
+      // Large board: 50-199
+      isSignificant = (delta >= 5 && percentChange >= 0.05) || percentChange >= 0.15;
+    } else {
+      // Giant board: 200+
+      isSignificant = (delta >= 20 && percentChange >= 0.05) || percentChange >= 0.10;
+    }
+
+    if (isSignificant) {
+      hasSignificantChange = true;
+      significanceDrivers.push("count");
+    }
+
     const evidenceDirection =
       latest.jobsObservedCount > previous.jobsObservedCount ? "expanded" : "shrank";
 
@@ -305,8 +368,54 @@ export function buildWatchlistEntryDiff(
     });
   }
 
-  const latestRoles = buildUniqueProofRoleMap(latest.proofRolesSnapshot);
-  const previousRoles = buildUniqueProofRoleMap(previous.proofRolesSnapshot);
+  // Functional Mix Changes
+  const latestMix = new Map((latest.hiringMix || []).map((d) => [d.department, d.count]));
+  const previousMix = new Map((previous.hiringMix || []).map((d) => [d.department, d.count]));
+  const allDepts = new Set([...latestMix.keys(), ...previousMix.keys()]);
+  const mixDiffs: string[] = [];
+
+  for (const dept of allDepts) {
+    const lCount = latestMix.get(dept) || 0;
+    const pCount = previousMix.get(dept) || 0;
+    const delta = Math.abs(lCount - pCount);
+    const maxDeptCount = Math.max(lCount, pCount);
+    const percentDeptChange = maxDeptCount > 0 ? (delta / maxDeptCount) : 0;
+
+    if (lCount !== pCount && (lCount > 2 || pCount > 2)) {
+      const dir = lCount > pCount ? "increased" : "decreased";
+      mixDiffs.push(`${dept} openings ${dir} from ${pCount} to ${lCount}`);
+      
+      // Significant if absolute shift >= 3 AND relative shift >= 20%
+      if (delta >= 3 && percentDeptChange >= 0.20) {
+        hasSignificantChange = true;
+        if (!significanceDrivers.includes("mix")) significanceDrivers.push("mix");
+      }
+    }
+  }
+
+  if (mixDiffs.length > 0) {
+    changes.push({
+      category: "watchlist_read_label_changed",
+      label: "Hiring mix shifted",
+      detail: `Visible hiring mix shifted: ${mixDiffs.join("; ")}.`,
+    });
+  }
+
+  // Role-level Changes
+  const latestAllJobs = latest.allJobsSnapshot || [];
+  const previousAllJobs = previous.allJobsSnapshot || [];
+  const useFullJobs = latestAllJobs.length > 0 && previousAllJobs.length > 0;
+  
+  if (!useFullJobs && (latest.jobsObservedCount > 0 || previous.jobsObservedCount > 0)) {
+    comparisonNotes.push("Role-level comparison is limited because full observed job data is missing for at least one brief.");
+    comparisonStrength = "weak";
+  }
+
+  const latestRolesSource = useFullJobs ? latestAllJobs : (latest.proofRolesSnapshot || []);
+  const previousRolesSource = useFullJobs ? previousAllJobs : (previous.proofRolesSnapshot || []);
+
+  const latestRoles = buildUniqueProofRoleMap(latestRolesSource);
+  const previousRoles = buildUniqueProofRoleMap(previousRolesSource);
   const addedRoles = Array.from(latestRoles.entries())
     .filter(([signature]) => !previousRoles.has(signature))
     .map(([, label]) => label);
@@ -316,6 +425,30 @@ export function buildWatchlistEntryDiff(
 
   if (addedRoles.length > 0 || removedRoles.length > 0) {
     const detailParts: string[] = [];
+    const netChange = Math.abs(addedRoles.length - removedRoles.length);
+    const totalRoles = Math.max(latestRoles.size, previousRoles.size);
+    const churnRate = totalRoles > 0 ? (Math.max(addedRoles.length, removedRoles.length) / totalRoles) : 0;
+
+    let isSignificant = false;
+    if (totalRoles < 10) {
+      isSignificant = netChange >= 1;
+    } else if (totalRoles < 50) {
+      isSignificant = netChange >= 2 || churnRate >= 0.10;
+    } else if (totalRoles < 200) {
+      isSignificant = (netChange >= 5 && churnRate >= 0.05) || churnRate >= 0.15;
+    } else {
+      isSignificant = (netChange >= 20 && churnRate >= 0.05) || churnRate >= 0.10;
+    }
+
+    // Replacement churn check: if added == removed and net is small, it's just churn
+    if (addedRoles.length > 0 && removedRoles.length > 0 && netChange < 2 && totalRoles >= 10) {
+      isSignificant = false; 
+    }
+
+    if (isSignificant) {
+      hasSignificantChange = true;
+      if (!significanceDrivers.includes("roles")) significanceDrivers.push("roles");
+    }
 
     if (addedRoles.length > 0) {
       detailParts.push(`added ${formatNameList(addedRoles)}`);
@@ -327,12 +460,37 @@ export function buildWatchlistEntryDiff(
 
     changes.push({
       category: "proof_roles_changed",
-      label: "Displayed proof roles changed",
-      detail: `Displayed proof-role evidence changed: ${detailParts.join("; ")}.`,
+      label: useFullJobs ? "Observed roles changed" : "Displayed proof roles changed",
+      detail: `${useFullJobs ? "Observed roles" : "Displayed proof-role evidence"} changed: ${detailParts.join("; ")}.`,
     });
   }
 
-  const comparisonNotes = buildComparisonNotes(latest, previous);
+  // Geography Changes
+  if (useFullJobs) {
+    const latestLocs = new Set(latestAllJobs.map(j => normalizeLocation(j.location)).filter(Boolean));
+    const previousLocs = new Set(previousAllJobs.map(j => normalizeLocation(j.location)).filter(Boolean));
+    const addedLocs = [...latestLocs].filter(l => !previousLocs.has(l as string));
+    const removedLocs = [...previousLocs].filter(l => !latestLocs.has(l as string));
+
+    if (addedLocs.length > 0 || removedLocs.length > 0) {
+      const geoParts: string[] = [];
+      if (addedLocs.length > 0) geoParts.push(`new roles appeared in ${formatNameList(addedLocs as string[])}`);
+      if (removedLocs.length > 0) geoParts.push(`roles are no longer visible in ${formatNameList(removedLocs as string[])}`);
+
+      changes.push({
+        category: "source_coverage_changed",
+        label: "Geographic spread changed",
+        detail: `Visible geography changed: ${geoParts.join("; ")}.`,
+      });
+
+      // Geography is significant if multiple locations change AND combined with role movement
+      if (addedLocs.length + removedLocs.length >= 2 && significanceDrivers.length > 0) {
+        hasSignificantChange = true;
+        if (!significanceDrivers.includes("geography")) significanceDrivers.push("geography");
+      }
+    }
+  }
+
   const summary =
     changes.length > 0
       ? changes.map((change) => change.detail).join(" ")
@@ -340,13 +498,15 @@ export function buildWatchlistEntryDiff(
 
   return {
     comparisonAvailable: true,
-    comparisonStrength: comparisonNotes.length > 0 ? "weak" : "standard",
+    comparisonStrength,
     comparisonNotes:
       comparisonNotes.length > 0
-        ? [`Comparison is weak because ${formatNameList(comparisonNotes, comparisonNotes.length)}.`]
+        ? [`Comparison is ${comparisonStrength} because ${formatNameList(comparisonNotes, comparisonNotes.length)}.`]
         : [],
     summary,
     changes,
     hasMaterialChange: changes.length > 0,
+    hasSignificantChange,
+    significanceDrivers,
   };
 }

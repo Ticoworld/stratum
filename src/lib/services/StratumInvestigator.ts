@@ -23,6 +23,10 @@ import {
   type ApprovedWatchlistLabel,
   buildApprovedWatchlistSummary,
   deriveApprovedWatchlistLabel,
+  getDominantFunctionalSignal,
+  getFunctionalSignal,
+  getSignalCounts,
+  type FunctionalSignal,
 } from "@/lib/signals/watchlistTaxonomy";
 import { getNormalizedTrackedTargetName } from "@/lib/watchlists/identity";
 import type { WatchlistMonitoringSnapshot } from "@/lib/watchlists/repository";
@@ -332,20 +336,37 @@ function selectProofRoles(jobs: Job[], notableRoles?: string[], limit = 5): Proo
   const requestedTitles = (notableRoles ?? [])
     .map((role) => normalizeRoleTitle(role))
     .filter(Boolean);
+  
   let exactMatches = 0;
   let partialMatches = 0;
 
+  const counts = getSignalCounts(jobs);
+  const dominant = getDominantFunctionalSignal(jobs);
+  
+  const addJob = (job: Job, index: number) => {
+    if (usedIndexes.has(index)) return false;
+    selected.push(job);
+    usedIndexes.add(index);
+    return true;
+  };
+
+  // 1. Assistive AI Suggestions: Match notable roles that align with the signal.
   for (const requestedTitle of requestedTitles) {
     const exactIndex = jobs.findIndex(
       (job, index) => !usedIndexes.has(index) && normalizeRoleTitle(job.title) === requestedTitle
     );
 
     if (exactIndex !== -1) {
-      usedIndexes.add(exactIndex);
-      selected.push(jobs[exactIndex]);
-      exactMatches++;
-      if (selected.length === limit) break;
-      continue;
+      const signal = getFunctionalSignal(jobs[exactIndex]);
+      // If signal is very concentrated (>70%) and this role is different, deprioritize in first pass.
+      if (dominant.ratio > 0.7 && signal !== dominant.signal && signal !== "unclassified") {
+        // Skip for now
+      } else {
+        addJob(jobs[exactIndex], exactIndex);
+        exactMatches++;
+        if (selected.length >= limit) break;
+        continue;
+      }
     }
 
     const partialIndex = jobs.findIndex(
@@ -355,63 +376,89 @@ function selectProofRoles(jobs: Job[], notableRoles?: string[], limit = 5): Proo
           requestedTitle.includes(normalizeRoleTitle(job.title)))
     );
 
-    if (partialIndex === -1) continue;
-
-    usedIndexes.add(partialIndex);
-    selected.push(jobs[partialIndex]);
-    partialMatches++;
-
-    if (selected.length === limit) break;
+    if (partialIndex !== -1) {
+      const signal = getFunctionalSignal(jobs[partialIndex]);
+      if (dominant.ratio > 0.7 && signal !== dominant.signal && signal !== "unclassified") {
+        // Skip
+      } else {
+        addJob(jobs[partialIndex], partialIndex);
+        partialMatches++;
+        if (selected.length >= limit) break;
+      }
+    }
   }
 
-  for (const [index, job] of jobs.entries()) {
-    if (usedIndexes.has(index)) continue;
-    selected.push(job);
-    if (selected.length === limit) break;
+  // 2. Deterministic Alignment: Ensure the dominant signal is represented.
+  if (selected.length < limit && dominant.signal !== "unclassified") {
+    const targetSignalCount = Math.min(Math.ceil(limit * 0.6), dominant.count);
+    let currentSignalCount = selected.filter(j => getFunctionalSignal(j) === dominant.signal).length;
+
+    if (currentSignalCount < targetSignalCount) {
+      for (let i = 0; i < jobs.length; i++) {
+        if (!usedIndexes.has(i) && getFunctionalSignal(jobs[i]) === dominant.signal) {
+          addJob(jobs[i], i);
+          currentSignalCount++;
+          if (selected.length >= limit || currentSignalCount >= targetSignalCount) break;
+        }
+      }
+    }
   }
+
+  // 3. Mixed Evidence Representation: If space remains, show variety across top departments.
+  if (selected.length < limit) {
+    const significantDepts = (Object.entries(counts) as [FunctionalSignal, number][])
+      .filter(([dept, count]) => dept !== dominant.signal && count > 0 && dept !== "unclassified")
+      .sort((a, b) => b[1] - a[1]);
+
+    for (const [dept] of significantDepts) {
+      const deptIndex = jobs.findIndex((j, i) => !usedIndexes.has(i) && getFunctionalSignal(j) === dept);
+      if (deptIndex !== -1) {
+        addJob(jobs[deptIndex], deptIndex);
+        if (selected.length >= limit) break;
+      }
+    }
+  }
+
+  // 4. Fill remaining slots with remaining observed roles.
+  if (selected.length < limit) {
+    for (let i = 0; i < jobs.length; i++) {
+      if (!usedIndexes.has(i)) {
+        addJob(jobs[i], i);
+        if (selected.length >= limit) break;
+      }
+    }
+  }
+
+  // Determine grounding status and build explanation
+  let grounding: ProofRoleGrounding = "fallback";
+  let groundingExplanation = "";
 
   if (requestedTitles.length === 0) {
-    return {
-      roles: selected,
-      grounding: "fallback",
-      requestedRoleCount: 0,
-      exactMatches,
-      partialMatches,
-      explanation:
-        "The read did not return grounded proof-role titles, so Stratum is showing the first observed roles instead.",
-    };
+    grounding = "fallback";
+    groundingExplanation = "The read did not return grounded proof-role titles, so Stratum selected representative roles from the board instead.";
+  } else if (exactMatches === requestedTitles.length) {
+    grounding = "exact";
+    groundingExplanation = `The read is grounded in ${exactMatches} proof roles matched exactly by title.`;
+  } else if (exactMatches + partialMatches > 0) {
+    grounding = "partial";
+    groundingExplanation = `The read is partially grounded: ${exactMatches + partialMatches} of ${requestedTitles.length} roles matched by title.`;
+  } else {
+    grounding = "fallback";
+    groundingExplanation = "The read could not be grounded to model-picked titles, so Stratum selected representative roles from the board instead.";
   }
 
-  if (exactMatches === requestedTitles.length) {
-    return {
-      roles: selected,
-      grounding: "exact",
-      requestedRoleCount: requestedTitles.length,
-      exactMatches,
-      partialMatches,
-      explanation: `The read is grounded in ${exactMatches} displayed proof roles matched exactly by title.`,
-    };
-  }
-
-  if (exactMatches + partialMatches > 0) {
-    return {
-      roles: selected,
-      grounding: "partial",
-      requestedRoleCount: requestedTitles.length,
-      exactMatches,
-      partialMatches,
-      explanation: `The read is only partially grounded: ${exactMatches + partialMatches} of ${requestedTitles.length} role titles from the read matched displayed proof roles.`,
-    };
-  }
-
+  // Append selection strategy reasoning
+  const strategyReason = dominant.signal !== "unclassified" && dominant.ratio >= 0.45
+    ? `Selection prioritized roles from the dominant ${dominant.signal.replace(/_/g, " ")} pattern.`
+    : "Selection prioritizes variety across visible hiring departments.";
+  
   return {
     roles: selected,
-    grounding: "fallback",
+    grounding,
     requestedRoleCount: requestedTitles.length,
     exactMatches,
     partialMatches,
-    explanation:
-      "The read could not be grounded to model-picked role titles, so Stratum falls back to the first observed roles.",
+    explanation: `${groundingExplanation} ${strategyReason}`,
   };
 }
 
