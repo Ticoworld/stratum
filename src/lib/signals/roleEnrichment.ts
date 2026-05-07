@@ -55,6 +55,18 @@ export interface AiRoleEnrichment {
   confidence: "high" | "medium" | "low";
 }
 
+export interface AiSignalCluster {
+  clusterKey: string;
+  label: string;
+  roleKeys: string[];
+  roleCount: number;
+  businessThemes: AiRoleEnrichmentBusinessTheme[];
+  functions: AiRoleEnrichmentBusinessFunction[];
+  strategicTags: string[];
+  evidenceReason: string;
+  confidence: "high" | "medium" | "low";
+}
+
 function normalizeText(value: string | null | undefined): string {
   return (value || "")
     .toLowerCase()
