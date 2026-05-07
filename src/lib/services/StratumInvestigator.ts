@@ -19,6 +19,8 @@ import {
   type UnsupportedSourcePattern,
 } from "@/lib/api/boards";
 import { runStratumAnalysis, type StratumAnalysisResult } from "@/lib/ai/unified-analyzer";
+import { runRoleEnrichment } from "@/lib/ai/roleEnricher";
+import type { AiRoleEnrichment, AiRoleEnrichmentStatus } from "@/lib/signals/roleEnrichment";
 import {
   type ApprovedWatchlistLabel,
   buildApprovedWatchlistSummary,
@@ -986,6 +988,8 @@ export interface StratumResult {
   notableRoles?: string[];
   summary: string;
   thoughtSummary?: string;
+  roleEnrichments?: Record<string, AiRoleEnrichment>;
+  aiRoleEnrichmentStatus?: AiRoleEnrichmentStatus;
   analyzedAt: string;
   analysisTimeMs: number;
   apiSource?: JobBoardSource | null;
@@ -1127,6 +1131,7 @@ export class StratumInvestigator {
     }
 
     const analysis: StratumAnalysisResult | null = await runStratumAnalysis(trimmed, jobs);
+    const enrichmentResult = await runRoleEnrichment(trimmed, jobs);
     const proofRoleSelection = selectProofRoles(jobs, analysis?.notableRoles);
     const watchlistReadConfidence = deriveWatchlistReadConfidence({
       state: resultState,
@@ -1152,6 +1157,8 @@ export class StratumInvestigator {
         keywordFindings: [],
         notableRoles: undefined,
         summary: "Stratum observed open roles but could not complete a usable watchlist read for this result. Use the proof roles as the primary output.",
+        roleEnrichments: enrichmentResult.enrichments,
+        aiRoleEnrichmentStatus: enrichmentResult.status,
         analyzedAt: new Date().toISOString(),
         analysisTimeMs: elapsed,
         apiSource,
@@ -1214,6 +1221,8 @@ export class StratumInvestigator {
       notableRoles: analysis.notableRoles,
       summary: restrainedSummary,
       thoughtSummary: analysis.thoughtSummary,
+      roleEnrichments: enrichmentResult.enrichments,
+      aiRoleEnrichmentStatus: enrichmentResult.status,
       analyzedAt: new Date().toISOString(),
       analysisTimeMs: elapsed,
       apiSource,
