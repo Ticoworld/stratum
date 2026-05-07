@@ -433,15 +433,88 @@ export function deriveApprovedWatchlistLabel(args: {
   return "Mixed hiring signal";
 }
 
-function getLabelSuggestionSentence(label: ApprovedWatchlistLabel, hiringMix?: DepartmentBreakdown[]): string {
-  if (label === "Product and engineering buildout signal" && hiringMix) {
-    const engineering = hiringMix.find(m => m.department === "engineering")?.count || 0;
-    const product = hiringMix.find(m => m.department === "product")?.count || 0;
+/**
+ * Keyword sets used to split the product_engineering_buildout bucket into
+ * engineering-heavy vs. product/design-heavy sub-reads.
+ * Mirrors the keyword lists in getFunctionalSignal() so classification is consistent.
+ * Engineering wins over product in getFunctionalSignal (listed first), so the
+ * same precedence is used here.
+ */
+const ENGINEERING_SUB_KEYWORDS = [
+  "engineer",
+  "engineering",
+  "developer",
+  "software",
+  "fullstack",
+  "full-stack",
+  "frontend",
+  "backend",
+  "mobile",
+  "ios",
+  "android",
+];
 
-    if (engineering >= 3 * product && engineering > 0) {
-      return "Visible roles currently emphasize engineering work, with secondary product focus.";
+const PRODUCT_SUB_KEYWORDS = [
+  "product manager",
+  "product designer",
+  "ux",
+  "ui ",
+  " ui",
+  "design",
+  "technical program manager",
+  "program manager",
+];
+
+/**
+ * For boards classified as product_engineering_buildout, computes how many
+ * jobs in that bucket are engineering-leaning vs. product/design-leaning.
+ * Both ratios are relative to the total product_engineering_buildout count,
+ * not the full board — so a board with 8 engineers and 1 PM yields
+ * { engineeringRatio: 0.89, productRatio: 0.11 }.
+ */
+export function getProductEngineeringSubRatio(
+  jobs: Job[]
+): { engineeringCount: number; productCount: number; engineeringRatio: number; productRatio: number } {
+  let engineeringCount = 0;
+  let productCount = 0;
+
+  for (const job of jobs) {
+    if (getFunctionalSignal(job) !== "product_engineering_buildout") continue;
+    const text = buildRoleText(job);
+    // Engineering keywords take precedence (same priority as getFunctionalSignal)
+    if (includesAny(text, ENGINEERING_SUB_KEYWORDS)) {
+      engineeringCount++;
+    } else if (includesAny(text, PRODUCT_SUB_KEYWORDS)) {
+      productCount++;
     }
-    if (product >= 3 * engineering && product > 0) {
+    // Roles that match neither sub-keyword (e.g. "Technical Lead") are not counted
+    // in either bucket, keeping the ratio honest.
+  }
+
+  const total = engineeringCount + productCount;
+  return {
+    engineeringCount,
+    productCount,
+    engineeringRatio: total > 0 ? engineeringCount / total : 0,
+    productRatio: total > 0 ? productCount / total : 0,
+  };
+}
+
+/**
+ * Returns the suggestion sentence for the label shown in a watchlist summary.
+ * For the "Product and engineering buildout signal" label, uses a keyword-based
+ * sub-ratio (from getProductEngineeringSubRatio) rather than raw ATS department
+ * strings, which vary by source and casing.
+ */
+function getLabelSuggestionSentence(
+  label: ApprovedWatchlistLabel,
+  subRatio?: { engineeringRatio: number; productRatio: number }
+): string {
+  if (label === "Product and engineering buildout signal" && subRatio) {
+    if (subRatio.engineeringRatio >= 0.75) {
+      return "Visible roles currently emphasize engineering work, with limited product headcount.";
+    }
+    if (subRatio.productRatio >= 0.75) {
       return "Visible roles currently emphasize product management and design work.";
     }
   }
@@ -490,7 +563,6 @@ export function buildApprovedWatchlistSummary(args: {
     watchlistReadConfidence,
     companyMatchConfidence,
     proofRoleGrounding,
-    hiringMix,
   } = args;
   const sourceLabel = formatSourceLabel(apiSource);
   const titles = getObservedTitles(proofRoles, jobs);
@@ -500,10 +572,18 @@ export function buildApprovedWatchlistSummary(args: {
       ? `Observed on ${sourceLabel}: ${jobs.length} open role${jobs.length === 1 ? "" : "s"}, including ${joinHumanList(titles)}.`
       : `Observed on ${sourceLabel}: ${jobs.length} open role${jobs.length === 1 ? "" : "s"}.`;
 
+  // Compute keyword-based sub-ratio from actual job titles — not from raw ATS
+  // department strings, which vary by source and casing and caused the previous
+  // mix-sensitive branch to always produce the generic "product and engineering" sentence.
+  const subRatio =
+    label === "Product and engineering buildout signal"
+      ? getProductEngineeringSubRatio(jobs)
+      : undefined;
+
   const suggestionSentence =
     label === "Multi-location hiring signal" && locations.length >= 2
       ? `The visible roles span ${locations.slice(0, 3).join(", ")}, which may point to multi-location hiring.`
-      : getLabelSuggestionSentence(label, hiringMix);
+      : getLabelSuggestionSentence(label, subRatio);
 
   let limitSentence = `This brief only reflects roles visible on ${sourceLabel} and may miss hiring outside that feed.`;
 
