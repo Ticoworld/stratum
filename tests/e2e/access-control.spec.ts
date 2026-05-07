@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { encode } from "@auth/core/jwt";
-import { expect, test, type PlaywrightTestArgs } from "@playwright/test";
+import { expect, test, type PlaywrightTestArgs, type PlaywrightWorkerArgs } from "@playwright/test";
 import phase10Fixture from "./phase10-fixture.json";
 
 type Persona = {
@@ -44,7 +44,7 @@ async function mintSessionCookie(persona: Persona): Promise<string> {
 }
 
 async function makeAuthedRequest(
-  playwright: PlaywrightTestArgs["playwright"],
+  playwright: PlaywrightWorkerArgs["playwright"],
   persona: Persona
 ) {
   const cookie = await mintSessionCookie(persona);

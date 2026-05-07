@@ -374,19 +374,45 @@ export function buildWatchlistEntryDiff(
   const allDepts = new Set([...latestMix.keys(), ...previousMix.keys()]);
   const mixDiffs: string[] = [];
 
+  const totalBoardSize = Math.max(latest.jobsObservedCount, previous.jobsObservedCount);
+  
+  const getTopTwoDepts = (mixMap: Map<string, number>) => {
+    const sorted = Array.from(mixMap.entries()).sort((a, b) => b[1] - a[1]);
+    return {
+      topDept: sorted[0]?.[0] || "",
+      topCount: sorted[0]?.[1] || 0,
+      secondCount: sorted[1]?.[1] || 0
+    };
+  };
+  const previousTop = getTopTwoDepts(previousMix);
+  const latestTop = getTopTwoDepts(latestMix);
+
   for (const dept of allDepts) {
     const lCount = latestMix.get(dept) || 0;
     const pCount = previousMix.get(dept) || 0;
     const delta = Math.abs(lCount - pCount);
     const maxDeptCount = Math.max(lCount, pCount);
     const percentDeptChange = maxDeptCount > 0 ? (delta / maxDeptCount) : 0;
+    const percentOfBoard = totalBoardSize > 0 ? (delta / totalBoardSize) : 0;
 
-    if (lCount !== pCount && (lCount > 2 || pCount > 2)) {
+    if (lCount !== pCount && (totalBoardSize < 10 || lCount > 2 || pCount > 2)) {
       const dir = lCount > pCount ? "increased" : "decreased";
       mixDiffs.push(`${dept} openings ${dir} from ${pCount} to ${lCount}`);
       
-      // Significant if absolute shift >= 3 AND relative shift >= 20%
-      if (delta >= 3 && percentDeptChange >= 0.20) {
+      const isNewDominant = latestTop.topDept === dept && previousTop.topDept !== dept && latestTop.topCount > latestTop.secondCount;
+      let isMixSignificant = false;
+
+      if (totalBoardSize < 10) {
+        isMixSignificant = delta >= 1;
+      } else if (totalBoardSize < 50) {
+        isMixSignificant = delta >= 3 && percentDeptChange >= 0.20 && (percentOfBoard >= 0.10 || isNewDominant);
+      } else if (totalBoardSize < 200) {
+        isMixSignificant = delta >= 5 && (percentOfBoard >= 0.07 || isNewDominant);
+      } else {
+        isMixSignificant = delta >= 20 && (percentOfBoard >= 0.05 || isNewDominant);
+      }
+
+      if (isMixSignificant) {
         hasSignificantChange = true;
         if (!significanceDrivers.includes("mix")) significanceDrivers.push("mix");
       }

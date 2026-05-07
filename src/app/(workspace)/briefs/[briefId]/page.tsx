@@ -210,11 +210,34 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
     comparisonStrength: (monitoring?.diff?.comparisonStrength ?? "unavailable") as "standard" | "weak" | "unavailable",
   });
 
+  const formatChangeSignificance = (sig: string) => {
+    switch (sig) {
+      case "meaningful_change": return "Meaningful update";
+      case "minor_change": return "Minor movement";
+      case "baseline": return "First baseline";
+      case "limited_comparison": return "Limited history";
+      default: return sig;
+    }
+  };
+
+  const formatPublicUse = (use: string) => {
+    switch (use) {
+      case "strong_baseline": return "Strong baseline";
+      case "strong_update": return "Strong update";
+      case "cautious_read": return "Cautious read";
+      case "cautious_update": return "Cautious update";
+      case "cautious_baseline": return "Cautious baseline";
+      case "internal_only": return "Internal-only";
+      default: return use;
+    }
+  };
+
   const heroFacts = [
     ["Snapshot", formatDateTimeValue(brief.createdAt)],
     ["Source", sourceLabel],
-    ["Public Read", readiness.level === "strong" ? "Strong" : readiness.level === "cautious" ? "Cautious" : "Internal-only"],
-    ["Confidence", brief.watchlistReadConfidence],
+    ["Board Evidence", readiness.currentSignal.charAt(0).toUpperCase() + readiness.currentSignal.slice(1)],
+    ["Change Event", formatChangeSignificance(readiness.changeSignificance)],
+    ["Public Use", formatPublicUse(readiness.publicUse)],
   ] as const;
 
   return (
@@ -246,7 +269,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             {heroFacts.map(([label, value]) => (
               <div key={label} className="rounded-xl border bg-[var(--surface)] px-4 py-3" style={{ borderColor: "var(--border)" }}>
                 <p className="text-[10px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
@@ -261,23 +284,23 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
         </header>
 
         {/* Post-Worthiness Gate */}
-        {readiness.level !== "strong" && (
-          <div className="mb-6 rounded-xl border p-5" style={{ borderColor: readiness.level === "internal_only" ? "rgba(239, 68, 68, 0.2)" : "var(--border)", backgroundColor: readiness.level === "internal_only" ? "rgba(239, 68, 68, 0.02)" : "rgba(54, 91, 122, 0.02)" }}>
+        {readiness.publicUse !== "strong_update" && readiness.publicUse !== "strong_baseline" && (
+          <div className="mb-6 rounded-xl border p-5" style={{ borderColor: readiness.publicUse === "internal_only" ? "rgba(239, 68, 68, 0.2)" : "var(--border)", backgroundColor: readiness.publicUse === "internal_only" ? "rgba(239, 68, 68, 0.02)" : "rgba(54, 91, 122, 0.02)" }}>
             <div className="flex items-start gap-4">
-               <div className="mt-0.5 rounded-lg border bg-[var(--surface)] p-2 shadow-sm" style={{ borderColor: readiness.level === "internal_only" ? "rgba(239, 68, 68, 0.3)" : "var(--border)" }}>
-                 {readiness.level === "internal_only" ? <ShieldAlert className="h-5 w-5 text-red-500" /> : <Info className="h-5 w-5 text-amber-500" />}
+               <div className="mt-0.5 rounded-lg border bg-[var(--surface)] p-2 shadow-sm" style={{ borderColor: readiness.publicUse === "internal_only" ? "rgba(239, 68, 68, 0.3)" : "var(--border)" }}>
+                 {readiness.publicUse === "internal_only" ? <ShieldAlert className="h-5 w-5 text-red-500" /> : <Info className="h-5 w-5 text-amber-500" />}
                </div>
                <div className="space-y-2">
                  <h3 className="text-sm font-bold tracking-tight" style={{ color: "var(--foreground)" }}>
-                   {readiness.level === "internal_only" ? "Internal-only read: Brief is not yet post-ready" : "Cautious read: Brief has quality caveats"}
+                   {readiness.publicUse === "internal_only" ? "Internal-only read: Brief is not yet post-ready" : "Cautious read: Brief has caveats"}
                  </h3>
                  <p className="text-xs leading-5" style={{ color: "var(--foreground-secondary)" }}>
-                   {readiness.level === "internal_only" 
+                   {readiness.publicUse === "internal_only" 
                      ? "This brief is not yet ready for external strategic content due to critical data blockers:" 
-                     : "This brief is grounded but should be qualified in public strategic posts due to these factors:"}
+                     : "This brief should be qualified in public strategic posts due to these factors:"}
                  </p>
                  <ul className="mt-3 grid gap-1.5 sm:grid-cols-2">
-                   {(readiness.level === "internal_only" ? readiness.blockers : readiness.reasons).map((text, i) => (
+                   {(readiness.publicUse === "internal_only" ? readiness.blockers : readiness.reasons).map((text, i) => (
                      <li key={i} className="flex items-start gap-2 text-[11px] font-medium leading-4" style={{ color: "var(--foreground-muted)" }}>
                        <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-current opacity-40" />
                        {text}

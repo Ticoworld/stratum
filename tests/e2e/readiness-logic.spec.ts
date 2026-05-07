@@ -20,7 +20,8 @@ test.describe("Public Readiness Gate Logic", () => {
       ...defaultArgs,
       jobsCount: 2,
     });
-    expect(result.level).toBe("internal_only");
+    expect(result.publicUse).toBe("internal_only");
+    expect(result.currentSignal).toBe("weak");
     expect(result.blockers.some(b => b.toLowerCase().includes("insufficient evidence") || b.toLowerCase().includes("thin"))).toBe(true);
   });
 
@@ -29,11 +30,12 @@ test.describe("Public Readiness Gate Logic", () => {
       ...defaultArgs,
       watchlistReadConfidence: "low",
     });
-    expect(result.level).toBe("internal_only");
+    expect(result.publicUse).toBe("internal_only");
+    expect(result.currentSignal).toBe("weak");
     expect(result.blockers.some(b => b.toLowerCase().includes("confidence"))).toBe(true);
   });
 
-  test("3. First baseline with mixed evidence is not strong (cautious)", () => {
+  test("3. First baseline with mixed evidence is cautious baseline", () => {
     const result = deriveBriefPublicReadiness({
       ...defaultArgs,
       hasComparison: false,
@@ -42,11 +44,12 @@ test.describe("Public Readiness Gate Logic", () => {
       significanceDrivers: [],
       label: "Mixed hiring signal",
     });
-    expect(result.level).not.toBe("strong");
-    expect(result.level).toBe("cautious"); // Mixed signals with good volume but no history
+    expect(result.currentSignal).toBe("moderate");
+    expect(result.changeSignificance).toBe("baseline");
+    expect(result.publicUse).toBe("cautious_baseline"); 
   });
 
-  test("4. First baseline with decent volume and clear concentration is cautious by default", () => {
+  test("4. First baseline with decent volume and clear concentration is strong baseline", () => {
     const result = deriveBriefPublicReadiness({
       ...defaultArgs,
       hasComparison: false,
@@ -54,25 +57,29 @@ test.describe("Public Readiness Gate Logic", () => {
       hasSignificantChange: false,
       significanceDrivers: [],
     });
-    expect(result.level).toBe("cautious");
-    expect(result.reasons.some(r => r.toLowerCase().includes("baseline"))).toBe(true);
+    expect(result.currentSignal).toBe("strong");
+    expect(result.changeSignificance).toBe("baseline");
+    expect(result.publicUse).toBe("strong_baseline");
   });
 
-  test("5. Changed brief with meaningful full-board delta can be strong", () => {
+  test("5. Changed brief with meaningful full-board delta is strong update", () => {
     const result = deriveBriefPublicReadiness(defaultArgs);
-    expect(result.level).toBe("strong");
+    expect(result.currentSignal).toBe("strong");
+    expect(result.changeSignificance).toBe("meaningful_change");
+    expect(result.publicUse).toBe("strong_update");
   });
 
-  test("6. Missing full-job comparison data prevents strong", () => {
+  test("6. Missing full-job comparison data is limited comparison", () => {
     const result = deriveBriefPublicReadiness({
       ...defaultArgs,
       comparisonStrength: "weak",
     });
-    expect(result.level).toBe("cautious");
+    expect(result.changeSignificance).toBe("limited_comparison");
+    expect(result.publicUse).toBe("cautious_baseline");
     expect(result.reasons.some(r => r.toLowerCase().includes("legacy") || r.toLowerCase().includes("incomplete") || r.toLowerCase().includes("limited"))).toBe(true);
   });
 
-  test("7. High volume but mixed evidence is not automatically strong", () => {
+  test("7. High volume but mixed evidence is cautious", () => {
     const result = deriveBriefPublicReadiness({
       ...defaultArgs,
       label: "Mixed hiring signal",
@@ -80,22 +87,27 @@ test.describe("Public Readiness Gate Logic", () => {
       hasSignificantChange: false,
       significanceDrivers: [],
     });
-    expect(result.level).toBe("cautious");
+    expect(result.currentSignal).toBe("moderate");
+    expect(result.publicUse).toBe("cautious_update");
   });
 
-  test("8. Strong requires evidence quality plus pattern or change", () => {
-    // Good volume but moderate confidence
+  test("8. Strong signal but minor change is cautious update", () => {
+    const minorChange = deriveBriefPublicReadiness({
+      ...defaultArgs,
+      hasSignificantChange: false,
+      significanceDrivers: [],
+    });
+    expect(minorChange.currentSignal).toBe("strong");
+    expect(minorChange.changeSignificance).toBe("minor_change");
+    expect(minorChange.publicUse).toBe("cautious_update");
+
+    // Moderate signal with meaningful change is also cautious update
     const mediumConf = deriveBriefPublicReadiness({
       ...defaultArgs,
       watchlistReadConfidence: "medium",
     });
-    expect(mediumConf.level).toBe("cautious");
-
-    // Good confidence but moderate volume (3-4 roles)
-    const lowVol = deriveBriefPublicReadiness({
-      ...defaultArgs,
-      jobsCount: 4,
-    });
-    expect(lowVol.level).toBe("cautious");
+    expect(mediumConf.currentSignal).toBe("moderate");
+    expect(mediumConf.changeSignificance).toBe("meaningful_change");
+    expect(mediumConf.publicUse).toBe("cautious_update");
   });
 });

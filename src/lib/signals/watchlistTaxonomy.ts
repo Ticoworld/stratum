@@ -30,10 +30,17 @@ export type ApprovedWatchlistLabel =
 
 export type BriefPublicReadinessLevel = "strong" | "cautious" | "internal_only";
 
+export type CurrentSignalStrength = "strong" | "moderate" | "weak";
+export type ChangeSignificance = "meaningful_change" | "minor_change" | "baseline" | "limited_comparison";
+export type PublicUseRecommendation = "strong_update" | "strong_baseline" | "cautious_update" | "cautious_baseline" | "internal_only";
+
 export interface BriefPublicReadiness {
   level: BriefPublicReadinessLevel;
   reasons: string[];
   blockers: string[];
+  currentSignal: CurrentSignalStrength;
+  changeSignificance: ChangeSignificance;
+  publicUse: PublicUseRecommendation;
 }
 
 export const APPROVED_WATCHLIST_SIGNAL_TAXONOMY: Array<{
@@ -488,22 +495,17 @@ export function buildApprovedWatchlistSummary(args: {
   return `${observedSentence} ${suggestionSentence} ${limitSentence}`;
 }
 
-export function deriveBriefPublicReadiness(args: {
+export function deriveCurrentSignalStrength(args: {
   jobsCount: number;
   watchlistReadConfidence: WatchlistConfidenceLevel;
   companyMatchConfidence: WatchlistConfidenceLevel;
   proofRoleGrounding: WatchlistProofGrounding;
   label: ApprovedWatchlistLabel;
-  hasComparison: boolean;
-  hasMaterialChange: boolean;
-  hasSignificantChange: boolean;
-  significanceDrivers: Array<"count" | "roles" | "mix" | "geography">;
-  comparisonStrength: "standard" | "weak" | "unavailable";
-}): BriefPublicReadiness {
+}): { strength: CurrentSignalStrength; caveats: string[]; blockers: string[] } {
   const blockers: string[] = [];
-  const reasons: string[] = [];
+  const caveats: string[] = [];
 
-  // internal_only Blockers
+  // Weak Blockers
   if (args.jobsCount <= 2) blockers.push("Insufficient evidence volume (3+ roles required).");
   if (args.companyMatchConfidence === "low" || args.companyMatchConfidence === "none") {
     blockers.push("Weak company match confidence.");
@@ -519,52 +521,111 @@ export function deriveBriefPublicReadiness(args: {
   }
 
   if (blockers.length > 0) {
-    return { level: "internal_only", reasons: [], blockers };
+    return { strength: "weak", caveats: [], blockers };
   }
 
-  // Cautious Factors
+  // Moderate Caveats
   if (args.jobsCount <= 4) {
-    reasons.push("Evidence volume is moderate (under 5 roles).");
+    caveats.push("Evidence volume is moderate (under 5 roles).");
   }
   if (args.watchlistReadConfidence === "medium") {
-    reasons.push("Interpretation confidence is moderate.");
+    caveats.push("Interpretation confidence is moderate.");
   }
   if (args.proofRoleGrounding === "partial") {
-    reasons.push("Read is only partially grounded in visible examples.");
+    caveats.push("Read is only partially grounded in visible examples.");
   }
   if (
     args.label === "Mixed hiring signal" ||
     args.label === "Limited hiring signal" ||
     args.label === "Multi-location hiring signal"
   ) {
-    reasons.push(`The "${args.label}" is broad or non-concentrated.`);
+    caveats.push(`The "${args.label}" is broad or non-concentrated.`);
   }
+
+  if (caveats.length > 0) {
+    return { strength: "moderate", caveats, blockers: [] };
+  }
+
+  return { strength: "strong", caveats: [], blockers: [] };
+}
+
+export function deriveChangeSignificance(args: {
+  hasComparison: boolean;
+  hasMaterialChange: boolean;
+  hasSignificantChange: boolean;
+  comparisonStrength: "standard" | "weak" | "unavailable";
+  significanceDrivers: Array<"count" | "roles" | "mix" | "geography">;
+}): { significance: ChangeSignificance; caveats: string[] } {
+  const caveats: string[] = [];
+
   if (!args.hasComparison) {
-    reasons.push("First baseline scan; no historical comparison available yet.");
-  } else if (!args.hasSignificantChange) {
-    reasons.push("Hiring changes are minor or reflect normal board churn.");
+    caveats.push("First baseline scan; no historical comparison available yet.");
+    return { significance: "baseline", caveats };
   }
-  
+
   if (args.comparisonStrength === "weak") {
-    reasons.push("Historical comparison is limited by missing legacy data.");
+    caveats.push("Historical comparison is limited by missing legacy data.");
+    return { significance: "limited_comparison", caveats };
   }
 
-  if (reasons.length > 0) {
-    return { level: "cautious", reasons, blockers: [] };
+  if (!args.hasSignificantChange || args.significanceDrivers.length === 0) {
+    caveats.push("Hiring changes are minor or reflect normal board churn.");
+    return { significance: "minor_change", caveats };
   }
 
-  // Strong
-  if (args.significanceDrivers.length === 0) {
-    return {
-      level: "cautious",
-      reasons: ["Hiring changes are minor or reflect normal board churn."],
-      blockers: [],
-    };
+  return { significance: "meaningful_change", caveats: [] };
+}
+
+export function derivePublicUseRecommendation(
+  currentSignal: CurrentSignalStrength,
+  changeSignificance: ChangeSignificance
+): PublicUseRecommendation {
+  if (currentSignal === "weak") return "internal_only";
+
+  if (currentSignal === "strong") {
+    if (changeSignificance === "meaningful_change") return "strong_update";
+    if (changeSignificance === "baseline") return "strong_baseline";
+    if (changeSignificance === "minor_change") return "cautious_update";
+    return "cautious_baseline"; // limited_comparison
+  }
+
+  // moderate signal
+  if (changeSignificance === "baseline" || changeSignificance === "limited_comparison") {
+    return "cautious_baseline";
+  }
+  return "cautious_update";
+}
+
+export function deriveBriefPublicReadiness(args: {
+  jobsCount: number;
+  watchlistReadConfidence: WatchlistConfidenceLevel;
+  companyMatchConfidence: WatchlistConfidenceLevel;
+  proofRoleGrounding: WatchlistProofGrounding;
+  label: ApprovedWatchlistLabel;
+  hasComparison: boolean;
+  hasMaterialChange: boolean;
+  hasSignificantChange: boolean;
+  significanceDrivers: Array<"count" | "roles" | "mix" | "geography">;
+  comparisonStrength: "standard" | "weak" | "unavailable";
+}): BriefPublicReadiness {
+  const currentSignalResult = deriveCurrentSignalStrength(args);
+  const changeResult = deriveChangeSignificance(args);
+  const publicUse = derivePublicUseRecommendation(currentSignalResult.strength, changeResult.significance);
+
+  // Map back to legacy level for backward compatibility
+  let legacyLevel: BriefPublicReadinessLevel = "cautious";
+  if (publicUse === "internal_only") {
+    legacyLevel = "internal_only";
+  } else if (publicUse === "strong_update") {
+    legacyLevel = "strong";
   }
 
   return {
-    level: "strong",
-    reasons: ["High confidence, clear functional signal, and material growth detected."],
-    blockers: [],
+    level: legacyLevel,
+    reasons: [...currentSignalResult.caveats, ...changeResult.caveats],
+    blockers: currentSignalResult.blockers,
+    currentSignal: currentSignalResult.strength,
+    changeSignificance: changeResult.significance,
+    publicUse,
   };
 }

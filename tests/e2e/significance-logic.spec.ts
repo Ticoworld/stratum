@@ -148,4 +148,145 @@ test.describe("Strategic Significance & Tiered Dampening (Phase 5.8)", () => {
     expect(diff.hasMaterialChange).toBe(true);
     expect(diff.hasSignificantChange).toBe(false);
   });
+
+  test("I. Large board minor mix shift is not significant", () => {
+    const jobsPrev = [
+      ...Array(40).fill(0).map((_, i) => mockJob(`Engineer ${i}`, { department: "Engineering" })),
+      ...Array(10).fill(0).map((_, i) => mockJob(`PM ${i}`, { department: "Product" })),
+      ...Array(24).fill(0).map((_, i) => mockJob(`Ops ${i}`, { department: "Operations" })),
+      ...Array(5).fill(0).map((_, i) => mockJob(`MFB ${i}`, { department: "MFB" })),
+    ];
+    const jobsLatest = [
+      ...Array(40).fill(0).map((_, i) => mockJob(`Engineer ${i}`, { department: "Engineering" })),
+      ...Array(10).fill(0).map((_, i) => mockJob(`PM ${i}`, { department: "Product" })),
+      ...Array(24).fill(0).map((_, i) => mockJob(`Ops ${i}`, { department: "Operations" })),
+      ...Array(2).fill(0).map((_, i) => mockJob(`MFB ${i}`, { department: "MFB" })),
+    ];
+    
+    const prevHistory = mockHistoryItem(jobsPrev);
+    prevHistory.hiringMix = [
+      { department: "Engineering", count: 40, sampleJobs: [] },
+      { department: "Operations", count: 24, sampleJobs: [] },
+      { department: "Product", count: 10, sampleJobs: [] },
+      { department: "MFB", count: 5, sampleJobs: [] }
+    ];
+    const latestHistory = mockHistoryItem(jobsLatest);
+    latestHistory.hiringMix = [
+      { department: "Engineering", count: 40, sampleJobs: [] },
+      { department: "Operations", count: 24, sampleJobs: [] },
+      { department: "Product", count: 10, sampleJobs: [] },
+      { department: "MFB", count: 2, sampleJobs: [] }
+    ];
+
+    const diff = buildWatchlistEntryDiff(latestHistory, prevHistory);
+    
+    expect(diff.hasMaterialChange).toBe(true);
+    expect(diff.hasSignificantChange).toBe(false);
+    expect(diff.significanceDrivers).not.toContain("mix");
+  });
+
+  test("J. Large board meaningful mix shift is significant", () => {
+    const jobsPrev = [
+      ...Array(20).fill(0).map((_, i) => mockJob(`Engineer ${i}`, { department: "Engineering" })),
+      ...Array(59).fill(0).map((_, i) => mockJob(`Other ${i}`, { department: "Other" })),
+    ];
+    const jobsLatest = [
+      ...Array(30).fill(0).map((_, i) => mockJob(`Engineer ${i}`, { department: "Engineering" })),
+      ...Array(49).fill(0).map((_, i) => mockJob(`Other ${i}`, { department: "Other" })),
+    ];
+    
+    const prevHistory = mockHistoryItem(jobsPrev);
+    prevHistory.hiringMix = [
+      { department: "Other", count: 59, sampleJobs: [] },
+      { department: "Engineering", count: 20, sampleJobs: [] },
+    ];
+    const latestHistory = mockHistoryItem(jobsLatest);
+    latestHistory.hiringMix = [
+      { department: "Other", count: 49, sampleJobs: [] },
+      { department: "Engineering", count: 30, sampleJobs: [] },
+    ];
+
+    const diff = buildWatchlistEntryDiff(latestHistory, prevHistory);
+    
+    expect(diff.hasSignificantChange).toBe(true);
+    expect(diff.significanceDrivers).toContain("mix");
+  });
+
+  test("K. Giant board minor mix shift is not significant", () => {
+    const jobsPrev = [
+      ...Array(120).fill(0).map((_, i) => mockJob(`Engineer ${i}`, { department: "Engineering" })),
+      ...Array(712).fill(0).map((_, i) => mockJob(`Other ${i}`, { department: "Other" })),
+    ];
+    const jobsLatest = [
+      ...Array(130).fill(0).map((_, i) => mockJob(`Engineer ${i}`, { department: "Engineering" })),
+      ...Array(702).fill(0).map((_, i) => mockJob(`Other ${i}`, { department: "Other" })),
+    ];
+    
+    const prevHistory = mockHistoryItem(jobsPrev);
+    prevHistory.hiringMix = [
+      { department: "Other", count: 712, sampleJobs: [] },
+      { department: "Engineering", count: 120, sampleJobs: [] },
+    ];
+    const latestHistory = mockHistoryItem(jobsLatest);
+    latestHistory.hiringMix = [
+      { department: "Other", count: 702, sampleJobs: [] },
+      { department: "Engineering", count: 130, sampleJobs: [] },
+    ];
+
+    const diff = buildWatchlistEntryDiff(latestHistory, prevHistory);
+    
+    expect(diff.significanceDrivers).not.toContain("mix");
+  });
+
+  test("L. Giant board meaningful mix shift is significant", () => {
+    const jobsPrev = [
+      ...Array(120).fill(0).map((_, i) => mockJob(`Engineer ${i}`, { department: "Engineering" })),
+      ...Array(712).fill(0).map((_, i) => mockJob(`Other ${i}`, { department: "Other" })),
+    ];
+    const jobsLatest = [
+      ...Array(170).fill(0).map((_, i) => mockJob(`Engineer ${i}`, { department: "Engineering" })),
+      ...Array(662).fill(0).map((_, i) => mockJob(`Other ${i}`, { department: "Other" })),
+    ];
+    
+    const prevHistory = mockHistoryItem(jobsPrev);
+    prevHistory.hiringMix = [
+      { department: "Other", count: 712, sampleJobs: [] },
+      { department: "Engineering", count: 120, sampleJobs: [] },
+    ];
+    const latestHistory = mockHistoryItem(jobsLatest);
+    latestHistory.hiringMix = [
+      { department: "Other", count: 662, sampleJobs: [] },
+      { department: "Engineering", count: 170, sampleJobs: [] },
+    ];
+
+    const diff = buildWatchlistEntryDiff(latestHistory, prevHistory);
+    
+    expect(diff.significanceDrivers).toContain("mix");
+  });
+
+  test("M. Small board mix shift remains sensitive", () => {
+    const jobsPrev = [
+      ...Array(4).fill(0).map((_, i) => mockJob(`Engineer ${i}`, { department: "Engineering" })),
+      ...Array(5).fill(0).map((_, i) => mockJob(`Other ${i}`, { department: "Other" })),
+    ];
+    const jobsLatest = [
+      ...Array(5).fill(0).map((_, i) => mockJob(`Engineer ${i}`, { department: "Engineering" })),
+      ...Array(4).fill(0).map((_, i) => mockJob(`Other ${i}`, { department: "Other" })),
+    ];
+    
+    const prevHistory = mockHistoryItem(jobsPrev);
+    prevHistory.hiringMix = [
+      { department: "Other", count: 5, sampleJobs: [] },
+      { department: "Engineering", count: 4, sampleJobs: [] },
+    ];
+    const latestHistory = mockHistoryItem(jobsLatest);
+    latestHistory.hiringMix = [
+      { department: "Engineering", count: 5, sampleJobs: [] },
+      { department: "Other", count: 4, sampleJobs: [] },
+    ];
+
+    const diff = buildWatchlistEntryDiff(latestHistory, prevHistory);
+    
+    expect(diff.significanceDrivers).toContain("mix");
+  });
 });
