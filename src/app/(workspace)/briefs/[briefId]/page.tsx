@@ -6,7 +6,15 @@ import { buildSignInRedirectPath, requireAuthSession } from "@/lib/auth/session"
 import { getStratumBriefById } from "@/lib/briefs/repository";
 import { buildStratumLimitations, formatSourceLabel } from "@/lib/briefs/presentation";
 import { getWatchlistBriefReplayContext } from "@/lib/watchlists/repository";
-import { deriveBriefPublicReadiness, type ApprovedWatchlistLabel, type WatchlistConfidenceLevel, type WatchlistProofGrounding } from "@/lib/signals/watchlistTaxonomy";
+import { 
+  deriveBriefPublicReadiness, 
+  buildApprovedWatchlistSummary,
+  type ApprovedWatchlistLabel, 
+  type WatchlistConfidenceLevel, 
+  type WatchlistProofGrounding,
+  type ChangeSignificance,
+  type ChangeDirection,
+} from "@/lib/signals/watchlistTaxonomy";
 
 type BriefPageProps = {
   params: Promise<{
@@ -189,7 +197,19 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
   const heroSentence = observedCount > 0
     ? `${isGTMFocus ? "Go-to-market hiring read" : "Active hiring read"} from ${observedCount} ${sourceLabel} openings.`
     : "No active hiring signals detected for this company.";
-  const summarySentences = splitIntoSentences(brief.watchlistReadSummary);
+  
+  const dynamicSummary = buildApprovedWatchlistSummary({
+    label: brief.watchlistReadLabel as ApprovedWatchlistLabel,
+    jobs: hasFullData ? allJobs : roles,
+    proofRoles: roles,
+    apiSource: brief.atsSourceUsed,
+    watchlistReadConfidence: brief.watchlistReadConfidence as WatchlistConfidenceLevel,
+    companyMatchConfidence: brief.companyMatchConfidence as WatchlistConfidenceLevel,
+    proofRoleGrounding: brief.proofRoleGrounding as WatchlistProofGrounding,
+    hiringMix: hiringMix.map(([department, count]) => ({ department, count, sampleJobs: [] })),
+  });
+
+  const summarySentences = splitIntoSentences(dynamicSummary);
   const interpretationSentences = splitIntoSentences(getInterpretation(
     hiringMix, 
     brief.watchlistReadExplanation, 
@@ -208,6 +228,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
     hasSignificantChange: !!monitoring?.diff?.hasSignificantChange,
     significanceDrivers: (monitoring?.diff?.significanceDrivers ?? []) as Array<"count" | "roles" | "mix" | "geography">,
     comparisonStrength: (monitoring?.diff?.comparisonStrength ?? "unavailable") as "standard" | "weak" | "unavailable",
+    changeDirection: (monitoring?.diff?.changeDirection ?? (monitoring?.comparisonAvailable ? "minor_movement" : "baseline")) as ChangeDirection,
   });
 
   const formatChangeSignificance = (sig: string) => {
@@ -217,6 +238,21 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
       case "baseline": return "First baseline";
       case "limited_comparison": return "Limited history";
       default: return sig;
+    }
+  };
+
+  const formatChangeEvent = (sig: ChangeSignificance, dir: ChangeDirection) => {
+    if (sig === "baseline") return "First baseline";
+    if (sig === "limited_comparison") return "Limited history";
+    
+    switch (dir) {
+      case "expansion": return "Meaningful expansion";
+      case "contraction": return "Hiring contraction";
+      case "replacement_churn": return "Replacement churn";
+      case "mix_shift": return "Strategic mix shift";
+      case "geography_shift": return "Geography shift";
+      case "minor_movement": return "Minor movement";
+      default: return formatChangeSignificance(sig);
     }
   };
 
@@ -236,7 +272,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
     ["Snapshot", formatDateTimeValue(brief.createdAt)],
     ["Source", sourceLabel],
     ["Board Evidence", readiness.currentSignal.charAt(0).toUpperCase() + readiness.currentSignal.slice(1)],
-    ["Change Event", formatChangeSignificance(readiness.changeSignificance)],
+    ["Change Event", formatChangeEvent(readiness.changeSignificance, readiness.changeDirection)],
     ["Public Use", formatPublicUse(readiness.publicUse)],
   ] as const;
 

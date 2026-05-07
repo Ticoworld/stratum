@@ -29,10 +29,25 @@ export type ApprovedWatchlistLabel =
   | "Tentative hiring signal";
 
 export type BriefPublicReadinessLevel = "strong" | "cautious" | "internal_only";
+export type ChangeSignificance = "meaningful_change" | "minor_change" | "baseline" | "limited_comparison";
+export type PublicUseRecommendation = "strong_baseline" | "strong_update" | "cautious_baseline" | "cautious_update" | "internal_only";
+
+export interface DepartmentBreakdown {
+  department: string;
+  count: number;
+  sampleJobs: Job[];
+}
 
 export type CurrentSignalStrength = "strong" | "moderate" | "weak";
-export type ChangeSignificance = "meaningful_change" | "minor_change" | "baseline" | "limited_comparison";
-export type PublicUseRecommendation = "strong_update" | "strong_baseline" | "cautious_update" | "cautious_baseline" | "internal_only";
+export type ChangeDirection =
+  | "expansion"
+  | "contraction"
+  | "replacement_churn"
+  | "mix_shift"
+  | "geography_shift"
+  | "minor_movement"
+  | "baseline"
+  | "limited";
 
 export interface BriefPublicReadiness {
   level: BriefPublicReadinessLevel;
@@ -40,6 +55,7 @@ export interface BriefPublicReadiness {
   blockers: string[];
   currentSignal: CurrentSignalStrength;
   changeSignificance: ChangeSignificance;
+  changeDirection: ChangeDirection;
   publicUse: PublicUseRecommendation;
 }
 
@@ -417,7 +433,19 @@ export function deriveApprovedWatchlistLabel(args: {
   return "Mixed hiring signal";
 }
 
-function getLabelSuggestionSentence(label: ApprovedWatchlistLabel): string {
+function getLabelSuggestionSentence(label: ApprovedWatchlistLabel, hiringMix?: DepartmentBreakdown[]): string {
+  if (label === "Product and engineering buildout signal" && hiringMix) {
+    const engineering = hiringMix.find(m => m.department === "engineering")?.count || 0;
+    const product = hiringMix.find(m => m.department === "product")?.count || 0;
+
+    if (engineering >= 3 * product && engineering > 0) {
+      return "Visible roles currently emphasize engineering work, with secondary product focus.";
+    }
+    if (product >= 3 * engineering && product > 0) {
+      return "Visible roles currently emphasize product management and design work.";
+    }
+  }
+
   switch (label) {
     case "Product and engineering buildout signal":
       return "Visible roles currently emphasize product and engineering work.";
@@ -452,6 +480,7 @@ export function buildApprovedWatchlistSummary(args: {
   watchlistReadConfidence: WatchlistConfidenceLevel;
   companyMatchConfidence: WatchlistConfidenceLevel;
   proofRoleGrounding: WatchlistProofGrounding;
+  hiringMix?: DepartmentBreakdown[];
 }): string {
   const {
     label,
@@ -461,6 +490,7 @@ export function buildApprovedWatchlistSummary(args: {
     watchlistReadConfidence,
     companyMatchConfidence,
     proofRoleGrounding,
+    hiringMix,
   } = args;
   const sourceLabel = formatSourceLabel(apiSource);
   const titles = getObservedTitles(proofRoles, jobs);
@@ -473,7 +503,7 @@ export function buildApprovedWatchlistSummary(args: {
   const suggestionSentence =
     label === "Multi-location hiring signal" && locations.length >= 2
       ? `The visible roles span ${locations.slice(0, 3).join(", ")}, which may point to multi-location hiring.`
-      : getLabelSuggestionSentence(label);
+      : getLabelSuggestionSentence(label, hiringMix);
 
   let limitSentence = `This brief only reflects roles visible on ${sourceLabel} and may miss hiring outside that feed.`;
 
@@ -555,6 +585,7 @@ export function deriveChangeSignificance(args: {
   hasSignificantChange: boolean;
   comparisonStrength: "standard" | "weak" | "unavailable";
   significanceDrivers: Array<"count" | "roles" | "mix" | "geography">;
+  changeDirection: ChangeDirection;
 }): { significance: ChangeSignificance; caveats: string[] } {
   const caveats: string[] = [];
 
@@ -563,7 +594,7 @@ export function deriveChangeSignificance(args: {
     return { significance: "baseline", caveats };
   }
 
-  if (args.comparisonStrength === "weak") {
+  if (args.changeDirection === "limited" || args.comparisonStrength === "weak") {
     caveats.push("Historical comparison is limited by missing legacy data.");
     return { significance: "limited_comparison", caveats };
   }
@@ -578,12 +609,19 @@ export function deriveChangeSignificance(args: {
 
 export function derivePublicUseRecommendation(
   currentSignal: CurrentSignalStrength,
-  changeSignificance: ChangeSignificance
+  changeSignificance: ChangeSignificance,
+  changeDirection: ChangeDirection
 ): PublicUseRecommendation {
   if (currentSignal === "weak") return "internal_only";
 
   if (currentSignal === "strong") {
-    if (changeSignificance === "meaningful_change") return "strong_update";
+    if (changeSignificance === "meaningful_change") {
+      // If it's contraction or replacement churn, it's a meaningful movement but maybe not a "strong update" in a positive sense
+      if (changeDirection === "contraction" || changeDirection === "replacement_churn") {
+        return "cautious_update";
+      }
+      return "strong_update";
+    }
     if (changeSignificance === "baseline") return "strong_baseline";
     if (changeSignificance === "minor_change") return "cautious_update";
     return "cautious_baseline"; // limited_comparison
@@ -607,10 +645,23 @@ export function deriveBriefPublicReadiness(args: {
   hasSignificantChange: boolean;
   significanceDrivers: Array<"count" | "roles" | "mix" | "geography">;
   comparisonStrength: "standard" | "weak" | "unavailable";
+  changeDirection: ChangeDirection;
 }): BriefPublicReadiness {
   const currentSignalResult = deriveCurrentSignalStrength(args);
   const changeResult = deriveChangeSignificance(args);
-  const publicUse = derivePublicUseRecommendation(currentSignalResult.strength, changeResult.significance);
+  
+  let effectiveDirection = args.changeDirection;
+  if (changeResult.significance === "baseline") {
+    effectiveDirection = "baseline";
+  } else if (changeResult.significance === "limited_comparison") {
+    effectiveDirection = "limited";
+  }
+
+  const publicUse = derivePublicUseRecommendation(
+    currentSignalResult.strength,
+    changeResult.significance,
+    effectiveDirection
+  );
 
   // Map back to legacy level for backward compatibility
   let legacyLevel: BriefPublicReadinessLevel = "cautious";
@@ -626,6 +677,7 @@ export function deriveBriefPublicReadiness(args: {
     blockers: currentSignalResult.blockers,
     currentSignal: currentSignalResult.strength,
     changeSignificance: changeResult.significance,
+    changeDirection: effectiveDirection,
     publicUse,
   };
 }

@@ -1,13 +1,13 @@
 import { formatSourceLabel } from "@/lib/briefs/presentation";
 import type { Job, JobBoardSource } from "@/lib/api/boards";
 import type { StratumBriefSnapshot } from "@/db/schema/stratumBriefs";
-import type {
+import {
   ConfidenceLevel,
   ProofRoleGrounding,
   SourceCoverageCompleteness,
   StratumResultState,
-  DepartmentBreakdown,
 } from "@/lib/services/StratumInvestigator";
+import { type ChangeDirection, type DepartmentBreakdown } from "@/lib/signals/watchlistTaxonomy";
 import { getNormalizedTrackedTargetName } from "@/lib/watchlists/identity";
 
 export interface WatchlistEntryBriefHistoryItem {
@@ -56,6 +56,7 @@ export interface WatchlistEntryDiff {
   hasMaterialChange: boolean;
   hasSignificantChange: boolean;
   significanceDrivers: Array<"count" | "roles" | "mix" | "geography">;
+  changeDirection: ChangeDirection;
 }
 
 const CONFIDENCE_RANK: Record<ConfidenceLevel, number> = {
@@ -264,6 +265,7 @@ export function buildWatchlistEntryDiff(
       hasMaterialChange: false,
       hasSignificantChange: false,
       significanceDrivers: [],
+      changeDirection: "baseline",
     };
   }
 
@@ -467,7 +469,8 @@ export function buildWatchlistEntryDiff(
     }
 
     // Replacement churn check: if added == removed and net is small, it's just churn
-    if (addedRoles.length > 0 && removedRoles.length > 0 && netChange < 2 && totalRoles >= 10) {
+    // But if churn rate is high (>20%), it IS a significant event.
+    if (addedRoles.length > 0 && removedRoles.length > 0 && netChange < 2 && totalRoles >= 10 && churnRate < 0.2) {
       isSignificant = false; 
     }
 
@@ -534,5 +537,40 @@ export function buildWatchlistEntryDiff(
     hasMaterialChange: changes.length > 0,
     hasSignificantChange,
     significanceDrivers,
+    changeDirection: deriveChangeDirection({
+      latestSnapshot: latestAllJobs,
+      prevSnapshot: previousAllJobs,
+      drivers: significanceDrivers,
+      comparisonStrength,
+      hasSignificantChange,
+    }),
   };
+}
+
+function deriveChangeDirection(args: {
+  latestSnapshot: Job[];
+  prevSnapshot: Job[];
+  drivers: Array<"count" | "roles" | "mix" | "geography">;
+  comparisonStrength: "standard" | "weak";
+  hasSignificantChange: boolean;
+}): ChangeDirection {
+  const { latestSnapshot, prevSnapshot, drivers, comparisonStrength, hasSignificantChange } = args;
+  if (comparisonStrength === "weak") return "limited";
+  if (!hasSignificantChange) return "minor_movement";
+
+  if (drivers.includes("mix")) return "mix_shift";
+  if (drivers.includes("geography")) return "geography_shift";
+
+  const countDiff = latestSnapshot.length - prevSnapshot.length;
+
+  if (countDiff > 0 && drivers.includes("count")) return "expansion";
+  if (countDiff < 0 && drivers.includes("count")) return "contraction";
+
+  const getSignature = (j: Job) => `${j.title}|${j.location}|${j.department}|${j.jobUrl || ""}`;
+  const prevSigs = new Set(prevSnapshot.map(getSignature));
+  const addedCount = latestSnapshot.filter(j => !prevSigs.has(getSignature(j))).length;
+
+  if (addedCount > 0 && drivers.includes("roles")) return "replacement_churn";
+
+  return "minor_movement";
 }

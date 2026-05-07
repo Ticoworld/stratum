@@ -27,15 +27,12 @@ import {
   getFunctionalSignal,
   getSignalCounts,
   type FunctionalSignal,
+  type DepartmentBreakdown,
 } from "@/lib/signals/watchlistTaxonomy";
 import { getNormalizedTrackedTargetName } from "@/lib/watchlists/identity";
 import type { WatchlistMonitoringSnapshot } from "@/lib/watchlists/repository";
 
-export interface DepartmentBreakdown {
-  department: string;
-  count: number;
-  sampleJobs: Job[];
-}
+
 
 export type StratumResultState =
   | "supported_provider_matched_with_observed_openings"
@@ -957,8 +954,9 @@ function buildWatchlistSummary(args: {
   confidence: ConfidenceLevel;
   companyMatchConfidence: ConfidenceLevel;
   proofRoleSelection: ProofRoleSelection;
+  hiringMix: DepartmentBreakdown[];
 }): string {
-  const { label, jobs, proofRoles, apiSource, confidence, companyMatchConfidence, proofRoleSelection } = args;
+  const { label, jobs, proofRoles, apiSource, confidence, companyMatchConfidence, proofRoleSelection, hiringMix } = args;
 
   return buildApprovedWatchlistSummary({
     label,
@@ -968,6 +966,7 @@ function buildWatchlistSummary(args: {
     watchlistReadConfidence: confidence,
     companyMatchConfidence,
     proofRoleGrounding: proofRoleSelection.grounding,
+    hiringMix,
   });
 }
 
@@ -1192,6 +1191,7 @@ export class StratumInvestigator {
       confidence: watchlistReadConfidence.level,
       companyMatchConfidence: companyMatchConfidence.level,
       proofRoleSelection,
+      hiringMix,
     });
     const restrainedVelocity =
       watchlistReadConfidence.level === "high" || watchlistReadConfidence.level === "medium"

@@ -13,6 +13,7 @@ test.describe("Public Readiness Gate Logic", () => {
     hasSignificantChange: true,
     significanceDrivers: ["count" as const],
     comparisonStrength: "standard" as const,
+    changeDirection: "expansion" as const,
   };
 
   test("1. Thin evidence is internal-only (0-2 roles)", () => {
@@ -46,6 +47,7 @@ test.describe("Public Readiness Gate Logic", () => {
     });
     expect(result.currentSignal).toBe("moderate");
     expect(result.changeSignificance).toBe("baseline");
+    expect(result.changeDirection).toBe("baseline");
     expect(result.publicUse).toBe("cautious_baseline"); 
   });
 
@@ -59,6 +61,7 @@ test.describe("Public Readiness Gate Logic", () => {
     });
     expect(result.currentSignal).toBe("strong");
     expect(result.changeSignificance).toBe("baseline");
+    expect(result.changeDirection).toBe("baseline");
     expect(result.publicUse).toBe("strong_baseline");
   });
 
@@ -75,6 +78,7 @@ test.describe("Public Readiness Gate Logic", () => {
       comparisonStrength: "weak",
     });
     expect(result.changeSignificance).toBe("limited_comparison");
+    expect(result.changeDirection).toBe("limited");
     expect(result.publicUse).toBe("cautious_baseline");
     expect(result.reasons.some(r => r.toLowerCase().includes("legacy") || r.toLowerCase().includes("incomplete") || r.toLowerCase().includes("limited"))).toBe(true);
   });
@@ -109,5 +113,27 @@ test.describe("Public Readiness Gate Logic", () => {
     expect(mediumConf.currentSignal).toBe("moderate");
     expect(mediumConf.changeSignificance).toBe("meaningful_change");
     expect(mediumConf.publicUse).toBe("cautious_update");
+  });
+
+  test("9. Strong signal with contraction is demoted to cautious update", () => {
+    const result = deriveBriefPublicReadiness({
+      ...defaultArgs,
+      changeDirection: "contraction",
+    });
+    expect(result.currentSignal).toBe("strong");
+    expect(result.changeSignificance).toBe("meaningful_change");
+    expect(result.changeDirection).toBe("contraction");
+    expect(result.publicUse).toBe("cautious_update"); // instead of strong_update
+  });
+
+  test("10. Strong signal with replacement churn is demoted to cautious update", () => {
+    const result = deriveBriefPublicReadiness({
+      ...defaultArgs,
+      changeDirection: "replacement_churn",
+    });
+    expect(result.currentSignal).toBe("strong");
+    expect(result.changeSignificance).toBe("meaningful_change");
+    expect(result.changeDirection).toBe("replacement_churn");
+    expect(result.publicUse).toBe("cautious_update");
   });
 });

@@ -59,6 +59,7 @@ test.describe("Strategic Significance & Tiered Dampening (Phase 5.8)", () => {
     expect(diff.hasMaterialChange).toBe(true);
     expect(diff.hasSignificantChange).toBe(false);
     expect(diff.significanceDrivers.length).toBe(0);
+    expect(diff.changeDirection).toBe("minor_movement");
   });
 
   test("B. Giant board meaningful growth is significant", () => {
@@ -73,6 +74,7 @@ test.describe("Strategic Significance & Tiered Dampening (Phase 5.8)", () => {
     
     expect(diff.hasSignificantChange).toBe(true);
     expect(diff.significanceDrivers).toContain("count");
+    expect(diff.changeDirection).toBe("expansion");
   });
 
   test("C. Metadata-only change is not significant", () => {
@@ -123,6 +125,7 @@ test.describe("Strategic Significance & Tiered Dampening (Phase 5.8)", () => {
     
     expect(diff.hasSignificantChange).toBe(true);
     expect(diff.significanceDrivers).toContain("count");
+    expect(diff.changeDirection).toBe("expansion");
   });
 
   test("G. Source change does not trigger significance alone", () => {
@@ -134,6 +137,7 @@ test.describe("Strategic Significance & Tiered Dampening (Phase 5.8)", () => {
     
     expect(diff.hasMaterialChange).toBe(true);
     expect(diff.hasSignificantChange).toBe(false);
+    expect(diff.changeDirection).toBe("limited");
   });
 
   test("H. Geography shift without roles is not significant", () => {
@@ -147,6 +151,7 @@ test.describe("Strategic Significance & Tiered Dampening (Phase 5.8)", () => {
     
     expect(diff.hasMaterialChange).toBe(true);
     expect(diff.hasSignificantChange).toBe(false);
+    expect(diff.changeDirection).toBe("minor_movement");
   });
 
   test("I. Large board minor mix shift is not significant", () => {
@@ -183,6 +188,7 @@ test.describe("Strategic Significance & Tiered Dampening (Phase 5.8)", () => {
     expect(diff.hasMaterialChange).toBe(true);
     expect(diff.hasSignificantChange).toBe(false);
     expect(diff.significanceDrivers).not.toContain("mix");
+    expect(diff.changeDirection).toBe("minor_movement");
   });
 
   test("J. Large board meaningful mix shift is significant", () => {
@@ -210,6 +216,7 @@ test.describe("Strategic Significance & Tiered Dampening (Phase 5.8)", () => {
     
     expect(diff.hasSignificantChange).toBe(true);
     expect(diff.significanceDrivers).toContain("mix");
+    expect(diff.changeDirection).toBe("mix_shift");
   });
 
   test("K. Giant board minor mix shift is not significant", () => {
@@ -288,5 +295,39 @@ test.describe("Strategic Significance & Tiered Dampening (Phase 5.8)", () => {
     const diff = buildWatchlistEntryDiff(latestHistory, prevHistory);
     
     expect(diff.significanceDrivers).toContain("mix");
+    expect(diff.changeDirection).toBe("mix_shift");
+  });
+
+  test("N. Significant headcount contraction", () => {
+    // 63 -> 56 (delta -7, > 5 roles and significant delta)
+    const jobsPrev = Array(63).fill(0).map((_, i) => mockJob(`Engineer ${i}`));
+    const jobsLatest = jobsPrev.slice(0, 56);
+    
+    const diff = buildWatchlistEntryDiff(
+      mockHistoryItem(jobsLatest),
+      mockHistoryItem(jobsPrev)
+    );
+    
+    expect(diff.hasSignificantChange).toBe(true);
+    expect(diff.significanceDrivers).toContain("count");
+    expect(diff.changeDirection).toBe("contraction");
+  });
+
+  test("O. Replacement churn (Stable count, many role changes)", () => {
+    // 20 roles, 10 removed, 10 added -> Total delta 20 vs board 20
+    const jobsPrev = Array(20).fill(0).map((_, i) => mockJob(`Old ${i}`, { jobUrl: `url-${i}` }));
+    const jobsLatest = [
+      ...jobsPrev.slice(0, 10),
+      ...Array(10).fill(0).map((_, i) => mockJob(`New ${i}`, { jobUrl: `new-url-${i}` }))
+    ];
+    
+    const diff = buildWatchlistEntryDiff(
+      mockHistoryItem(jobsLatest),
+      mockHistoryItem(jobsPrev)
+    );
+    
+    expect(diff.hasSignificantChange).toBe(true);
+    expect(diff.significanceDrivers).toContain("roles");
+    expect(diff.changeDirection).toBe("replacement_churn");
   });
 });
