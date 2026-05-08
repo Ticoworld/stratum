@@ -59,6 +59,7 @@ function mapToFunctionalBucket(role: { title: string; department?: string }): st
   return "Other";
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getHiringMix(roles: any[]) {
   const counts: Record<string, number> = {};
   roles.forEach((r) => {
@@ -69,6 +70,7 @@ function getHiringMix(roles: any[]) {
     .sort((a, b) => b[1] - a[1]);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getGeographySpread(roles: any[]) {
   const counts: Record<string, number> = {};
   roles.forEach((r) => {
@@ -80,6 +82,7 @@ function getGeographySpread(roles: any[]) {
     .slice(0, 5);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getNotableOpenings(roles: any[]) {
   const signalKeywords = ["senior", "lead", "manager", "director", "head", "staff", "principal", "architect", "vp", "chief"];
   return [...roles].sort((a, b) => {
@@ -140,6 +143,7 @@ function BriefSection({
   className = "",
 }: {
   title: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   icon?: any;
   children: ReactNode;
   className?: string;
@@ -184,7 +188,8 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
   const hasFullData = allJobs.length > 0;
   const roles = brief.proofRolesSnapshot || [];
   
-  const hiringMix = getHiringMix(hasFullData ? allJobs : roles);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hiringMix: any[] = getHiringMix(hasFullData ? allJobs : roles);
   const geography = getGeographySpread(hasFullData ? allJobs : roles);
   const notableOpenings = getNotableOpenings(roles);
   
@@ -207,6 +212,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
     companyMatchConfidence: brief.companyMatchConfidence as WatchlistConfidenceLevel,
     proofRoleGrounding: brief.proofRoleGrounding as WatchlistProofGrounding,
     hiringMix: hiringMix.map(([department, count]) => ({ department, count, sampleJobs: [] })),
+    signalClusters: brief.resultSnapshot?.signalClusters,
   });
 
   const summarySentences = splitIntoSentences(dynamicSummary);

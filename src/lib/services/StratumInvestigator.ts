@@ -962,8 +962,9 @@ function buildWatchlistSummary(args: {
   companyMatchConfidence: ConfidenceLevel;
   proofRoleSelection: ProofRoleSelection;
   hiringMix: DepartmentBreakdown[];
+  signalClusters?: AiSignalCluster[];
 }): string {
-  const { label, jobs, proofRoles, apiSource, confidence, companyMatchConfidence, proofRoleSelection, hiringMix } = args;
+  const { label, jobs, proofRoles, apiSource, confidence, companyMatchConfidence, proofRoleSelection, hiringMix, signalClusters } = args;
 
   return buildApprovedWatchlistSummary({
     label,
@@ -974,6 +975,7 @@ function buildWatchlistSummary(args: {
     companyMatchConfidence,
     proofRoleGrounding: proofRoleSelection.grounding,
     hiringMix,
+    signalClusters,
   });
 }
 
@@ -1197,6 +1199,9 @@ export class StratumInvestigator {
       companyMatchConfidence: companyMatchConfidence.level,
       watchlistReadConfidence: watchlistReadConfidence.level,
     });
+
+    const signalClusters = buildSignalClusters(enrichmentResult.enrichments, enrichmentResult.status);
+
     const restrainedSummary = buildWatchlistSummary({
       label: restrainedVerdict,
       jobs,
@@ -1206,6 +1211,7 @@ export class StratumInvestigator {
       companyMatchConfidence: companyMatchConfidence.level,
       proofRoleSelection,
       hiringMix,
+      signalClusters,
     });
     const restrainedVelocity =
       watchlistReadConfidence.level === "high" || watchlistReadConfidence.level === "medium"
@@ -1230,7 +1236,7 @@ export class StratumInvestigator {
       thoughtSummary: analysis.thoughtSummary,
       roleEnrichments: enrichmentResult.enrichments,
       aiRoleEnrichmentStatus: enrichmentResult.status,
-      signalClusters: buildSignalClusters(enrichmentResult.enrichments, enrichmentResult.status),
+      signalClusters,
       analyzedAt: new Date().toISOString(),
       analysisTimeMs: elapsed,
       apiSource,

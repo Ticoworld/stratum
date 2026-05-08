@@ -1,4 +1,5 @@
 import type { Job, JobBoardSource } from "@/lib/api/boards";
+import type { AiSignalCluster } from "./roleEnrichment";
 
 export type WatchlistConfidenceLevel = "high" | "medium" | "low" | "none";
 export type WatchlistProofGrounding = "exact" | "partial" | "fallback" | "none";
@@ -545,6 +546,45 @@ function getLabelSuggestionSentence(
   }
 }
 
+/**
+ * Builds a natural-language sentence describing the top thematic clusters.
+ * Rules:
+ * - Only clusters with roleCount >= 2 and confidence >= medium.
+ * - Max 3 clusters.
+ * - Sort by roleCount desc, then confidence (high > medium).
+ */
+export function buildClusterAwareSignalSentence(clusters?: AiSignalCluster[]): string | null {
+  if (!clusters || clusters.length === 0) return null;
+
+  const validClusters = clusters
+    .filter(
+      (c) =>
+        c.roleCount >= 2 && (c.confidence === "high" || c.confidence === "medium")
+    )
+    .sort((a, b) => {
+      if (b.roleCount !== a.roleCount) return b.roleCount - a.roleCount;
+      if (a.confidence === b.confidence) return 0;
+      return a.confidence === "high" ? -1 : 1;
+    })
+    .slice(0, 3);
+
+  if (validClusters.length === 0) return null;
+
+  const labels = validClusters.map((c) =>
+    c.label.toLowerCase().replace("&", "and")
+  );
+
+  if (labels.length === 1) {
+    return `Visible hiring is weighted toward ${labels[0]} work.`;
+  }
+
+  if (labels.length === 2) {
+    return `Visible roles cluster around ${labels[0]} and ${labels[1]} work.`;
+  }
+
+  return `Visible hiring is weighted toward ${labels[0]}, ${labels[1]}, and ${labels[2]} work.`;
+}
+
 export function buildApprovedWatchlistSummary(args: {
   label: ApprovedWatchlistLabel;
   jobs: Job[];
@@ -554,6 +594,7 @@ export function buildApprovedWatchlistSummary(args: {
   companyMatchConfidence: WatchlistConfidenceLevel;
   proofRoleGrounding: WatchlistProofGrounding;
   hiringMix?: DepartmentBreakdown[];
+  signalClusters?: AiSignalCluster[];
 }): string {
   const {
     label,
@@ -580,10 +621,13 @@ export function buildApprovedWatchlistSummary(args: {
       ? getProductEngineeringSubRatio(jobs)
       : undefined;
 
+  const clusterSentence = buildClusterAwareSignalSentence(args.signalClusters);
+
   const suggestionSentence =
-    label === "Multi-location hiring signal" && locations.length >= 2
+    clusterSentence ||
+    (label === "Multi-location hiring signal" && locations.length >= 2
       ? `The visible roles span ${locations.slice(0, 3).join(", ")}, which may point to multi-location hiring.`
-      : getLabelSuggestionSentence(label, subRatio);
+      : getLabelSuggestionSentence(label, subRatio));
 
   let limitSentence = `This brief only reflects roles visible on ${sourceLabel} and may miss hiring outside that feed.`;
 
