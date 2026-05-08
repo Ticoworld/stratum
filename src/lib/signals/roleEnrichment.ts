@@ -44,6 +44,16 @@ export type AiRoleEnrichmentStatus =
   | "failed"
   | "disabled";
 
+export interface AiRoleEnrichmentMeta {
+  attemptedCount: number;
+  enrichedCount: number;
+  failedBatchCount: number;
+  parseFailureCount: number;
+  rejectedRowCount: number;
+  truncated: boolean;
+  batchSize: number;
+}
+
 export interface AiRoleEnrichment {
   roleKey: string;        // stable identity key (see below)
   title: string;          // echoed from input for traceability

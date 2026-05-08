@@ -24,6 +24,7 @@ import {
   type AiRoleEnrichment,
   type AiRoleEnrichmentStatus,
   type AiSignalCluster,
+  type AiRoleEnrichmentMeta,
 } from "@/lib/signals/roleEnrichment";
 import { buildSignalClusters } from "@/lib/signals/roleClusters";
 import {
@@ -997,6 +998,7 @@ export interface StratumResult {
   thoughtSummary?: string;
   roleEnrichments?: Record<string, AiRoleEnrichment>;
   aiRoleEnrichmentStatus?: AiRoleEnrichmentStatus;
+  aiRoleEnrichmentMeta?: AiRoleEnrichmentMeta;
   signalClusters?: AiSignalCluster[];
   analyzedAt: string;
   analysisTimeMs: number;
@@ -1167,6 +1169,7 @@ export class StratumInvestigator {
         summary: "Stratum observed open roles but could not complete a usable watchlist read for this result. Use the proof roles as the primary output.",
         roleEnrichments: enrichmentResult.enrichments,
         aiRoleEnrichmentStatus: enrichmentResult.status,
+        aiRoleEnrichmentMeta: enrichmentResult.meta,
         signalClusters: buildSignalClusters(enrichmentResult.enrichments, enrichmentResult.status),
         analyzedAt: new Date().toISOString(),
         analysisTimeMs: elapsed,
@@ -1236,6 +1239,7 @@ export class StratumInvestigator {
       thoughtSummary: analysis.thoughtSummary,
       roleEnrichments: enrichmentResult.enrichments,
       aiRoleEnrichmentStatus: enrichmentResult.status,
+      aiRoleEnrichmentMeta: enrichmentResult.meta,
       signalClusters,
       analyzedAt: new Date().toISOString(),
       analysisTimeMs: elapsed,

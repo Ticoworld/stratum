@@ -94,54 +94,70 @@ test.describe("AI-1B: Role Enrichment", () => {
     `;
 
     test("valid JSON array returns AiRoleEnrichment[]", () => {
-      const parsed = parseEnrichmentBatchResponse(validJson, expectedKeys);
-      expect(parsed).not.toBeNull();
-      expect(parsed?.length).toBe(2);
-      expect(parsed![0].roleKey).toBe("key1");
+      const result = parseEnrichmentBatchResponse(validJson, expectedKeys);
+      expect(result.parseFailure).toBe(false);
+      expect(result.validEnrichments.length).toBe(2);
+      expect(result.validEnrichments[0].roleKey).toBe("key1");
     });
 
     test("valid JSON wrapped in markdown code fence", () => {
-      const fenced = "\`\`\`json\n" + validJson + "\n\`\`\`";
-      const parsed = parseEnrichmentBatchResponse(fenced, expectedKeys);
-      expect(parsed).not.toBeNull();
-      expect(parsed?.length).toBe(2);
+      const fenced = "```json\n" + validJson + "\n```";
+      const result = parseEnrichmentBatchResponse(fenced, expectedKeys);
+      expect(result.parseFailure).toBe(false);
+      expect(result.validEnrichments.length).toBe(2);
     });
 
-    test("non-JSON string returns null", () => {
-      expect(parseEnrichmentBatchResponse("Hello world", expectedKeys)).toBeNull();
+    test("non-JSON string returns parseFailure=true", () => {
+      const result = parseEnrichmentBatchResponse("Hello world", expectedKeys);
+      expect(result.parseFailure).toBe(true);
     });
 
-    test("array length mismatch returns null", () => {
-      expect(parseEnrichmentBatchResponse(validJson, ["key1"])).toBeNull(); // expected 1, got 2
+    test("array length mismatch is tolerated (partial success)", () => {
+      const result = parseEnrichmentBatchResponse(validJson, ["key1"]);
+      // validJson has key1 and key2. key1 is in expected, key2 is not.
+      // So key1 is accepted, key2 is rejected.
+      expect(result.validEnrichments.length).toBe(1);
+      expect(result.rejectedCount).toBe(1);
     });
 
-    test("invalid businessFunction returns null", () => {
+    test("invalid businessFunction is rejected as row failure", () => {
       const invalid = validJson.replace('"engineering"', '"coding"');
-      expect(parseEnrichmentBatchResponse(invalid, expectedKeys)).toBeNull();
+      const result = parseEnrichmentBatchResponse(invalid, expectedKeys);
+      expect(result.validEnrichments.length).toBe(1); // key2 is still valid
+      expect(result.rejectedCount).toBe(1);
     });
 
-    test("invalid seniority returns null", () => {
+    test("invalid seniority is rejected as row failure", () => {
       const invalid = validJson.replace('"senior"', '"super_senior"');
-      expect(parseEnrichmentBatchResponse(invalid, expectedKeys)).toBeNull();
+      const result = parseEnrichmentBatchResponse(invalid, expectedKeys);
+      expect(result.validEnrichments.length).toBe(1);
+      expect(result.rejectedCount).toBe(1);
     });
 
-    test("roleKey not in expected set returns null", () => {
-      expect(parseEnrichmentBatchResponse(validJson, ["key1", "key3"])).toBeNull();
+    test("roleKey not in expected set is rejected as row failure", () => {
+      const result = parseEnrichmentBatchResponse(validJson, ["key1", "key3"]);
+      expect(result.validEnrichments.length).toBe(1); // key1 matches
+      expect(result.rejectedCount).toBe(1); // key2 does not match key1 or key3
     });
 
-    test("strategicTags length > 3 returns null", () => {
+    test("strategicTags length > 3 is rejected", () => {
       const invalid = validJson.replace('["backend", "scala"]', '["1", "2", "3", "4"]');
-      expect(parseEnrichmentBatchResponse(invalid, expectedKeys)).toBeNull();
+      const result = parseEnrichmentBatchResponse(invalid, expectedKeys);
+      expect(result.validEnrichments.length).toBe(1);
+      expect(result.rejectedCount).toBe(1);
     });
 
-    test("empty evidenceReason returns null", () => {
+    test("empty evidenceReason is rejected", () => {
       const invalid = validJson.replace('"Backend engineer role."', '""');
-      expect(parseEnrichmentBatchResponse(invalid, expectedKeys)).toBeNull();
+      const result = parseEnrichmentBatchResponse(invalid, expectedKeys);
+      expect(result.validEnrichments.length).toBe(1);
+      expect(result.rejectedCount).toBe(1);
     });
 
     test("confidence low is valid", () => {
       const lowConf = validJson.replace('"high"', '"low"');
-      expect(parseEnrichmentBatchResponse(lowConf, expectedKeys)).not.toBeNull();
+      const result = parseEnrichmentBatchResponse(lowConf, expectedKeys);
+      expect(result.validEnrichments.length).toBe(2);
     });
   });
 
@@ -201,25 +217,23 @@ test.describe("AI-1B: Role Enrichment", () => {
       expect(result.batchesAttempted).toBe(1);
     });
 
-    test("51 jobs -> 2 batches", async () => {
+    test("51 jobs -> 3 batches", async () => {
       const jobs = Array.from({ length: 51 }).map((_, i) => makeJob({ title: i.toString() }));
       const result = await runRoleEnrichment("TestCo", jobs);
-      expect(result.batchesAttempted).toBe(2);
+      expect(result.batchesAttempted).toBe(3); // 25 + 25 + 1
     });
 
-    test("200 jobs -> 4 batches", async () => {
+    test("200 jobs -> 8 batches", async () => {
       const jobs = Array.from({ length: 200 }).map((_, i) => makeJob({ title: i.toString() }));
       const result = await runRoleEnrichment("TestCo", jobs);
-      expect(result.batchesAttempted).toBe(4);
-      // Status depends on whether a real API key is present in the environment
-      expect(["failed", "complete"]).toContain(result.status);
+      expect(result.batchesAttempted).toBe(8); // 200 / 25
+      expect(["failed", "complete", "partial"]).toContain(result.status);
     });
 
-    test("201 jobs -> truncates to 200, 4 batches, partial status", async () => {
+    test("201 jobs -> truncates to 200, 8 batches, partial status", async () => {
       const jobs = Array.from({ length: 201 }).map((_, i) => makeJob({ title: i.toString() }));
       const result = await runRoleEnrichment("TestCo", jobs);
-      expect(result.batchesAttempted).toBe(4);
-      // If API fails, status is failed. If API succeeds, status is partial due to truncation.
+      expect(result.batchesAttempted).toBe(8);
       expect(["failed", "partial"]).toContain(result.status);
     });
   });
@@ -252,12 +266,98 @@ test.describe("AI-1B: Role Enrichment", () => {
         otherField: "value",
         roleEnrichments: undefined,
         aiRoleEnrichmentStatus: undefined,
+        aiRoleEnrichmentMeta: undefined,
       };
 
       const serialized = JSON.parse(JSON.stringify(result));
       expect(serialized).not.toHaveProperty("roleEnrichments");
       expect(serialized).not.toHaveProperty("aiRoleEnrichmentStatus");
+      expect(serialized).not.toHaveProperty("aiRoleEnrichmentMeta");
       expect(serialized.otherField).toBe("value");
+    });
+  });
+
+  test.describe("Group 6: Partial Parsing & Normalization (AI-2F)", () => {
+    const expectedKeys = ["key1", "key2", "key3"];
+    
+    test("salvages valid rows from partially malformed batch", () => {
+      const mixedJson = `
+      [
+        {
+          "roleKey": "key1",
+          "businessFunction": "engineering",
+          "businessTheme": "core_platform",
+          "seniority": "senior",
+          "strategicTags": ["backend"],
+          "evidenceReason": "Valid row.",
+          "confidence": "high"
+        },
+        {
+          "roleKey": "key2",
+          "businessFunction": "invalid_func",
+          "businessTheme": "core_platform",
+          "seniority": "mid",
+          "strategicTags": [],
+          "evidenceReason": "Invalid enum.",
+          "confidence": "medium"
+        },
+        {
+          "roleKey": "key3",
+          "businessFunction": "product",
+          "businessTheme": "product_execution",
+          "seniority": "mid",
+          "strategicTags": [],
+          "evidenceReason": "Valid row 2.",
+          "confidence": "high"
+        }
+      ]
+      `;
+      const result = parseEnrichmentBatchResponse(mixedJson, expectedKeys);
+      expect(result.validEnrichments.length).toBe(2);
+      expect(result.rejectedCount).toBe(1);
+      expect(result.parseFailure).toBe(false);
+      expect(result.validEnrichments[0].roleKey).toBe("key1");
+      expect(result.validEnrichments[1].roleKey).toBe("key3");
+    });
+
+    test("normalizes enum values (trim, case, underscores)", () => {
+      const unnormalizedJson = `
+      [
+        {
+          "roleKey": "key1",
+          "businessFunction": " Engineering ",
+          "businessTheme": "CORE-PLATFORM",
+          "seniority": " Senior ",
+          "strategicTags": [],
+          "evidenceReason": "Needs normalization.",
+          "confidence": "high"
+        }
+      ]
+      `;
+      const result = parseEnrichmentBatchResponse(unnormalizedJson, ["key1"]);
+      expect(result.validEnrichments.length).toBe(1);
+      expect(result.validEnrichments[0].businessFunction).toBe("engineering");
+      expect(result.validEnrichments[0].businessTheme).toBe("core_platform");
+      expect(result.validEnrichments[0].seniority).toBe("senior");
+    });
+
+    test("rejects hallucinated roleKeys", () => {
+      const hallucinatedJson = `
+      [
+        {
+          "roleKey": "key_unknown",
+          "businessFunction": "engineering",
+          "businessTheme": "core_platform",
+          "seniority": "senior",
+          "strategicTags": [],
+          "evidenceReason": "Unknown key.",
+          "confidence": "high"
+        }
+      ]
+      `;
+      const result = parseEnrichmentBatchResponse(hallucinatedJson, ["key1"]);
+      expect(result.validEnrichments.length).toBe(0);
+      expect(result.rejectedCount).toBe(1);
     });
   });
 });

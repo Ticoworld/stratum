@@ -6,12 +6,13 @@ import {
   type AiRoleEnrichmentBusinessFunction,
   type AiRoleEnrichmentBusinessTheme,
   type AiRoleEnrichmentSeniority,
+  type AiRoleEnrichmentMeta,
   buildEnrichmentRoleKey,
 } from "@/lib/signals/roleEnrichment";
 
-const BATCH_SIZE = 50;
+const BATCH_SIZE = 25;
 const MAX_ROLES = 200;
-const BATCH_TIMEOUT_MS = 15_000;
+const BATCH_TIMEOUT_MS = 25_000;
 
 export interface RoleEnrichmentResult {
   enrichments: Record<string, AiRoleEnrichment>;
@@ -20,6 +21,7 @@ export interface RoleEnrichmentResult {
   totalRoles: number;
   batchesAttempted: number;
   batchesFailed: number;
+  meta: AiRoleEnrichmentMeta;
 }
 
 const ALLOWED_FUNCTIONS = new Set<AiRoleEnrichmentBusinessFunction>([
@@ -39,7 +41,19 @@ const ALLOWED_SENIORITIES = new Set<AiRoleEnrichmentSeniority>([
   "executive", "leadership", "senior", "mid", "junior", "unknown"
 ]);
 
-export function parseEnrichmentBatchResponse(text: string, expectedRoleKeys: string[]): AiRoleEnrichment[] | null {
+export interface ParsedBatch {
+  validEnrichments: AiRoleEnrichment[];
+  rejectedCount: number;
+  parseFailure: boolean;
+}
+
+export function parseEnrichmentBatchResponse(text: string, expectedRoleKeys: string[]): ParsedBatch {
+  const result: ParsedBatch = {
+    validEnrichments: [],
+    rejectedCount: 0,
+    parseFailure: false,
+  };
+
   try {
     let jsonString = text.trim();
     const jsonBlockMatch = jsonString.match(/```json\s*([\s\S]*?)\s*```/);
@@ -54,26 +68,65 @@ export function parseEnrichmentBatchResponse(text: string, expectedRoleKeys: str
     }
 
     const parsed = JSON.parse(jsonString);
-    if (!Array.isArray(parsed)) return null;
-    if (parsed.length !== expectedRoleKeys.length) return null;
+    if (!Array.isArray(parsed)) {
+      result.parseFailure = true;
+      return result;
+    }
 
     const expectedKeysSet = new Set(expectedRoleKeys);
     
     for (const entry of parsed) {
-      if (!entry || typeof entry !== "object") return null;
-      if (typeof entry.roleKey !== "string" || !expectedKeysSet.has(entry.roleKey)) return null;
-      if (!ALLOWED_FUNCTIONS.has(entry.businessFunction)) return null;
-      if (!ALLOWED_THEMES.has(entry.businessTheme)) return null;
-      if (!ALLOWED_SENIORITIES.has(entry.seniority)) return null;
-      if (entry.confidence !== "high" && entry.confidence !== "medium" && entry.confidence !== "low") return null;
+      if (!entry || typeof entry !== "object") {
+        result.rejectedCount++;
+        continue;
+      }
+
+      if (typeof entry.roleKey !== "string" || !expectedKeysSet.has(entry.roleKey)) {
+        result.rejectedCount++;
+        continue;
+      }
+
+      // AI-2F: Enum normalization
+      const normalizeEnum = (val: unknown) => String(val || "").trim().toLowerCase().replace(/[\s-]/g, "_");
       
-      if (!Array.isArray(entry.strategicTags) || entry.strategicTags.length > 3) return null;
-      if (typeof entry.evidenceReason !== "string" || entry.evidenceReason.trim().length === 0) return null;
+      const businessFunction = normalizeEnum(entry.businessFunction) as AiRoleEnrichmentBusinessFunction;
+      const businessTheme = normalizeEnum(entry.businessTheme) as AiRoleEnrichmentBusinessTheme;
+      const seniority = normalizeEnum(entry.seniority) as AiRoleEnrichmentSeniority;
+
+      if (!ALLOWED_FUNCTIONS.has(businessFunction) || 
+          !ALLOWED_THEMES.has(businessTheme) || 
+          !ALLOWED_SENIORITIES.has(seniority)) {
+        result.rejectedCount++;
+        continue;
+      }
+
+      if (entry.confidence !== "high" && entry.confidence !== "medium" && entry.confidence !== "low") {
+        result.rejectedCount++;
+        continue;
+      }
+      
+      if (!Array.isArray(entry.strategicTags) || entry.strategicTags.length > 3) {
+        result.rejectedCount++;
+        continue;
+      }
+
+      if (typeof entry.evidenceReason !== "string" || entry.evidenceReason.trim().length === 0) {
+        result.rejectedCount++;
+        continue;
+      }
+
+      result.validEnrichments.push({
+        ...entry,
+        businessFunction,
+        businessTheme,
+        seniority,
+      });
     }
 
-    return parsed as AiRoleEnrichment[];
+    return result;
   } catch {
-    return null;
+    result.parseFailure = true;
+    return result;
   }
 }
 
@@ -103,27 +156,31 @@ export async function runRoleEnrichment(
 ): Promise<RoleEnrichmentResult> {
   const isEnabled = process.env.STRATUM_ENABLE_ROLE_ENRICHMENT === "1";
   
-  if (!isEnabled || jobs.length === 0 || !isGeminiAvailable() || process.env.STRATUM_E2E_DISABLE_GEMINI === "1") {
-    return {
-      enrichments: {},
-      status: "disabled",
+  const emptyResult = (status: AiRoleEnrichmentStatus): RoleEnrichmentResult => ({
+    enrichments: {},
+    status,
+    enrichedCount: 0,
+    totalRoles: jobs.length,
+    batchesAttempted: 0,
+    batchesFailed: 0,
+    meta: {
+      attemptedCount: 0,
       enrichedCount: 0,
-      totalRoles: jobs.length,
-      batchesAttempted: 0,
-      batchesFailed: 0,
-    };
+      failedBatchCount: 0,
+      parseFailureCount: 0,
+      rejectedRowCount: 0,
+      truncated: false,
+      batchSize: BATCH_SIZE,
+    },
+  });
+
+  if (!isEnabled || jobs.length === 0 || !isGeminiAvailable() || process.env.STRATUM_E2E_DISABLE_GEMINI === "1") {
+    return emptyResult("disabled");
   }
 
   const client = getGeminiClient();
   if (!client) {
-    return {
-      enrichments: {},
-      status: "disabled",
-      enrichedCount: 0,
-      totalRoles: jobs.length,
-      batchesAttempted: 0,
-      batchesFailed: 0,
-    };
+    return emptyResult("disabled");
   }
 
   const enrichments: Record<string, AiRoleEnrichment> = {};
@@ -143,14 +200,16 @@ export async function runRoleEnrichment(
     location: job.location || "",
   }));
 
-  const chunks: typeof jobInputs[] = [];
+  const initialChunks: typeof jobInputs[] = [];
   for (let i = 0; i < jobInputs.length; i += BATCH_SIZE) {
-    chunks.push(jobInputs.slice(i, i + BATCH_SIZE));
+    initialChunks.push(jobInputs.slice(i, i + BATCH_SIZE));
   }
 
   let batchesFailed = 0;
+  let parseFailureCount = 0;
+  let rejectedRowCount = 0;
 
-  for (const chunk of chunks) {
+  async function processBatch(chunk: typeof jobInputs, isRetry = false): Promise<boolean> {
     const expectedKeys = chunk.map(j => j.roleKey);
     const prompt = buildPrompt(companyName, chunk);
 
@@ -158,7 +217,7 @@ export async function runRoleEnrichment(
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), BATCH_TIMEOUT_MS);
       
-      const response = await client.models.generateContent({
+      const response = await client!.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: prompt,
         config: {
@@ -171,38 +230,71 @@ export async function runRoleEnrichment(
 
       const text = response.text;
       if (!text) {
-        batchesFailed++;
-        console.warn(`[Stratum AI-1B] Empty text response from Gemini`);
-        continue;
+        console.warn(`[Stratum AI-2F] Empty response from Gemini (retry=${isRetry})`);
+        return false;
       }
 
       const parsed = parseEnrichmentBatchResponse(text, expectedKeys);
-      if (!parsed) {
-        batchesFailed++;
-        console.warn(`[Stratum AI-1B] Failed to parse JSON batch`);
-        continue;
+      if (parsed.parseFailure) {
+        parseFailureCount++;
+        console.warn(`[Stratum AI-2F] JSON parse failure (retry=${isRetry})`);
+        return false;
       }
 
-      for (const entry of parsed) {
-        // Echo the original title to avoid hallucinated titles
+      rejectedRowCount += parsed.rejectedCount;
+
+      if (parsed.validEnrichments.length === 0 && chunk.length > 0) {
+        console.warn(`[Stratum AI-2F] Zero valid rows recovered from batch (retry=${isRetry})`);
+        return false;
+      }
+
+      for (const entry of parsed.validEnrichments) {
         const originalJob = chunk.find(j => j.roleKey === entry.roleKey);
         if (originalJob) {
           entry.title = originalJob.title;
         }
         enrichments[entry.roleKey] = entry;
       }
-    } catch {
+
+      return true;
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.warn(`[Stratum AI-2F] Gemini API call failed (retry=${isRetry}): ${message}`);
+      return false;
+    }
+  }
+
+  for (const chunk of initialChunks) {
+    const success = await processBatch(chunk);
+    
+    if (!success) {
+      // AI-2F: Retry once with smaller chunks if the main batch failed
       batchesFailed++;
-      console.warn(`[Stratum AI-1B] Gemini API call failed for batch`);
+      console.log(`[Stratum AI-2F] Batch failed. Attempting retry with sub-chunks...`);
+      
+      const subChunks: typeof jobInputs[] = [];
+      const SUB_BATCH_SIZE = Math.ceil(BATCH_SIZE / 2);
+      for (let i = 0; i < chunk.length; i += SUB_BATCH_SIZE) {
+        subChunks.push(chunk.slice(i, i + SUB_BATCH_SIZE));
+      }
+
+      for (const subChunk of subChunks) {
+        const subSuccess = await processBatch(subChunk, true);
+        if (!subSuccess) {
+          // We don't increment batchesFailed again for sub-chunks to avoid double counting
+          // but we do log it.
+          console.warn(`[Stratum AI-2F] Sub-chunk retry failed.`);
+        }
+      }
     }
   }
 
   const enrichedCount = Object.keys(enrichments).length;
   let status: AiRoleEnrichmentStatus = "complete";
   
-  if (batchesFailed === chunks.length) {
+  if (batchesFailed === initialChunks.length && enrichedCount === 0) {
     status = "failed";
-  } else if (batchesFailed > 0 || truncated) {
+  } else if (batchesFailed > 0 || truncated || enrichedCount < jobInputs.length) {
     status = "partial";
   }
 
@@ -211,7 +303,16 @@ export async function runRoleEnrichment(
     status,
     enrichedCount,
     totalRoles: jobs.length,
-    batchesAttempted: chunks.length,
+    batchesAttempted: initialChunks.length,
     batchesFailed,
+    meta: {
+      attemptedCount: jobInputs.length,
+      enrichedCount,
+      failedBatchCount: batchesFailed,
+      parseFailureCount,
+      rejectedRowCount,
+      truncated,
+      batchSize: BATCH_SIZE,
+    },
   };
 }
