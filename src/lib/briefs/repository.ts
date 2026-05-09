@@ -101,32 +101,54 @@ export async function createStratumBrief(result: StratumResult): Promise<Stratum
   const briefId = randomUUID();
   const snapshot = buildBriefSnapshot(result, briefId);
 
-  await db.insert(stratumBriefs).values({
-    id: snapshot.id,
-    watchlistEntryId: snapshot.watchlistEntryId,
-    queriedCompanyName: snapshot.queriedCompanyName,
-    matchedCompanyName: snapshot.matchedCompanyName,
-    atsSourceUsed: snapshot.atsSourceUsed,
-    resultState: snapshot.resultState,
-    companyMatchConfidence: snapshot.companyMatchConfidence,
-    companyMatchExplanation: snapshot.companyMatchExplanation,
-    sourceCoverageCompleteness: snapshot.sourceCoverageCompleteness,
-    sourceCoverageExplanation: snapshot.sourceCoverageExplanation,
-    watchlistReadLabel: snapshot.watchlistReadLabel,
-    watchlistReadSummary: snapshot.watchlistReadSummary,
-    watchlistReadConfidence: snapshot.watchlistReadConfidence,
-    watchlistReadExplanation: snapshot.watchlistReadExplanation,
-    proofRoleGrounding: snapshot.proofRoleGrounding,
-    proofRoleGroundingExplanation: snapshot.proofRoleGroundingExplanation,
-    jobsObservedCount: snapshot.jobsObservedCount,
-    proofRolesSnapshot: sanitizeJson(snapshot.proofRolesSnapshot),
-    limitsSnapshot: sanitizeJson(snapshot.limitsSnapshot),
-    resultSnapshot: sanitizeJson(snapshot.resultSnapshot),
-    unsupportedSourcePattern: snapshot.unsupportedSourcePattern,
-    providerFailures: snapshot.providerFailures,
-  });
-
-  return snapshot;
+  // Retry once on CONNECTION_CLOSED — can happen when enrichment keeps the
+  // request alive for several minutes and the Neon pooler silently drops the socket.
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await db.insert(stratumBriefs).values({
+        id: snapshot.id,
+        watchlistEntryId: snapshot.watchlistEntryId,
+        queriedCompanyName: snapshot.queriedCompanyName,
+        matchedCompanyName: snapshot.matchedCompanyName,
+        atsSourceUsed: snapshot.atsSourceUsed,
+        resultState: snapshot.resultState,
+        companyMatchConfidence: snapshot.companyMatchConfidence,
+        companyMatchExplanation: snapshot.companyMatchExplanation,
+        sourceCoverageCompleteness: snapshot.sourceCoverageCompleteness,
+        sourceCoverageExplanation: snapshot.sourceCoverageExplanation,
+        watchlistReadLabel: snapshot.watchlistReadLabel,
+        watchlistReadSummary: snapshot.watchlistReadSummary,
+        watchlistReadConfidence: snapshot.watchlistReadConfidence,
+        watchlistReadExplanation: snapshot.watchlistReadExplanation,
+        proofRoleGrounding: snapshot.proofRoleGrounding,
+        proofRoleGroundingExplanation: snapshot.proofRoleGroundingExplanation,
+        jobsObservedCount: snapshot.jobsObservedCount,
+        proofRolesSnapshot: sanitizeJson(snapshot.proofRolesSnapshot),
+        limitsSnapshot: sanitizeJson(snapshot.limitsSnapshot),
+        resultSnapshot: sanitizeJson(snapshot.resultSnapshot),
+        unsupportedSourcePattern: snapshot.unsupportedSourcePattern,
+        providerFailures: snapshot.providerFailures,
+      });
+      return snapshot;
+    } catch (err: unknown) {
+      lastError = err;
+      const code = (err as { code?: string })?.code;
+      const cause = (err as { cause?: { code?: string } })?.cause;
+      const isConnectionError =
+        code === "CONNECTION_CLOSED" ||
+        cause?.code === "CONNECTION_CLOSED" ||
+        (err instanceof Error && err.message.includes("CONNECTION_CLOSED"));
+      if (isConnectionError && attempt === 0) {
+        console.warn("[Stratum DB] CONNECTION_CLOSED on brief insert — retrying once after reconnect...");
+        // Small pause to let the driver establish a fresh connection
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
 }
 
 function mapBriefRowToSnapshot(row: typeof stratumBriefs.$inferSelect): StratumBriefSnapshot {
