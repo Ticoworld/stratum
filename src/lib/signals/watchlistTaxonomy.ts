@@ -12,6 +12,8 @@ export type WatchlistSignalCategory =
   | "data_ai"
   | "leadership"
   | "multi_location"
+  | "broad_platform_gtm"
+  | "broad_multi_function"
   | "mixed"
   | "limited"
   | "thin"
@@ -25,6 +27,8 @@ export type ApprovedWatchlistLabel =
   | "Data and AI signal"
   | "Leadership hiring signal"
   | "Multi-location hiring signal"
+  | "Broad platform and GTM hiring signal"
+  | "Broad multi-function hiring signal"
   | "Mixed hiring signal"
   | "Limited hiring signal"
   | "Thin hiring signal"
@@ -94,6 +98,14 @@ export const APPROVED_WATCHLIST_SIGNAL_TAXONOMY: Array<{
     label: "Multi-location hiring signal",
   },
   {
+    category: "broad_platform_gtm",
+    label: "Broad platform and GTM hiring signal",
+  },
+  {
+    category: "broad_multi_function",
+    label: "Broad multi-function hiring signal",
+  },
+  {
     category: "mixed",
     label: "Mixed hiring signal",
   },
@@ -154,6 +166,8 @@ const SIGNAL_LABELS: Record<Exclude<WatchlistSignalCategory, "multi_location" | 
     security_compliance: "Security and compliance signal",
     data_ai: "Data and AI signal",
     leadership: "Leadership hiring signal",
+    broad_platform_gtm: "Broad platform and GTM hiring signal",
+    broad_multi_function: "Broad multi-function hiring signal",
   };
 
 function formatSourceLabel(source?: JobBoardSource | null): string {
@@ -416,6 +430,24 @@ export function deriveApprovedWatchlistLabel(args: {
     return "Multi-location hiring signal";
   }
 
+  // --- Scale-Aware Label Logic (Phase 6A-2) ---
+  const isLargeBoard = jobs.length >= 60;
+  const isGiantBoard = jobs.length >= 200;
+
+  if (isLargeBoard) {
+    // For large boards, do not allow the plurality shortcut (count >= 3) to create narrow labels.
+    // Require a strong dominant ratio.
+    const requiredRatio = isGiantBoard ? 0.7 : 0.65;
+
+    if (dominant.signal !== "unclassified" && dominant.count >= 2 && dominant.ratio >= requiredRatio) {
+      return SIGNAL_LABELS[dominant.signal as keyof typeof SIGNAL_LABELS];
+    }
+
+    // If no narrow signal clears the high threshold, use aggregate family logic.
+    return deriveLargeBoardLabelFromSignalCounts(jobs);
+  }
+
+  // --- Small Board Logic (Legacy Preservation) ---
   if (
     dominant.signal !== "unclassified" &&
     dominant.count >= 2 &&
@@ -433,6 +465,41 @@ export function deriveApprovedWatchlistLabel(args: {
   }
 
   return "Mixed hiring signal";
+}
+
+/**
+ * Aggregates functional signals into broader families to derive a useful label
+ * for large boards that lack a single overwhelming dominant signal.
+ */
+function deriveLargeBoardLabelFromSignalCounts(jobs: Job[]): ApprovedWatchlistLabel {
+  const counts = getSignalCounts(jobs);
+  const total = jobs.length;
+
+  // Families
+  const technicalCount = 
+    counts.platform_infrastructure + 
+    counts.data_ai + 
+    counts.product_engineering_buildout;
+  
+  const commercialCount = counts.go_to_market;
+
+  const technicalRatio = technicalCount / total;
+  const commercialRatio = commercialCount / total;
+
+  // Thresholds for "meaningfully present"
+  const isGiant = total >= 200;
+  const techThreshold = isGiant ? 0.20 : 0.15;
+  const gtmThreshold = isGiant ? 0.15 : 0.10;
+  const minRoles = 15;
+
+  const isTechMeaningful = technicalCount >= minRoles || technicalRatio >= techThreshold;
+  const isGtmMeaningful = commercialCount >= minRoles || commercialRatio >= gtmThreshold;
+
+  if (isTechMeaningful && isGtmMeaningful) {
+    return "Broad platform and GTM hiring signal";
+  }
+
+  return "Broad multi-function hiring signal";
 }
 
 /**
@@ -544,6 +611,10 @@ function getLabelSuggestionSentence(
       return "The current board state is too thin for a confirmed functional read.";
     case "Tentative hiring signal":
       return "There is a visible hiring signal, but the match or evidence is currently tentative.";
+    case "Broad platform and GTM hiring signal":
+      return "Visible roles span both technical platform and commercial functions at scale.";
+    case "Broad multi-function hiring signal":
+      return "The current board reflects broad hiring across several functional areas of the organization.";
   }
 }
 
@@ -705,7 +776,9 @@ export function deriveCurrentSignalStrength(args: {
   if (
     args.label === "Mixed hiring signal" ||
     args.label === "Limited hiring signal" ||
-    args.label === "Multi-location hiring signal"
+    args.label === "Multi-location hiring signal" ||
+    args.label === "Broad platform and GTM hiring signal" ||
+    args.label === "Broad multi-function hiring signal"
   ) {
     caveats.push(`The "${args.label}" is broad or non-concentrated.`);
   }
