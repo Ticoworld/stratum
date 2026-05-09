@@ -9,6 +9,7 @@ import { getWatchlistBriefReplayContext } from "@/lib/watchlists/repository";
 import { 
   deriveBriefPublicReadiness, 
   buildApprovedWatchlistSummary,
+  buildWhyThisMattersInterpretation,
   type ApprovedWatchlistLabel, 
   type WatchlistConfidenceLevel, 
   type WatchlistProofGrounding,
@@ -94,44 +95,28 @@ function getNotableOpenings(roles: any[]) {
   });
 }
 
+/**
+ * Thin adapter: delegates to buildWhyThisMattersInterpretation.
+ * Kept here so call sites in this file are unchanged.
+ */
 function getInterpretation(
-  hiringMix: [string, number][], 
-  rawExplanation: string, 
+  hiringMix: [string, number][],
+  // rawExplanation was used for AI-generated copy which is no longer needed
+  _rawExplanation: string,
   confidence: string,
   totalObserved: number,
-  hasPriorComparison: boolean
+  hasPriorComparison: boolean,
+  signalClusters?: import("@/lib/signals/roleEnrichment").AiSignalCluster[],
+  proofRoleKeys?: string[]
 ): string {
-  // Strip pipeline language aggressively
-  const systemKeywords = /\b(read confidence|grounding|proof|timestamp|match|direct|exact|provider|matched|confidence)\b/gi;
-  let interpretation = rawExplanation.split(/[.!?]/).filter(s => !systemKeywords.test(s)).join(". ").trim();
-  
-  if (interpretation.length < 20) {
-    // Synthesize grounded interpretation if the explanation is thin or system-heavy
-    const topBuckets = hiringMix.slice(0, 3).map(([b]) => b.toLowerCase());
-    if (topBuckets.length === 0) return "No clear functional hiring pattern is visible from the current board.";
-    
-    const focus = topBuckets.join(", ");
-    
-    if (totalObserved < 5 || confidence === "low" || confidence === "none") {
-      return `Visible openings currently lean toward ${focus} roles, though the total evidence is currently too thin for a high-confidence read of organizational strategy.`;
-    }
-    
-    if (!hasPriorComparison) {
-      return `Visible hiring is currently weighted toward ${focus} roles. As this is a baseline read, these observations represent the current board state rather than a change in strategy.`;
-    }
-
-    return `Visible hiring is currently weighted toward ${focus} roles across the organization.`;
-  }
-  
-  // Clean aggressive words from AI explanation if they survived the filter
-  interpretation = interpretation
-    .replace(/\b(continued|coordinated)\b/gi, "visible")
-    .replace(/\bexpansion\b/gi, "activity")
-    .replace(/\b(confirmed|confirms|proves|betting on)\b/gi, "points toward")
-    .replace(/\bdoubling down\b/gi, "increasing focus")
-    .replace(/\b(isolated backfill|strategic pivot|aggressive push)\b/gi, "current hiring focus");
-
-  return interpretation.endsWith(".") ? interpretation : interpretation + ".";
+  return buildWhyThisMattersInterpretation({
+    hiringMix,
+    totalObserved,
+    confidence,
+    hasPriorComparison,
+    signalClusters,
+    proofRoleKeys,
+  });
 }
 
 // --- Components ---
@@ -231,11 +216,13 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
 
   const summarySentences = splitIntoSentences(dynamicSummary);
   const interpretationSentences = splitIntoSentences(getInterpretation(
-    hiringMix, 
-    brief.watchlistReadExplanation, 
+    hiringMix,
+    brief.watchlistReadExplanation,
     brief.watchlistReadConfidence,
     observedCount,
-    !!monitoring?.comparisonAvailable
+    !!monitoring?.comparisonAvailable,
+    brief.resultSnapshot?.signalClusters,
+    proofRoleKeys.length > 0 ? proofRoleKeys : undefined,
   ));
   const readiness = deriveBriefPublicReadiness({
     jobsCount: observedCount,
@@ -400,7 +387,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                       ))
                     ) : (
                       <p className="text-[14px] leading-6" style={{ color: "var(--foreground-secondary)" }}>
-                        {getInterpretation(hiringMix, brief.watchlistReadExplanation, brief.watchlistReadConfidence, observedCount, !!monitoring?.comparisonAvailable)}
+                        {getInterpretation(hiringMix, brief.watchlistReadExplanation, brief.watchlistReadConfidence, observedCount, !!monitoring?.comparisonAvailable, brief.resultSnapshot?.signalClusters, proofRoleKeys.length > 0 ? proofRoleKeys : undefined)}
                       </p>
                     )}
                   </div>

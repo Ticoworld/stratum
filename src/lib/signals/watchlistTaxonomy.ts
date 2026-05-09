@@ -819,3 +819,127 @@ export function deriveBriefPublicReadiness(args: {
     publicUse,
   };
 }
+
+// ---------------------------------------------------------------------------
+// AI-2H: Why-This-Matters Interpretation (public-safe wording)
+// ---------------------------------------------------------------------------
+
+/**
+ * Maps raw hiring-mix bucket names (from mapToFunctionalBucket in page.tsx)
+ * to clean, public-facing labels.
+ *
+ * Rules:
+ *  - "Other"      → null  (callers drop null entries; falls back to cluster
+ *                           language or "broader execution roles" if needed)
+ *  - "Sales"      → "go-to-market"
+ *  - everything else → lowercased as-is
+ */
+function toPublicBucketLabel(bucket: string): string | null {
+  const normalised = bucket.trim();
+  if (normalised === "Other") return null;
+  if (normalised === "Sales") return "go-to-market";
+  return normalised.toLowerCase();
+}
+
+/**
+ * Builds the "Why this matters" interpretation sentence for a brief.
+ *
+ * Priority order:
+ *  1. Cluster-aware sentence when qualifying clusters exist (roleCount >= 2,
+ *     confidence high|medium, sorted by scoreClusterForSummary).
+ *  2. Hiring-mix sentence using public-safe bucket labels (no "other roles").
+ *  3. Conservative thin-evidence fallback.
+ *
+ * @param args.hiringMix       Sorted [bucketName, count][] from getHiringMix()
+ * @param args.totalObserved   Total roles observed (for thin-evidence gate)
+ * @param args.confidence      watchlistReadConfidence level
+ * @param args.hasPriorComparison  Whether a prior snapshot exists for comparison
+ * @param args.signalClusters  Optional enriched clusters (used for cluster-aware wording)
+ * @param args.proofRoleKeys   Optional proof-role keys (forwarded to cluster scoring)
+ */
+export function buildWhyThisMattersInterpretation(args: {
+  hiringMix: [string, number][];
+  totalObserved: number;
+  confidence: string;
+  hasPriorComparison: boolean;
+  signalClusters?: AiSignalCluster[];
+  proofRoleKeys?: string[];
+}): string {
+  const { hiringMix, totalObserved, confidence, hasPriorComparison, signalClusters, proofRoleKeys } = args;
+
+  // --- Gate: thin evidence → always use the conservative fallback ---
+  if (totalObserved < 5 || confidence === "low" || confidence === "none") {
+    const topRaw = hiringMix
+      .slice(0, 2)
+      .map(([b]) => toPublicBucketLabel(b))
+      .filter((l): l is string => l !== null);
+    const focus = topRaw.length > 0 ? topRaw.join(" and ") : "broader execution";
+    return `Visible openings currently lean toward ${focus} roles, though the total evidence is currently too thin for a high-confidence read of organizational strategy.`;
+  }
+
+  // --- Option 1: cluster-aware wording (preferred when clusters available) ---
+  if (signalClusters && signalClusters.length > 0) {
+    const validClusters = signalClusters
+      .filter((c) => c.roleCount >= 2 && (c.confidence === "high" || c.confidence === "medium"))
+      .sort((a, b) => {
+        const sA = scoreClusterForSummary(a, { proofRoleKeys });
+        const sB = scoreClusterForSummary(b, { proofRoleKeys });
+        if (sB !== sA) return sB - sA;
+        return b.roleCount - a.roleCount;
+      })
+      .slice(0, 3);
+
+    if (validClusters.length > 0) {
+      const labels = validClusters.map((c) => c.label.toLowerCase().replace("&", "and"));
+      let clusterSentence: string;
+      if (labels.length === 1) {
+        clusterSentence = `The current board is strongest around ${labels[0]} work.`;
+      } else if (labels.length === 2) {
+        clusterSentence = `The current board is strongest around ${labels[0]} and ${labels[1]} work.`;
+      } else {
+        clusterSentence = `The current board is strongest around ${labels[0]}, ${labels[1]}, and ${labels[2]} work.`;
+      }
+
+      if (!hasPriorComparison) {
+        return `${clusterSentence} As this is a baseline read, these observations represent the current board state rather than a change in strategy.`;
+      }
+      return clusterSentence;
+    }
+  }
+
+  // --- Option 2: hiring-mix wording with public-safe bucket labels ---
+  // Filter out "Other"; if all top buckets were "Other", use a safe fallback term.
+  const originalTop3 = hiringMix.slice(0, 3).map(([b]) => b);
+  const publicLabels = originalTop3
+    .map((b) => toPublicBucketLabel(b))
+    .filter((l): l is string => l !== null);
+
+  if (publicLabels.length === 0) {
+    // Every top bucket was "Other" — use the generic fallback
+    if (!hasPriorComparison) {
+      return "Visible hiring reflects a mix of functional roles. As this is a baseline read, these observations represent the current board state rather than a change in strategy.";
+    }
+    return "Visible hiring reflects a mix of functional roles across the organization.";
+  }
+
+  // If "Other" was stripped from top-3, pad with "broader execution roles" so
+  // the sentence still acknowledges the remaining unclassified activity.
+  const hadOtherInTop3 = originalTop3.includes("Other");
+  const labelsToUse =
+    hadOtherInTop3 && publicLabels.length < originalTop3.length
+      ? [...publicLabels, "broader execution roles"].slice(0, 3)
+      : publicLabels;
+
+  const focus =
+    labelsToUse.length === 1
+      ? labelsToUse[0]
+      : labelsToUse.length === 2
+        ? `${labelsToUse[0]} and ${labelsToUse[1]}`
+        : `${labelsToUse[0]}, ${labelsToUse[1]}, and ${labelsToUse[2]}`;
+
+  if (!hasPriorComparison) {
+    return `Visible hiring is currently weighted toward ${focus} roles. As this is a baseline read, these observations represent the current board state rather than a change in strategy.`;
+  }
+
+  return `Visible hiring is currently weighted toward ${focus} roles across the organization.`;
+}

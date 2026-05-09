@@ -3,6 +3,7 @@ import { test, expect } from "@playwright/test";
 import { 
   buildApprovedWatchlistSummary, 
   buildClusterAwareSignalSentence,
+  buildWhyThisMattersInterpretation,
   type ApprovedWatchlistLabel,
   type WatchlistConfidenceLevel,
   type WatchlistProofGrounding
@@ -341,5 +342,221 @@ test.describe("AI-2G-A: scoreClusterForSummary", () => {
     expect(OLD_WORDING).not.toBe(NEW_WORDING);
     expect(NEW_WORDING).toContain("examples from the observed board");
     expect(NEW_WORDING).not.toContain("prioritizes variety");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AI-2H: Why-This-Matters Public-Safe Wording
+// ---------------------------------------------------------------------------
+
+test.describe("AI-2H: buildWhyThisMattersInterpretation", () => {
+
+  function makeCluster(
+    theme: string,
+    roleCount: number,
+    functions: string[] = [],
+    confidence: "high" | "medium" | "low" = "high"
+  ): AiSignalCluster {
+    return {
+      clusterKey: `theme::${theme}`,
+      label: theme.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+      roleKeys: [],
+      roleCount,
+      businessThemes: [theme as AiSignalCluster["businessThemes"][0]],
+      functions: functions as AiSignalCluster["functions"],
+      strategicTags: [],
+      evidenceReason: "",
+      confidence,
+    };
+  }
+
+  // A. Top hiring mix includes "Other" — must not appear in public copy
+  test("A. Other bucket is never emitted in public copy", () => {
+    const hiringMix: [string, number][] = [
+      ["Engineering", 32],
+      ["Operations", 15],
+      ["Other", 14],
+    ];
+    const result = buildWhyThisMattersInterpretation({
+      hiringMix,
+      totalObserved: 61,
+      confidence: "high",
+      hasPriorComparison: false,
+    });
+
+    expect(result).not.toContain("other roles");
+    expect(result).not.toContain("Other roles");
+    expect(result).not.toContain(", other");
+    expect(result).not.toContain("other,");
+    // Should still mention the named buckets
+    expect(result).toContain("engineering");
+    expect(result).toContain("operations");
+  });
+
+  // A2. "Other" at position 1 (dominant) — should replace with "broader execution roles"
+  test("A2. Other in top-3 is replaced with broader execution roles", () => {
+    const hiringMix: [string, number][] = [
+      ["Engineering", 32],
+      ["Operations", 15],
+      ["Other", 14],
+    ];
+    const result = buildWhyThisMattersInterpretation({
+      hiringMix,
+      totalObserved: 61,
+      confidence: "high",
+      hasPriorComparison: true,
+    });
+
+    // "Other" is gone, "broader execution roles" fills the gap
+    expect(result).toContain("broader execution roles");
+    expect(result).not.toContain("other");
+  });
+
+  // B. No clusters, all top buckets are "Other" → safe generic fallback
+  test("B. All-Other mix with no clusters falls back to generic sentence", () => {
+    const hiringMix: [string, number][] = [
+      ["Other", 30],
+      ["Other", 10], // duplicates are degenerate but should be safe
+    ];
+    const result = buildWhyThisMattersInterpretation({
+      hiringMix,
+      totalObserved: 40,
+      confidence: "high",
+      hasPriorComparison: false,
+    });
+
+    expect(result).not.toContain("other roles");
+    expect(result).not.toContain("Other roles");
+    // Generic fallback or "broader execution roles"
+    expect(
+      result.includes("mix of functional roles") || result.includes("broader execution")
+    ).toBe(true);
+  });
+
+  // C. Clusters available → Why-this-matters uses cluster-aware wording
+  test("C. Clusters override raw bucket wording", () => {
+    const hiringMix: [string, number][] = [
+      ["Engineering", 20],
+      ["Other", 12],
+      ["Operations", 8],
+    ];
+    const clusters: AiSignalCluster[] = [
+      makeCluster("risk_and_compliance", 9),
+      makeCluster("core_platform", 17),
+      makeCluster("product_execution", 11),
+    ];
+    const result = buildWhyThisMattersInterpretation({
+      hiringMix,
+      totalObserved: 40,
+      confidence: "high",
+      hasPriorComparison: false,
+      signalClusters: clusters,
+    });
+
+    // Should use cluster-aware wording
+    expect(result).toContain("strongest around");
+    // Should not use raw bucket labels or "other"
+    expect(result).not.toContain("other roles");
+    expect(result).not.toContain("other,");
+    // Should include the baseline caveat
+    expect(result).toContain("baseline read");
+  });
+
+  // D. Baseline safety — sentence acknowledges current board state, not strategy change
+  test("D. Baseline wording is correct when no prior comparison exists", () => {
+    const hiringMix: [string, number][] = [
+      ["Engineering", 30],
+      ["Product", 15],
+      ["Sales", 10],
+    ];
+    const result = buildWhyThisMattersInterpretation({
+      hiringMix,
+      totalObserved: 55,
+      confidence: "high",
+      hasPriorComparison: false,
+    });
+
+    expect(result).toContain("baseline read");
+    expect(result).toContain("current board state");
+    expect(result).not.toContain("strategy changed");
+    expect(result).not.toContain("confirmed expansion");
+  });
+
+  // D2. With prior comparison — no baseline caveat
+  test("D2. With prior comparison, baseline caveat is omitted", () => {
+    const hiringMix: [string, number][] = [
+      ["Engineering", 30],
+      ["Product", 15],
+    ];
+    const result = buildWhyThisMattersInterpretation({
+      hiringMix,
+      totalObserved: 45,
+      confidence: "high",
+      hasPriorComparison: true,
+    });
+
+    expect(result).not.toContain("baseline read");
+  });
+
+  // E. Product-execution caution — cluster is present but small; wording should not say dominates
+  test("E. Product execution cluster does not dominate when count is small", () => {
+    const hiringMix: [string, number][] = [
+      ["Engineering", 40],
+      ["Operations", 20],
+      ["Product", 5],
+    ];
+    const clusters: AiSignalCluster[] = [
+      makeCluster("core_platform", 35),
+      makeCluster("product_execution", 5),
+    ];
+    const result = buildWhyThisMattersInterpretation({
+      hiringMix,
+      totalObserved: 65,
+      confidence: "high",
+      hasPriorComparison: false,
+      signalClusters: clusters,
+    });
+
+    // core_platform should outrank product_execution in wording
+    expect(result).toContain("core platform");
+    // product execution should appear (it's a valid cluster) but not first
+    // The key assertion: wording doesn't claim product is dominant
+    expect(result).not.toContain("product hiring dominates");
+    expect(result).not.toContain("primarily a product");
+  });
+
+  // F. Sales → go-to-market mapping
+  test("F. Sales bucket maps to go-to-market in public copy", () => {
+    const hiringMix: [string, number][] = [
+      ["Sales", 40],
+      ["Engineering", 20],
+    ];
+    const result = buildWhyThisMattersInterpretation({
+      hiringMix,
+      totalObserved: 60,
+      confidence: "high",
+      hasPriorComparison: false,
+    });
+
+    expect(result).toContain("go-to-market");
+    expect(result).not.toContain("Sales roles");
+    expect(result).not.toContain("sales roles");
+  });
+
+  // G. Thin evidence → conservative wording regardless of clusters
+  test("G. Thin evidence always produces a cautious sentence", () => {
+    const clusters: AiSignalCluster[] = [
+      makeCluster("risk_and_compliance", 3),
+    ];
+    const result = buildWhyThisMattersInterpretation({
+      hiringMix: [["Engineering", 3]],
+      totalObserved: 3,
+      confidence: "high",
+      hasPriorComparison: false,
+      signalClusters: clusters,
+    });
+
+    expect(result).toContain("too thin for a high-confidence read");
+    expect(result).not.toContain("strongest around");
   });
 });
