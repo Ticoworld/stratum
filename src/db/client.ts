@@ -42,6 +42,11 @@ function createDriverClient(): DriverClient {
     : postgres(phase1Env.DATABASE_URL, {
         max: 1,
         prepare: false,
+        // Voluntarily expire idle connections every 20s so Neon's pooler
+        // (which kills them at ~5min) never silently drops a socket we still
+        // think is alive. Prevents CONNECTION_CLOSED on long enrichment runs.
+        idle_timeout: 20,
+        connect_timeout: 30,
       });
 }
 
@@ -64,6 +69,38 @@ export const db = shouldCacheDbClient
 if (shouldCacheDbClient) {
   globalForDb.__stratumSql = sql;
   globalForDb.__stratumDb = db;
+}
+
+/** Returns true for Neon / postgres.js connection-closed errors. */
+function isConnectionClosedError(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  const causeCode = (err as { cause?: { code?: string } })?.cause?.code;
+  return (
+    code === "CONNECTION_CLOSED" ||
+    causeCode === "CONNECTION_CLOSED" ||
+    (err instanceof Error && err.message.includes("CONNECTION_CLOSED"))
+  );
+}
+
+/**
+ * Wraps a DB query with one automatic retry on CONNECTION_CLOSED.
+ *
+ * Use this for every repository call that could run after a long-lived
+ * enrichment operation (or any call that may be hit when the Neon pooler
+ * has already recycled the socket).
+ *
+ * @example
+ *   const rows = await withDbRetry(() => db.select().from(myTable));
+ */
+export async function withDbRetry<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!isConnectionClosedError(err)) throw err;
+    console.warn("[Stratum DB] CONNECTION_CLOSED — retrying once after reconnect...");
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return fn();
+  }
 }
 
 export { sql };

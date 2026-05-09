@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, withDbRetry } from "@/db/client";
 import { stratumBriefs, type StratumBriefSnapshot } from "@/db/schema/stratumBriefs";
 import { stratumWatchlistEntries, stratumWatchlists } from "@/db/schema/stratumWatchlists";
 
@@ -101,54 +101,34 @@ export async function createStratumBrief(result: StratumResult): Promise<Stratum
   const briefId = randomUUID();
   const snapshot = buildBriefSnapshot(result, briefId);
 
-  // Retry once on CONNECTION_CLOSED — can happen when enrichment keeps the
-  // request alive for several minutes and the Neon pooler silently drops the socket.
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      await db.insert(stratumBriefs).values({
-        id: snapshot.id,
-        watchlistEntryId: snapshot.watchlistEntryId,
-        queriedCompanyName: snapshot.queriedCompanyName,
-        matchedCompanyName: snapshot.matchedCompanyName,
-        atsSourceUsed: snapshot.atsSourceUsed,
-        resultState: snapshot.resultState,
-        companyMatchConfidence: snapshot.companyMatchConfidence,
-        companyMatchExplanation: snapshot.companyMatchExplanation,
-        sourceCoverageCompleteness: snapshot.sourceCoverageCompleteness,
-        sourceCoverageExplanation: snapshot.sourceCoverageExplanation,
-        watchlistReadLabel: snapshot.watchlistReadLabel,
-        watchlistReadSummary: snapshot.watchlistReadSummary,
-        watchlistReadConfidence: snapshot.watchlistReadConfidence,
-        watchlistReadExplanation: snapshot.watchlistReadExplanation,
-        proofRoleGrounding: snapshot.proofRoleGrounding,
-        proofRoleGroundingExplanation: snapshot.proofRoleGroundingExplanation,
-        jobsObservedCount: snapshot.jobsObservedCount,
-        proofRolesSnapshot: sanitizeJson(snapshot.proofRolesSnapshot),
-        limitsSnapshot: sanitizeJson(snapshot.limitsSnapshot),
-        resultSnapshot: sanitizeJson(snapshot.resultSnapshot),
-        unsupportedSourcePattern: snapshot.unsupportedSourcePattern,
-        providerFailures: snapshot.providerFailures,
-      });
-      return snapshot;
-    } catch (err: unknown) {
-      lastError = err;
-      const code = (err as { code?: string })?.code;
-      const cause = (err as { cause?: { code?: string } })?.cause;
-      const isConnectionError =
-        code === "CONNECTION_CLOSED" ||
-        cause?.code === "CONNECTION_CLOSED" ||
-        (err instanceof Error && err.message.includes("CONNECTION_CLOSED"));
-      if (isConnectionError && attempt === 0) {
-        console.warn("[Stratum DB] CONNECTION_CLOSED on brief insert — retrying once after reconnect...");
-        // Small pause to let the driver establish a fresh connection
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        continue;
-      }
-      throw err;
-    }
-  }
-  throw lastError;
+  await withDbRetry(() =>
+    db.insert(stratumBriefs).values({
+      id: snapshot.id,
+      watchlistEntryId: snapshot.watchlistEntryId,
+      queriedCompanyName: snapshot.queriedCompanyName,
+      matchedCompanyName: snapshot.matchedCompanyName,
+      atsSourceUsed: snapshot.atsSourceUsed,
+      resultState: snapshot.resultState,
+      companyMatchConfidence: snapshot.companyMatchConfidence,
+      companyMatchExplanation: snapshot.companyMatchExplanation,
+      sourceCoverageCompleteness: snapshot.sourceCoverageCompleteness,
+      sourceCoverageExplanation: snapshot.sourceCoverageExplanation,
+      watchlistReadLabel: snapshot.watchlistReadLabel,
+      watchlistReadSummary: snapshot.watchlistReadSummary,
+      watchlistReadConfidence: snapshot.watchlistReadConfidence,
+      watchlistReadExplanation: snapshot.watchlistReadExplanation,
+      proofRoleGrounding: snapshot.proofRoleGrounding,
+      proofRoleGroundingExplanation: snapshot.proofRoleGroundingExplanation,
+      jobsObservedCount: snapshot.jobsObservedCount,
+      proofRolesSnapshot: sanitizeJson(snapshot.proofRolesSnapshot),
+      limitsSnapshot: sanitizeJson(snapshot.limitsSnapshot),
+      resultSnapshot: sanitizeJson(snapshot.resultSnapshot),
+      unsupportedSourcePattern: snapshot.unsupportedSourcePattern,
+      providerFailures: snapshot.providerFailures,
+    })
+  );
+
+  return snapshot;
 }
 
 function mapBriefRowToSnapshot(row: typeof stratumBriefs.$inferSelect): StratumBriefSnapshot {
@@ -220,7 +200,7 @@ export async function getStratumBriefById(
     )
     .limit(1);
 
-  const [row] = await query;
+  const [row] = await withDbRetry(() => query);
   if (!row) return null;
 
   return mapBriefRowToSnapshot(row.brief);
@@ -233,23 +213,25 @@ export async function listStratumBriefsByWatchlistEntryId(
   assertTenantlessCompatibilityAllowed(scope);
   const tenantId = resolveTenantId(scope);
 
-  const rows = await db
-    .select({
-      brief: stratumBriefs,
-    })
-    .from(stratumBriefs)
-    .innerJoin(
-      stratumWatchlistEntries,
-      eq(stratumBriefs.watchlistEntryId, stratumWatchlistEntries.id)
-    )
-    .innerJoin(stratumWatchlists, eq(stratumWatchlistEntries.watchlistId, stratumWatchlists.id))
-    .where(
-      and(
-        eq(stratumBriefs.watchlistEntryId, watchlistEntryId),
-        tenantId ? eq(stratumWatchlists.tenantId, tenantId) : undefined
+  const rows = await withDbRetry(() =>
+    db
+      .select({
+        brief: stratumBriefs,
+      })
+      .from(stratumBriefs)
+      .innerJoin(
+        stratumWatchlistEntries,
+        eq(stratumBriefs.watchlistEntryId, stratumWatchlistEntries.id)
       )
-    )
-    .orderBy(desc(stratumBriefs.createdAt), desc(stratumBriefs.updatedAt), desc(stratumBriefs.id));
+      .innerJoin(stratumWatchlists, eq(stratumWatchlistEntries.watchlistId, stratumWatchlists.id))
+      .where(
+        and(
+          eq(stratumBriefs.watchlistEntryId, watchlistEntryId),
+          tenantId ? eq(stratumWatchlists.tenantId, tenantId) : undefined
+        )
+      )
+      .orderBy(desc(stratumBriefs.createdAt), desc(stratumBriefs.updatedAt), desc(stratumBriefs.id))
+  );
 
   return rows.map((row) => mapBriefRowToSnapshot(row.brief));
 }
