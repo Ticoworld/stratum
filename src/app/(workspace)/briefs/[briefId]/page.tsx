@@ -16,6 +16,7 @@ import {
   type ChangeSignificance,
   type ChangeDirection,
 } from "@/lib/signals/watchlistTaxonomy";
+import type { AiSignalCluster } from "@/lib/signals/roleEnrichment";
 
 type BriefPageProps = {
   params: Promise<{
@@ -106,7 +107,7 @@ function getInterpretation(
   confidence: string,
   totalObserved: number,
   hasPriorComparison: boolean,
-  signalClusters?: import("@/lib/signals/roleEnrichment").AiSignalCluster[],
+  signalClusters?: AiSignalCluster[],
   proofRoleKeys?: string[]
 ): string {
   return buildWhyThisMattersInterpretation({
