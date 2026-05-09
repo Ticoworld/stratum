@@ -203,6 +203,19 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
     ? `${isGTMFocus ? "Go-to-market hiring read" : "Active hiring read"} from ${observedCount} ${sourceLabel} openings.`
     : "No active hiring signals detected for this company.";
   
+  // Derive proof role keys from the saved snapshot so the cluster scoring
+  // function can apply the proof-overlap bonus for saved briefs.
+  // Uses the same key format as buildEnrichmentRoleKey: id::<source>::<roleId>.
+  // If a role has no roleId/jobUrl, it is omitted — scoring degrades gracefully.
+  const proofRoleKeys = roles
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((r: any) => {
+      if (r.roleId && r.source) return `id::${r.source}::${r.roleId}`;
+      if (r.jobUrl) return `url::${r.jobUrl}`;
+      return null;
+    })
+    .filter((k: string | null): k is string => k !== null);
+
   const dynamicSummary = buildApprovedWatchlistSummary({
     label: brief.watchlistReadLabel as ApprovedWatchlistLabel,
     jobs: hasFullData ? allJobs : roles,
@@ -213,6 +226,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
     proofRoleGrounding: brief.proofRoleGrounding as WatchlistProofGrounding,
     hiringMix: hiringMix.map(([department, count]) => ({ department, count, sampleJobs: [] })),
     signalClusters: brief.resultSnapshot?.signalClusters,
+    proofRoleKeys: proofRoleKeys.length > 0 ? proofRoleKeys : undefined,
   });
 
   const summarySentences = splitIntoSentences(dynamicSummary);

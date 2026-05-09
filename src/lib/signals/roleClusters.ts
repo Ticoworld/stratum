@@ -3,6 +3,7 @@ import {
   type AiRoleEnrichmentStatus,
   type AiSignalCluster,
   type AiRoleEnrichmentBusinessTheme,
+  type AiRoleEnrichmentBusinessFunction,
 } from "./roleEnrichment";
 
 /**
@@ -84,6 +85,82 @@ export function buildSignalClusters(
 
   // Sort by roleCount descending
   return clusters.sort((a, b) => b.roleCount - a.roleCount);
+}
+
+// ---------------------------------------------------------------------------
+// Strategic priority table for summary scoring (AI-2G-A)
+// Higher bonus = more distinctive signal worth surfacing above raw count.
+// ---------------------------------------------------------------------------
+const CLUSTER_STRATEGIC_PRIORITY: Partial<Record<AiRoleEnrichmentBusinessTheme, number>> = {
+  risk_and_compliance:         4,
+  data_control_infrastructure: 3,
+  credit_and_lending:          3,
+  core_platform:               2,
+  product_execution:           2,
+  go_to_market:                1,
+  regional_operations:         0,
+  customer_operations:         0,
+  internal_operations:        -1,
+  finance_and_treasury:       -1,
+};
+
+// Functions that indicate a compliance/risk/security character.
+const COMPLIANCE_RISK_FUNCTIONS = new Set<AiRoleEnrichmentBusinessFunction>([
+  "compliance",
+  "security",
+  "credit_risk",
+]);
+
+/**
+ * Computes a deterministic composite score for a cluster used only by
+ * `buildClusterAwareSignalSentence` to rank clusters in the summary sentence.
+ *
+ * Formula:
+ *   score = roleCount
+ *         + strategicPriorityBonus
+ *         + proofRoleOverlapBonus
+ *         − genericClusterPenalty
+ *
+ * This function is pure — it does not modify the cluster object.
+ */
+export function scoreClusterForSummary(
+  cluster: AiSignalCluster,
+  options?: {
+    /** roleKeys of the proof roles currently displayed in this brief. */
+    proofRoleKeys?: string[];
+  }
+): number {
+  const theme = cluster.businessThemes[0] as AiRoleEnrichmentBusinessTheme | undefined;
+
+  // 1. Strategic priority bonus
+  const priorityBonus = theme !== undefined ? (CLUSTER_STRATEGIC_PRIORITY[theme] ?? 0) : 0;
+
+  // 2. Proof-role overlap bonus
+  //    +2 if at least one displayed proof role lives in this cluster.
+  let proofOverlapBonus = 0;
+  const proofKeys = options?.proofRoleKeys;
+  if (proofKeys && proofKeys.length > 0) {
+    const roleKeySet = new Set(cluster.roleKeys);
+    const hasOverlap = proofKeys.some((k) => roleKeySet.has(k));
+    if (hasOverlap) proofOverlapBonus = 2;
+  }
+
+  // 3. Generic cluster penalty
+  //    −3 when a regional_operations cluster is actually compliance/risk-heavy
+  //    (more than half its declared functions are compliance/risk/security).
+  //    This prevents geographic deployment activity from dominating the summary
+  //    when the underlying roles are field-risk or internal-control work.
+  let genericPenalty = 0;
+  if (theme === "regional_operations" && cluster.functions.length > 0) {
+    const complianceCount = cluster.functions.filter((f) =>
+      COMPLIANCE_RISK_FUNCTIONS.has(f as AiRoleEnrichmentBusinessFunction)
+    ).length;
+    if (complianceCount > cluster.functions.length / 2) {
+      genericPenalty = 3;
+    }
+  }
+
+  return cluster.roleCount + priorityBonus + proofOverlapBonus - genericPenalty;
 }
 
 function formatThemeLabel(theme: AiRoleEnrichmentBusinessTheme): string {

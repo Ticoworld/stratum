@@ -455,7 +455,7 @@ function selectProofRoles(jobs: Job[], notableRoles?: string[], limit = 5): Proo
   // Append selection strategy reasoning
   const strategyReason = dominant.signal !== "unclassified" && dominant.ratio >= 0.45
     ? `Selection prioritized roles from the dominant ${dominant.signal.replace(/_/g, " ")} pattern.`
-    : "Selection prioritizes variety across visible hiring departments.";
+    : "Displayed roles are examples from the observed board, not a full representation of all hiring themes.";
   
   return {
     roles: selected,
@@ -967,6 +967,17 @@ function buildWatchlistSummary(args: {
 }): string {
   const { label, jobs, proofRoles, apiSource, confidence, companyMatchConfidence, proofRoleSelection, hiringMix, signalClusters } = args;
 
+  // Derive proof role keys for cluster summary scoring (proof-overlap bonus).
+  // We use the roleId-based key format that matches enrichment keys.
+  // If a role has no roleId, we fall back to the jobUrl key or omit it.
+  const proofRoleKeys = proofRoleSelection.roles
+    .map((r) => {
+      if (r.roleId) return `id::${r.source}::${r.roleId}`;
+      if (r.jobUrl) return `url::${r.jobUrl}`;
+      return null;
+    })
+    .filter((k): k is string => k !== null);
+
   return buildApprovedWatchlistSummary({
     label,
     jobs,
@@ -977,6 +988,7 @@ function buildWatchlistSummary(args: {
     proofRoleGrounding: proofRoleSelection.grounding,
     hiringMix,
     signalClusters,
+    proofRoleKeys: proofRoleKeys.length > 0 ? proofRoleKeys : undefined,
   });
 }
 

@@ -1,5 +1,6 @@
 import type { Job, JobBoardSource } from "@/lib/api/boards";
 import type { AiSignalCluster } from "./roleEnrichment";
+import { scoreClusterForSummary } from "./roleClusters";
 
 export type WatchlistConfidenceLevel = "high" | "medium" | "low" | "none";
 export type WatchlistProofGrounding = "exact" | "partial" | "fallback" | "none";
@@ -551,9 +552,16 @@ function getLabelSuggestionSentence(
  * Rules:
  * - Only clusters with roleCount >= 2 and confidence >= medium.
  * - Max 3 clusters.
- * - Sort by roleCount desc, then confidence (high > medium).
+ * - Rank by scoreClusterForSummary (strategic priority + proof overlap + penalty),
+ *   then roleCount as tie-breaker, then confidence as final tie-breaker.
  */
-export function buildClusterAwareSignalSentence(clusters?: AiSignalCluster[]): string | null {
+export function buildClusterAwareSignalSentence(
+  clusters?: AiSignalCluster[],
+  options?: {
+    /** roleKeys of the displayed proof roles — used for proof-overlap bonus. */
+    proofRoleKeys?: string[];
+  }
+): string | null {
   if (!clusters || clusters.length === 0) return null;
 
   const validClusters = clusters
@@ -562,8 +570,11 @@ export function buildClusterAwareSignalSentence(clusters?: AiSignalCluster[]): s
         c.roleCount >= 2 && (c.confidence === "high" || c.confidence === "medium")
     )
     .sort((a, b) => {
-      if (b.roleCount !== a.roleCount) return b.roleCount - a.roleCount;
-      if (a.confidence === b.confidence) return 0;
+      const scoreA = scoreClusterForSummary(a, options);
+      const scoreB = scoreClusterForSummary(b, options);
+      if (scoreB !== scoreA) return scoreB - scoreA;          // primary: composite score
+      if (b.roleCount !== a.roleCount) return b.roleCount - a.roleCount; // tie-break 1: raw count
+      if (a.confidence === b.confidence) return 0;            // tie-break 2: confidence
       return a.confidence === "high" ? -1 : 1;
     })
     .slice(0, 3);
@@ -595,6 +606,8 @@ export function buildApprovedWatchlistSummary(args: {
   proofRoleGrounding: WatchlistProofGrounding;
   hiringMix?: DepartmentBreakdown[];
   signalClusters?: AiSignalCluster[];
+  /** roleKeys of the displayed proof roles, forwarded to scoreClusterForSummary. */
+  proofRoleKeys?: string[];
 }): string {
   const {
     label,
@@ -604,6 +617,7 @@ export function buildApprovedWatchlistSummary(args: {
     watchlistReadConfidence,
     companyMatchConfidence,
     proofRoleGrounding,
+    proofRoleKeys,
   } = args;
   const sourceLabel = formatSourceLabel(apiSource);
   const titles = getObservedTitles(proofRoles, jobs);
@@ -621,7 +635,7 @@ export function buildApprovedWatchlistSummary(args: {
       ? getProductEngineeringSubRatio(jobs)
       : undefined;
 
-  const clusterSentence = buildClusterAwareSignalSentence(args.signalClusters);
+  const clusterSentence = buildClusterAwareSignalSentence(args.signalClusters, { proofRoleKeys });
 
   const suggestionSentence =
     clusterSentence ||
