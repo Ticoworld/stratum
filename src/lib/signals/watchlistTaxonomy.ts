@@ -842,6 +842,21 @@ function toPublicBucketLabel(bucket: string): string | null {
 }
 
 /**
+ * Converts an internal `mapToFunctionalBucket` key to its public chart display label.
+ *
+ * This is the display-layer rename used by the Hiring Mix chart in the brief page.
+ * The internal bucket key (used for counts and React keys) is unchanged; only the
+ * rendered text is replaced.
+ *
+ * "Other" → "Broader roles"   (raw catch-all bucket → clean public label)
+ * All other named buckets are returned as-is.
+ */
+export function formatHiringMixBucketLabel(bucket: string): string {
+  if (bucket.trim() === "Other") return "Broader roles";
+  return bucket;
+}
+
+/**
  * Builds the "Why this matters" interpretation sentence for a brief.
  *
  * Priority order:

@@ -10,6 +10,7 @@ import {
   deriveBriefPublicReadiness, 
   buildApprovedWatchlistSummary,
   buildWhyThisMattersInterpretation,
+  formatHiringMixBucketLabel,
   type ApprovedWatchlistLabel, 
   type WatchlistConfidenceLevel, 
   type WatchlistProofGrounding,
@@ -433,7 +434,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                   <div className="space-y-1.5">
                     {hiringMix.map(([bucket, count]) => (
                       <div key={bucket} className="flex items-center justify-between rounded-lg border px-3 py-2 text-[13px]" style={{ borderColor: "var(--border)" }}>
-                        <span className="font-medium" style={{ color: "var(--foreground-secondary)" }}>{bucket}</span>
+                        <span className="font-medium" style={{ color: "var(--foreground-secondary)" }}>{formatHiringMixBucketLabel(bucket)}</span>
                         <span className="font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>{count}</span>
                       </div>
                     ))}

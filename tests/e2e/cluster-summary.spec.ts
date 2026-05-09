@@ -4,6 +4,7 @@ import {
   buildApprovedWatchlistSummary, 
   buildClusterAwareSignalSentence,
   buildWhyThisMattersInterpretation,
+  formatHiringMixBucketLabel,
   type ApprovedWatchlistLabel,
   type WatchlistConfidenceLevel,
   type WatchlistProofGrounding
@@ -558,5 +559,34 @@ test.describe("AI-2H: buildWhyThisMattersInterpretation", () => {
 
     expect(result).toContain("too thin for a high-confidence read");
     expect(result).not.toContain("strongest around");
+  });
+});
+
+test.describe("6A-1: formatHiringMixBucketLabel — chart display label", () => {
+  test("renames Other to Broader roles", () => {
+    expect(formatHiringMixBucketLabel("Other")).toBe("Broader roles");
+  });
+
+  test("passes through all named buckets unchanged", () => {
+    const namedBuckets = [
+      "Engineering",
+      "Sales",
+      "Product",
+      "Marketing",
+      "Finance",
+      "Operations",
+      "Leadership",
+    ];
+    for (const bucket of namedBuckets) {
+      expect(formatHiringMixBucketLabel(bucket)).toBe(bucket);
+    }
+  });
+
+  test("trims whitespace before comparing", () => {
+    expect(formatHiringMixBucketLabel("  Other  ")).toBe("Broader roles");
+  });
+
+  test("empty string returns empty string", () => {
+    expect(formatHiringMixBucketLabel("")).toBe("");
   });
 });
