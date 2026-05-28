@@ -12,6 +12,7 @@ import {
   buildWhyThisMattersInterpretation,
   formatHiringMixBucketLabel,
   deriveHeroFocusFromHiringMix,
+  computeFunctionalMix,
   type ApprovedWatchlistLabel,
   type WatchlistConfidenceLevel,
   type WatchlistProofGrounding,
@@ -47,31 +48,6 @@ function splitIntoSentences(value: string | null | undefined): string[] {
     .split(/(?<=[.!?])\s+/)
     .map((sentence) => sentence.trim())
     .filter(Boolean);
-}
-
-function mapToFunctionalBucket(role: { title: string; department?: string }): string {
-  const text = `${role.title} ${role.department || ""}`.toLowerCase();
-  
-  if (/\b(sales|account|bdr|sdr|business development|revenue|growth)\b/.test(text)) return "Sales";
-  if (/\b(engineer|developer|software|backend|frontend|fullstack|devops|sre|infrastructure|architect|data|machine learning|ai)\b/.test(text)) return "Engineering";
-  if (/\b(product|ux|user experience|ui|owner)\b/.test(text)) return "Product";
-  if (/\b(marketing|seo|content|social media|creative|brand|communications|pr)\b/.test(text)) return "Marketing";
-  if (/\b(finance|accounting|accountant|controller|tax|audit|billing|payroll)\b/.test(text)) return "Finance";
-  if (/\b(operations|ops|hr|people|talent|recruiter|recruiting|legal|compliance|admin|workplace)\b/.test(text)) return "Operations";
-  if (/\b(head of|vp|director|chief|c-level|ceo|cto|cfo|coo|cmo|founder|president)\b/.test(text)) return "Leadership";
-  
-  return "Other";
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getHiringMix(roles: any[]) {
-  const counts: Record<string, number> = {};
-  roles.forEach((r) => {
-    const bucket = mapToFunctionalBucket(r);
-    counts[bucket] = (counts[bucket] || 0) + 1;
-  });
-  return Object.entries(counts)
-    .sort((a, b) => b[1] - a[1]);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -176,16 +152,15 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
   const hasFullData = allJobs.length > 0;
   const roles = brief.proofRolesSnapshot || [];
   
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const hiringMix: any[] = getHiringMix(hasFullData ? allJobs : roles);
+  const hiringMix = computeFunctionalMix(hasFullData ? allJobs : roles);
   const geography = getGeographySpread(hasFullData ? allJobs : roles);
   const notableOpenings = getNotableOpenings(roles);
-  
+
   // Editorial Hero Logic
   const sourceLabel = formatSourceLabel(brief.atsSourceUsed);
   // GTM hero only fires when Sales or Marketing is the #1 bucket.
   // Being #2 while Engineering leads is not enough — see audit Phase 6B-1.
-  const isGTMFocus = deriveHeroFocusFromHiringMix(hiringMix as [string, number][]) === "gtm";
+  const isGTMFocus = deriveHeroFocusFromHiringMix(hiringMix) === "gtm";
   
   const observedCount = brief.jobsObservedCount ?? allJobs.length ?? roles.length;
   const heroSentence = observedCount > 0

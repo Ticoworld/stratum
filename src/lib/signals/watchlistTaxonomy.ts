@@ -1051,3 +1051,45 @@ export function deriveHeroFocusFromHiringMix(
   if (topBucket === "sales" || topBucket === "marketing") return "gtm";
   return "default";
 }
+
+/**
+ * Maps a job-like object to one of eight functional hiring buckets.
+ *
+ * This is the canonical chart classifier — the same keyword logic previously
+ * inlined in the brief page's getHiringMix(). It is extracted here so
+ * StratumInvestigator.ts and tests can reference it without depending on the
+ * UI layer. Behavior is identical to the original page.tsx implementation.
+ *
+ * Priority: Sales → Engineering → Product → Marketing → Finance →
+ *           Operations → Leadership → Other (catch-all).
+ */
+export function mapToFunctionalBucket(role: {
+  title: string;
+  department?: string | null;
+}): string {
+  const text = `${role.title} ${role.department || ""}`.toLowerCase();
+  if (/\b(sales|account|bdr|sdr|business development|revenue|growth)\b/.test(text)) return "Sales";
+  if (/\b(engineer|developer|software|backend|frontend|fullstack|devops|sre|infrastructure|architect|data|machine learning|ai)\b/.test(text)) return "Engineering";
+  if (/\b(product|ux|user experience|ui|owner)\b/.test(text)) return "Product";
+  if (/\b(marketing|seo|content|social media|creative|brand|communications|pr)\b/.test(text)) return "Marketing";
+  if (/\b(finance|accounting|accountant|controller|tax|audit|billing|payroll)\b/.test(text)) return "Finance";
+  if (/\b(operations|ops|hr|people|talent|recruiter|recruiting|legal|compliance|admin|workplace)\b/.test(text)) return "Operations";
+  if (/\b(head of|vp|director|chief|c-level|ceo|cto|cfo|coo|cmo|founder|president)\b/.test(text)) return "Leadership";
+  return "Other";
+}
+
+/**
+ * Runs mapToFunctionalBucket over a list of jobs and returns a sorted
+ * [bucketName, count][] descending by count — identical output to the
+ * former getHiringMix() helper in the brief page.
+ */
+export function computeFunctionalMix(
+  jobs: Array<{ title: string; department?: string | null }>
+): [string, number][] {
+  const counts: Record<string, number> = {};
+  for (const job of jobs) {
+    const bucket = mapToFunctionalBucket(job);
+    counts[bucket] = (counts[bucket] || 0) + 1;
+  }
+  return (Object.entries(counts) as [string, number][]).sort((a, b) => b[1] - a[1]);
+}
