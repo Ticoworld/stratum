@@ -5,6 +5,7 @@ import { ArrowLeft, ExternalLink, ShieldCheck, MapPin, Layers, Info, History, Sh
 import { buildSignInRedirectPath, requireAuthSession } from "@/lib/auth/session";
 import { getStratumBriefById } from "@/lib/briefs/repository";
 import { buildStratumLimitations, formatSourceLabel } from "@/lib/briefs/presentation";
+import { buildWhatChangedDisplay } from "@/lib/briefs/whatChangedDisplay";
 import { getWatchlistBriefReplayContext } from "@/lib/watchlists/repository";
 import {
   deriveBriefPublicReadiness,
@@ -262,6 +263,14 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
     ["Public Use", formatPublicUse(readiness.publicUse)],
   ] as const;
 
+  const whatChangedDisplay = buildWhatChangedDisplay({
+    briefPosition: monitoring?.briefPosition ?? null,
+    comparisonAvailable: monitoring?.comparisonAvailable ?? false,
+    comparisonStrength: (monitoring?.comparisonStrength ?? "unavailable") as "standard" | "weak" | "unavailable",
+    comparisonSummary: monitoring?.comparisonSummary ?? null,
+    comparisonNotes: monitoring?.diff?.comparisonNotes ?? [],
+  });
+
   return (
     <div className="min-h-full bg-[var(--background)]">
       <div className="mx-auto max-w-[1440px] px-4 py-4 lg:px-6 lg:py-4">
@@ -438,21 +447,52 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
           {/* What Changed */}
           <BriefSection title="What changed" icon={History}>
             <div className="rounded-xl border p-3" style={{ borderColor: "var(--border)" }}>
-              {monitoring?.comparisonSummary ? (
-                <div className="space-y-1.5">
-                  <p className="text-[14px] leading-6 font-medium" style={{ color: "var(--foreground)" }}>
-                    {monitoring.comparisonSummary}
-                  </p>
-                  {monitoring.comparisonStrength && (
-                    <p className="text-[10px] font-medium tracking-[0.02em] opacity-40">
-                      Comparison strength: {monitoring.comparisonStrength}
-                    </p>
-                  )}
-                </div>
-              ) : (
+              {whatChangedDisplay.kind === "archived" && (
+                <p className="text-[13px] leading-6 font-medium" style={{ color: "var(--foreground-secondary)" }}>
+                  No scoped comparison is available for this archived brief. The current watchlist comparison reflects newer briefs.
+                </p>
+              )}
+              {whatChangedDisplay.kind === "baseline" && (
                 <p className="text-[13px] leading-6 font-medium" style={{ color: "var(--foreground-secondary)" }}>
                   This is the first saved brief for this company. No prior brief yet to compare against.
                 </p>
+              )}
+              {whatChangedDisplay.kind === "weak_caveat" && (
+                <div className="space-y-2">
+                  {whatChangedDisplay.heading && (
+                    <p className="text-[10px] font-semibold tracking-[0.04em] uppercase opacity-50" style={{ color: "var(--foreground-muted)" }}>
+                      {whatChangedDisplay.heading}
+                    </p>
+                  )}
+                  <p className="text-[13px] leading-5 font-medium" style={{ color: "var(--foreground-secondary)" }}>
+                    {whatChangedDisplay.caveat}
+                  </p>
+                  <details className="group">
+                    <summary className="cursor-pointer text-[11px] font-medium tracking-[0.02em] opacity-30 hover:opacity-60">
+                      Show detailed change log
+                    </summary>
+                    <p className="mt-2 text-[12px] leading-5 opacity-60" style={{ color: "var(--foreground-muted)" }}>
+                      {whatChangedDisplay.fullSummary}
+                    </p>
+                  </details>
+                </div>
+              )}
+              {whatChangedDisplay.kind === "standard" && (
+                <div className="space-y-1.5">
+                  {whatChangedDisplay.heading && (
+                    <p className="text-[10px] font-semibold tracking-[0.04em] uppercase opacity-50" style={{ color: "var(--foreground-muted)" }}>
+                      {whatChangedDisplay.heading}
+                    </p>
+                  )}
+                  <p className="text-[14px] leading-6 font-medium" style={{ color: "var(--foreground)" }}>
+                    {whatChangedDisplay.summary}
+                  </p>
+                  {whatChangedDisplay.comparisonStrength !== "standard" && whatChangedDisplay.comparisonStrength !== "unavailable" && (
+                    <p className="text-[10px] font-medium tracking-[0.02em] opacity-40">
+                      Comparison strength: {whatChangedDisplay.comparisonStrength}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           </BriefSection>

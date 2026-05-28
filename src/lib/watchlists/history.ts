@@ -204,6 +204,15 @@ function formatNameList(values: string[], maxItems = 3): string {
   return remaining > 0 ? `${joined}, plus ${remaining} more` : joined;
 }
 
+const MIX_DETAIL_CAP = 5;
+
+function formatMixDiffList(diffs: string[]): string {
+  if (diffs.length <= MIX_DETAIL_CAP) return diffs.join("; ");
+  const visible = diffs.slice(0, MIX_DETAIL_CAP);
+  const remaining = diffs.length - MIX_DETAIL_CAP;
+  return `${visible.join("; ")}, plus ${remaining} more`;
+}
+
 function buildComparisonNotes(
   latest: WatchlistEntryBriefHistoryItem,
   previous: WatchlistEntryBriefHistoryItem
@@ -464,13 +473,14 @@ export function buildWatchlistEntryDiff(
   }
 
   if (mixDiffs.length > 0) {
+    const mixDetail = formatMixDiffList(mixDiffs);
     if (useFunctionalMix) {
       // Both briefs have chart-consistent functionalMix: numbers are directly
       // comparable to the Hiring Mix chart — use the functional category.
       changes.push({
         category: "functional_mix_changed",
         label: "Functional hiring mix shifted",
-        detail: `Functional hiring mix shifted: ${mixDiffs.join("; ")}.`,
+        detail: `Functional hiring mix shifted: ${mixDetail}.`,
       });
     } else {
       // Raw ATS department fallback: numbers are NOT comparable to the chart —
@@ -478,7 +488,7 @@ export function buildWatchlistEntryDiff(
       changes.push({
         category: "source_department_activity_changed",
         label: "Source department activity shifted",
-        detail: `Source department activity shifted: ${mixDiffs.join("; ")}.`,
+        detail: `Source department activity shifted: ${mixDetail}.`,
       });
     }
   }

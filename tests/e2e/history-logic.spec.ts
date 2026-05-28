@@ -530,3 +530,101 @@ test.describe("6B-2D: functional mix comparison", () => {
     expect(diff.hasSignificantChange).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 6B-3A: mix diff cap
+// ---------------------------------------------------------------------------
+
+test.describe("6B-3A: Mix diff detail cap", () => {
+  test("E1. More than 5 functional mix changes are capped with 'plus N more'", () => {
+    // 8 functional buckets all change; the board-size guard (lCount > 2 || pCount > 2)
+    // filters Leadership (1→2) since both counts ≤ 2, so 7 pass to mixDiffs.
+    // Cap at 5 → 5 visible + "plus 2 more".
+    const prev = mockHistoryItemWithFunctionalMix(
+      [["Engineering", 10], ["Sales", 5], ["Marketing", 3],
+       ["Operations", 4], ["Finance", 2], ["Product", 6],
+       ["Leadership", 1], ["Broader roles", 8]],
+      39
+    );
+    const latest = mockHistoryItemWithFunctionalMix(
+      [["Engineering", 15], ["Sales", 8], ["Marketing", 5],
+       ["Operations", 6], ["Finance", 4], ["Product", 9],
+       ["Leadership", 2], ["Broader roles", 12]],
+      61
+    );
+
+    const diff = buildWatchlistEntryDiff(latest, prev);
+    const mixChange = diff.changes.find(c => c.category === "functional_mix_changed");
+
+    expect(mixChange).toBeDefined();
+    // 7 items pass threshold, cap at 5 → "plus 2 more"
+    expect(mixChange!.detail).toContain("plus 2 more");
+    // The detail prefix is preserved
+    expect(mixChange!.detail).toContain("Functional hiring mix shifted:");
+  });
+
+  test("E2. More than 5 raw ATS department changes are capped with 'plus N more'", () => {
+    // 7 raw ATS departments all change — exceeds the cap
+    const prevMix = [
+      { department: "Eng", count: 5, sampleJobs: [] },
+      { department: "Sales", count: 3, sampleJobs: [] },
+      { department: "Marketing", count: 4, sampleJobs: [] },
+      { department: "Ops", count: 6, sampleJobs: [] },
+      { department: "Finance", count: 3, sampleJobs: [] },
+      { department: "Product", count: 5, sampleJobs: [] },
+      { department: "Recruiting", count: 4, sampleJobs: [] },
+    ];
+    const latestMix = prevMix.map(d => ({ ...d, count: d.count + 2 }));
+
+    const prev = mockLegacyHistoryItem(prevMix.map(d => ({ department: d.department, count: d.count })), 30);
+    const latest = mockLegacyHistoryItem(latestMix.map(d => ({ department: d.department, count: d.count })), 44);
+
+    const diff = buildWatchlistEntryDiff(latest, prev);
+    const mixChange = diff.changes.find(c => c.category === "source_department_activity_changed");
+
+    expect(mixChange).toBeDefined();
+    // 7 items, cap at 5 → "plus 2 more"
+    expect(mixChange!.detail).toContain("plus 2 more");
+    expect(mixChange!.detail).toContain("Source department activity shifted:");
+  });
+
+  test("E3. Five or fewer mix changes are all shown without truncation", () => {
+    const prev = mockHistoryItemWithFunctionalMix(
+      [["Engineering", 10], ["Sales", 5], ["Marketing", 3]],
+      18
+    );
+    const latest = mockHistoryItemWithFunctionalMix(
+      [["Engineering", 12], ["Sales", 8], ["Marketing", 5]],
+      25
+    );
+
+    const diff = buildWatchlistEntryDiff(latest, prev);
+    const mixChange = diff.changes.find(c => c.category === "functional_mix_changed");
+
+    expect(mixChange).toBeDefined();
+    expect(mixChange!.detail).not.toContain("plus");
+    expect(mixChange!.detail).toContain("Engineering");
+    expect(mixChange!.detail).toContain("Sales");
+    expect(mixChange!.detail).toContain("Marketing");
+  });
+
+  test("E4. Cap does not affect significance detection (computed before capping)", () => {
+    // All 8 buckets change significantly; hasSignificantChange should still fire
+    const prev = mockHistoryItemWithFunctionalMix(
+      [["Engineering", 50], ["Sales", 30]],
+      80
+    );
+    const latest = mockHistoryItemWithFunctionalMix(
+      [["Engineering", 80], ["Sales", 50]],
+      130
+    );
+
+    const diff = buildWatchlistEntryDiff(latest, prev);
+
+    // Significance computed independently of display cap
+    expect(diff.hasSignificantChange).toBe(true);
+    expect(diff.significanceDrivers).toContain("mix");
+    const mixChange = diff.changes.find(c => c.category === "functional_mix_changed");
+    expect(mixChange).toBeDefined();
+  });
+});
