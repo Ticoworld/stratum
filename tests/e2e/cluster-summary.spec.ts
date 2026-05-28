@@ -1,13 +1,14 @@
 
 import { test, expect } from "@playwright/test";
-import { 
-  buildApprovedWatchlistSummary, 
+import {
+  buildApprovedWatchlistSummary,
   buildClusterAwareSignalSentence,
   buildWhyThisMattersInterpretation,
   formatHiringMixBucketLabel,
+  deriveHeroFocusFromHiringMix,
   type ApprovedWatchlistLabel,
   type WatchlistConfidenceLevel,
-  type WatchlistProofGrounding
+  type WatchlistProofGrounding,
 } from "../../src/lib/signals/watchlistTaxonomy";
 import { scoreClusterForSummary } from "../../src/lib/signals/roleClusters";
 import type { AiSignalCluster } from "../../src/lib/signals/roleEnrichment";
@@ -395,7 +396,8 @@ test.describe("AI-2H: buildWhyThisMattersInterpretation", () => {
   });
 
   // A2. "Other" at position 1 (dominant) — should replace with "broader execution roles"
-  test("A2. Other in top-3 is replaced with broader execution roles", () => {
+  // Phase 6B-1: also assert that "broader execution roles roles" (double) is never emitted.
+  test("A2. Other in top-3 is replaced with broader execution roles, no double-roles", () => {
     const hiringMix: [string, number][] = [
       ["Engineering", 32],
       ["Operations", 15],
@@ -408,9 +410,11 @@ test.describe("AI-2H: buildWhyThisMattersInterpretation", () => {
       hasPriorComparison: true,
     });
 
-    // "Other" is gone, "broader execution roles" fills the gap
+    // "Other" is gone, "broader execution roles" is present
     expect(result).toContain("broader execution roles");
     expect(result).not.toContain("other");
+    // Phase 6B-1: the phrase must appear exactly once — no double "roles"
+    expect(result).not.toContain("broader execution roles roles");
   });
 
   // B. No clusters, all top buckets are "Other" → safe generic fallback
@@ -588,5 +592,127 @@ test.describe("6A-1: formatHiringMixBucketLabel — chart display label", () => 
 
   test("empty string returns empty string", () => {
     expect(formatHiringMixBucketLabel("")).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6B-1: "roles roles" regression guard
+// ---------------------------------------------------------------------------
+
+test.describe("6B-1: buildWhyThisMattersInterpretation — no double-roles copy bug", () => {
+  // Verifies the fix: the label injected when Other is stripped is "broader execution",
+  // not "broader execution roles", so the template's " roles" suffix is not doubled.
+
+  test("Other #3: output contains 'broader execution roles' exactly once", () => {
+    const hiringMix: [string, number][] = [
+      ["Engineering", 30],
+      ["Operations", 12],
+      ["Other", 10],
+    ];
+    const result = buildWhyThisMattersInterpretation({
+      hiringMix,
+      totalObserved: 52,
+      confidence: "high",
+      hasPriorComparison: true,
+    });
+
+    expect(result).toContain("broader execution roles");
+    expect(result).not.toContain("broader execution roles roles");
+  });
+
+  test("Other #3 — baseline path: no double-roles", () => {
+    const hiringMix: [string, number][] = [
+      ["Engineering", 30],
+      ["Operations", 12],
+      ["Other", 10],
+    ];
+    const result = buildWhyThisMattersInterpretation({
+      hiringMix,
+      totalObserved: 52,
+      confidence: "high",
+      hasPriorComparison: false,
+    });
+
+    expect(result).toContain("broader execution roles");
+    expect(result).not.toContain("broader execution roles roles");
+    expect(result).toContain("baseline read");
+  });
+
+  test("Other #2: output does not contain double-roles", () => {
+    const hiringMix: [string, number][] = [
+      ["Engineering", 30],
+      ["Other", 20],
+      ["Sales", 10],
+    ];
+    const result = buildWhyThisMattersInterpretation({
+      hiringMix,
+      totalObserved: 60,
+      confidence: "high",
+      hasPriorComparison: true,
+    });
+
+    expect(result).not.toContain("broader execution roles roles");
+  });
+
+  test("No Other in mix: output ends correctly without double-roles", () => {
+    const hiringMix: [string, number][] = [
+      ["Engineering", 40],
+      ["Product", 15],
+      ["Sales", 10],
+    ];
+    const result = buildWhyThisMattersInterpretation({
+      hiringMix,
+      totalObserved: 65,
+      confidence: "high",
+      hasPriorComparison: true,
+    });
+
+    // No "Other" injection, template appends " roles" to clean labels
+    expect(result).not.toContain("roles roles");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6B-1: deriveHeroFocusFromHiringMix — GTM hero label guard
+// ---------------------------------------------------------------------------
+
+test.describe("6B-1: deriveHeroFocusFromHiringMix — hero label logic", () => {
+  // Only the top (first) bucket should trigger GTM hero.
+
+  test("Sales #1 → gtm", () => {
+    const mix: [string, number][] = [["Sales", 20], ["Engineering", 15]];
+    expect(deriveHeroFocusFromHiringMix(mix)).toBe("gtm");
+  });
+
+  test("Marketing #1 → gtm", () => {
+    const mix: [string, number][] = [["Marketing", 18], ["Engineering", 12]];
+    expect(deriveHeroFocusFromHiringMix(mix)).toBe("gtm");
+  });
+
+  test("Engineering #1, Sales #2 → default (not GTM)", () => {
+    const mix: [string, number][] = [["Engineering", 20], ["Sales", 15]];
+    expect(deriveHeroFocusFromHiringMix(mix)).toBe("default");
+  });
+
+  test("Engineering #1, Marketing #2 → default (not GTM)", () => {
+    const mix: [string, number][] = [["Engineering", 25], ["Marketing", 10]];
+    expect(deriveHeroFocusFromHiringMix(mix)).toBe("default");
+  });
+
+  test("Product #1, Sales #2 → default (not GTM)", () => {
+    const mix: [string, number][] = [["Product", 18], ["Sales", 14]];
+    expect(deriveHeroFocusFromHiringMix(mix)).toBe("default");
+  });
+
+  test("Empty mix → default", () => {
+    expect(deriveHeroFocusFromHiringMix([])).toBe("default");
+  });
+
+  test("Case-insensitive bucket names are handled (lowercase 'sales')", () => {
+    // getHiringMix returns exact string keys from mapToFunctionalBucket, which always
+    // returns capitalised strings ("Sales", "Marketing"). This test verifies the function
+    // also handles already-lowercased input defensively.
+    const mix: [string, number][] = [["sales", 20], ["engineering", 15]];
+    expect(deriveHeroFocusFromHiringMix(mix)).toBe("gtm");
   });
 });

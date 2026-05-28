@@ -6,13 +6,14 @@ import { buildSignInRedirectPath, requireAuthSession } from "@/lib/auth/session"
 import { getStratumBriefById } from "@/lib/briefs/repository";
 import { buildStratumLimitations, formatSourceLabel } from "@/lib/briefs/presentation";
 import { getWatchlistBriefReplayContext } from "@/lib/watchlists/repository";
-import { 
-  deriveBriefPublicReadiness, 
+import {
+  deriveBriefPublicReadiness,
   buildApprovedWatchlistSummary,
   buildWhyThisMattersInterpretation,
   formatHiringMixBucketLabel,
-  type ApprovedWatchlistLabel, 
-  type WatchlistConfidenceLevel, 
+  deriveHeroFocusFromHiringMix,
+  type ApprovedWatchlistLabel,
+  type WatchlistConfidenceLevel,
   type WatchlistProofGrounding,
   type ChangeSignificance,
   type ChangeDirection,
@@ -182,8 +183,9 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
   
   // Editorial Hero Logic
   const sourceLabel = formatSourceLabel(brief.atsSourceUsed);
-  const topBuckets = hiringMix.slice(0, 2).map(([b]) => b.toLowerCase());
-  const isGTMFocus = topBuckets.includes("sales") || topBuckets.includes("marketing");
+  // GTM hero only fires when Sales or Marketing is the #1 bucket.
+  // Being #2 while Engineering leads is not enough — see audit Phase 6B-1.
+  const isGTMFocus = deriveHeroFocusFromHiringMix(hiringMix as [string, number][]) === "gtm";
   
   const observedCount = brief.jobsObservedCount ?? allJobs.length ?? roles.length;
   const heroSentence = observedCount > 0

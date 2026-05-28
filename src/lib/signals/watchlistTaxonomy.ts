@@ -1010,12 +1010,14 @@ export function buildWhyThisMattersInterpretation(args: {
     return "Visible hiring reflects a mix of functional roles across the organization.";
   }
 
-  // If "Other" was stripped from top-3, pad with "broader execution roles" so
+  // If "Other" was stripped from top-3, pad with "broader execution" so
   // the sentence still acknowledges the remaining unclassified activity.
+  // "broader execution" (not "broader execution roles") because the template
+  // appends " roles" — using the full phrase here would produce "roles roles".
   const hadOtherInTop3 = originalTop3.includes("Other");
   const labelsToUse =
     hadOtherInTop3 && publicLabels.length < originalTop3.length
-      ? [...publicLabels, "broader execution roles"].slice(0, 3)
+      ? [...publicLabels, "broader execution"].slice(0, 3)
       : publicLabels;
 
   const focus =
@@ -1030,4 +1032,22 @@ export function buildWhyThisMattersInterpretation(args: {
   }
 
   return `Visible hiring is currently weighted toward ${focus} roles across the organization.`;
+}
+
+/**
+ * Determines whether the hero hiring-read label should say "Go-to-market hiring read"
+ * or fall back to the generic "Active hiring read".
+ *
+ * GTM hero fires ONLY when Sales or Marketing is the top bucket.
+ * Being in position #2 while Engineering is #1 is not enough — that would
+ * misrepresent boards where Engineering dominates.
+ *
+ * @param hiringMix Sorted [bucketName, count][] from getHiringMix() — descending by count.
+ */
+export function deriveHeroFocusFromHiringMix(
+  hiringMix: [string, number][]
+): "gtm" | "default" {
+  const topBucket = hiringMix[0]?.[0]?.toLowerCase() ?? "";
+  if (topBucket === "sales" || topBucket === "marketing") return "gtm";
+  return "default";
 }
