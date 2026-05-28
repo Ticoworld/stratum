@@ -39,7 +39,8 @@ export type WatchlistEntryDiffCategory =
   | "source_coverage_changed"
   | "proof_role_grounding_changed"
   | "open_roles_observed_changed"
-  | "proof_roles_changed";
+  | "proof_roles_changed"
+  | "source_department_activity_changed";
 
 export interface WatchlistEntryDiffChange {
   category: WatchlistEntryDiffCategory;
@@ -422,10 +423,14 @@ export function buildWatchlistEntryDiff(
   }
 
   if (mixDiffs.length > 0) {
+    // "Source department activity shifted" — not "Hiring mix shifted" — because the
+    // comparison here is between raw ATS department counts, which are not the same
+    // buckets shown in the Hiring Mix chart. Using the chart's language here would
+    // imply the numbers are comparable when they are not (Phase 6B-2A).
     changes.push({
-      category: "watchlist_read_label_changed",
-      label: "Hiring mix shifted",
-      detail: `Visible hiring mix shifted: ${mixDiffs.join("; ")}.`,
+      category: "source_department_activity_changed",
+      label: "Source department activity shifted",
+      detail: `Source department activity shifted: ${mixDiffs.join("; ")}.`,
     });
   }
 

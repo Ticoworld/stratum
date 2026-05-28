@@ -143,7 +143,7 @@ test.describe("Watchlist History Change Detection Logic", () => {
     expect(diff.comparisonNotes[0]).toContain("Role-level comparison is limited");
   });
 
-  test("6. Hiring mix shift is detected from full jobs", () => {
+  test("6. Source department shift is detected from full jobs", () => {
     const prevJobs = [mockJob("Sales A", { department: "Sales" }), mockJob("Sales B", { department: "Sales" }), mockJob("Sales C", { department: "Sales" })];
     const latestJobs = [
       ...prevJobs,
@@ -151,7 +151,7 @@ test.describe("Watchlist History Change Detection Logic", () => {
       mockJob("Eng B", { department: "Engineering" }),
       mockJob("Eng C", { department: "Engineering" }),
     ];
-    
+
     const prev = mockHistoryItem(prevJobs, [], {
       hiringMix: [{ department: "Sales", count: 3, sampleJobs: [] }]
     });
@@ -161,10 +161,138 @@ test.describe("Watchlist History Change Detection Logic", () => {
         { department: "Engineering", count: 3, sampleJobs: [] }
       ]
     });
-    
+
     const diff = buildWatchlistEntryDiff(latest, prev);
-    
+
     expect(diff.hasMaterialChange).toBe(true);
+    // The department-movement substring must still appear in the summary
     expect(diff.summary).toContain("Engineering openings increased from 0 to 3");
+    // Phase 6B-2A: verify the new wording and category
+    expect(diff.summary).toContain("Source department activity shifted");
+    expect(diff.summary).not.toContain("Visible hiring mix shifted");
+    expect(diff.changes.some(c => c.category === "source_department_activity_changed")).toBe(true);
+    expect(diff.changes.some(c => c.label === "Source department activity shifted")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6B-2A: source department activity wording regression guard
+// ---------------------------------------------------------------------------
+
+test.describe("6B-2A: Source department activity wording", () => {
+  // These tests verify that the change summary section uses the new wording that
+  // makes clear the comparison is raw ATS department data, not the functional
+  // Hiring Mix chart buckets. Numbers are not comparable across the two views.
+
+  test("Mix-shift detail uses 'Source department activity shifted', not 'Visible hiring mix shifted'", () => {
+    const prevJobs = [
+      mockJob("Sales A", { department: "Sales" }),
+      mockJob("Sales B", { department: "Sales" }),
+      mockJob("Sales C", { department: "Sales" }),
+    ];
+    const latestJobs = [
+      ...prevJobs,
+      mockJob("Eng A", { department: "Engineering" }),
+      mockJob("Eng B", { department: "Engineering" }),
+      mockJob("Eng C", { department: "Engineering" }),
+    ];
+
+    const prev = mockHistoryItem(prevJobs, [], {
+      hiringMix: [{ department: "Sales", count: 3, sampleJobs: [] }],
+    });
+    const latest = mockHistoryItem(latestJobs, [], {
+      hiringMix: [
+        { department: "Sales", count: 3, sampleJobs: [] },
+        { department: "Engineering", count: 3, sampleJobs: [] },
+      ],
+    });
+
+    const diff = buildWatchlistEntryDiff(latest, prev);
+    const mixChange = diff.changes.find(c => c.category === "source_department_activity_changed");
+
+    expect(mixChange).toBeDefined();
+    expect(mixChange!.label).toBe("Source department activity shifted");
+    expect(mixChange!.detail).toContain("Source department activity shifted");
+    expect(mixChange!.detail).not.toContain("Visible hiring mix shifted");
+    expect(mixChange!.detail).not.toContain("Hiring mix shifted");
+    // Department-level movement text is still present
+    expect(mixChange!.detail).toContain("Engineering openings increased from 0 to 3");
+  });
+
+  test("Mix-shift change is no longer miscategorised as watchlist_read_label_changed", () => {
+    const prevJobs = [
+      mockJob("Sales A", { department: "Sales" }),
+      mockJob("Sales B", { department: "Sales" }),
+    ];
+    const latestJobs = [
+      ...prevJobs,
+      mockJob("Eng A", { department: "Engineering" }),
+      mockJob("Eng B", { department: "Engineering" }),
+      mockJob("Eng C", { department: "Engineering" }),
+    ];
+
+    const prev = mockHistoryItem(prevJobs, [], {
+      hiringMix: [{ department: "Sales", count: 2, sampleJobs: [] }],
+    });
+    const latest = mockHistoryItem(latestJobs, [], {
+      hiringMix: [
+        { department: "Sales", count: 2, sampleJobs: [] },
+        { department: "Engineering", count: 3, sampleJobs: [] },
+      ],
+    });
+
+    const diff = buildWatchlistEntryDiff(latest, prev);
+
+    // The mix-shift event must use the new category
+    const mixChange = diff.changes.find(c => c.label === "Source department activity shifted");
+    expect(mixChange).toBeDefined();
+    expect(mixChange!.category).toBe("source_department_activity_changed");
+    expect(mixChange!.category).not.toBe("watchlist_read_label_changed");
+  });
+
+  test("Actual label change still uses watchlist_read_label_changed category", () => {
+    const jobs = [mockJob("Engineer A"), mockJob("Engineer B")];
+
+    const prev = mockHistoryItem(jobs, [], {
+      watchlistReadLabel: "Go-to-market hiring signal",
+      hiringMix: [{ department: "Engineering", count: 2, sampleJobs: [] }],
+    });
+    const latest = mockHistoryItem(jobs, [], {
+      watchlistReadLabel: "Product and engineering buildout signal",
+      hiringMix: [{ department: "Engineering", count: 2, sampleJobs: [] }],
+    });
+
+    const diff = buildWatchlistEntryDiff(latest, prev);
+    const labelChange = diff.changes.find(c => c.category === "watchlist_read_label_changed");
+
+    expect(labelChange).toBeDefined();
+    expect(labelChange!.label).toBe("Watchlist read changed");
+  });
+
+  test("Detection thresholds are unchanged: small board +1 ATS dept role is still material", () => {
+    const prevJobs = [
+      mockJob("Sales A", { department: "Sales" }),
+      mockJob("Sales B", { department: "Sales" }),
+    ];
+    const latestJobs = [
+      ...prevJobs,
+      mockJob("Eng A", { department: "Engineering" }),
+    ];
+
+    const prev = mockHistoryItem(prevJobs, [], {
+      hiringMix: [{ department: "Sales", count: 2, sampleJobs: [] }],
+    });
+    const latest = mockHistoryItem(latestJobs, [], {
+      hiringMix: [
+        { department: "Sales", count: 2, sampleJobs: [] },
+        { department: "Engineering", count: 1, sampleJobs: [] },
+      ],
+    });
+
+    const diff = buildWatchlistEntryDiff(latest, prev);
+
+    // Wording changed but detection behaviour is unchanged
+    expect(diff.hasMaterialChange).toBe(true);
+    expect(diff.changes.some(c => c.category === "source_department_activity_changed")).toBe(true);
   });
 });
