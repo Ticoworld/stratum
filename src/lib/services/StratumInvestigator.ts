@@ -30,6 +30,7 @@ import { buildSignalClusters } from "@/lib/signals/roleClusters";
 import {
   type ApprovedWatchlistLabel,
   buildApprovedWatchlistSummary,
+  computeFunctionalMix,
   deriveApprovedWatchlistLabel,
   getDominantFunctionalSignal,
   getFunctionalSignal,
@@ -832,6 +833,7 @@ function buildNoReadResult(args: {
   jobs: Job[];
   proofRoleSelection: ProofRoleSelection;
   hiringMix: DepartmentBreakdown[];
+  functionalMix: [string, number][];
   engineeringVsSalesRatio: string;
   analysisTimeMs: number;
   apiSource: JobBoardSource | null;
@@ -855,6 +857,7 @@ function buildNoReadResult(args: {
     jobs,
     proofRoleSelection,
     hiringMix,
+    functionalMix,
     engineeringVsSalesRatio,
     analysisTimeMs,
     apiSource,
@@ -922,6 +925,7 @@ function buildNoReadResult(args: {
     proofRoleGrounding: proofRoleSelection.grounding,
     proofRoleGroundingExplanation: proofRoleSelection.explanation,
     hiringMix,
+    functionalMix,
     hiringVelocity: "Unknown",
     strategicVerdict,
     engineeringVsSalesRatio,
@@ -1001,6 +1005,11 @@ export interface StratumResult {
   proofRoleGrounding: ProofRoleGrounding;
   proofRoleGroundingExplanation: string;
   hiringMix: DepartmentBreakdown[];
+  /** Functional bucket breakdown computed by computeFunctionalMix() — same
+   *  classifier as the Hiring Mix chart. Stored in resultSnapshot JSONB so
+   *  future comparison can use chart-consistent buckets. Optional so legacy
+   *  snapshots without this field remain valid. */
+  functionalMix?: [string, number][];
   hiringVelocity: string;
   strategicVerdict: string;
   engineeringVsSalesRatio: string;
@@ -1079,6 +1088,7 @@ export class StratumInvestigator {
     } = fetchResult;
     const elapsed = Date.now() - this.startTime;
     const hiringMix = aggregateJobsByDepartment(jobs);
+    const functionalMix = computeFunctionalMix(jobs);
     const deterministicRatio = calculateEngineeringVsSalesRatio(jobs);
     const providerSummaries = buildProviderAttemptSummaries({
       attempts,
@@ -1132,6 +1142,7 @@ export class StratumInvestigator {
         jobs,
         proofRoleSelection: selectProofRoles(jobs),
         hiringMix,
+        functionalMix,
         engineeringVsSalesRatio: deterministicRatio,
         analysisTimeMs: elapsed,
         apiSource,
@@ -1173,6 +1184,7 @@ export class StratumInvestigator {
         proofRoleGrounding: proofRoleSelection.grounding,
         proofRoleGroundingExplanation: proofRoleSelection.explanation,
         hiringMix,
+        functionalMix,
         hiringVelocity: "Unknown",
         strategicVerdict: "Watchlist read unavailable",
         engineeringVsSalesRatio: deterministicRatio,
@@ -1242,6 +1254,7 @@ export class StratumInvestigator {
       proofRoleGrounding: proofRoleSelection.grounding,
       proofRoleGroundingExplanation: proofRoleSelection.explanation,
       hiringMix,
+      functionalMix,
       hiringVelocity: restrainedVelocity,
       strategicVerdict: restrainedVerdict,
       engineeringVsSalesRatio: deterministicRatio,
