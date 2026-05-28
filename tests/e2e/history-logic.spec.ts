@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { buildWatchlistEntryDiff } from "../../src/lib/watchlists/history";
+import { computeFunctionalMix } from "../../src/lib/signals/watchlistTaxonomy";
 import type { Job } from "../../src/lib/api/boards";
 import type { WatchlistEntryBriefHistoryItem } from "../../src/lib/watchlists/history";
 
@@ -294,5 +295,238 @@ test.describe("6B-2A: Source department activity wording", () => {
     // Wording changed but detection behaviour is unchanged
     expect(diff.hasMaterialChange).toBe(true);
     expect(diff.changes.some(c => c.category === "source_department_activity_changed")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6B-2D: functional mix comparison
+// ---------------------------------------------------------------------------
+
+function mockHistoryItemWithFunctionalMix(
+  functionalMix: [string, number][],
+  jobsCount: number,
+  opts: Partial<WatchlistEntryBriefHistoryItem> = {}
+): WatchlistEntryBriefHistoryItem {
+  return {
+    id: "test-id",
+    queriedCompanyName: "Test Co",
+    matchedCompanyName: "Test Co",
+    atsSourceUsed: "GREENHOUSE",
+    resultState: "supported_provider_matched_with_observed_openings",
+    companyMatchConfidence: "high",
+    sourceCoverageCompleteness: "single_matched_provider_only",
+    watchlistReadLabel: "Product and engineering buildout signal",
+    watchlistReadSummary: "Summary",
+    watchlistReadConfidence: "high",
+    proofRoleGrounding: "exact",
+    jobsObservedCount: jobsCount,
+    hiringMix: [],
+    functionalMix,
+    allJobsSnapshot: [],
+    proofRolesSnapshot: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...opts,
+  };
+}
+
+function mockLegacyHistoryItem(
+  hiringMix: Array<{ department: string; count: number }>,
+  jobsCount: number,
+  opts: Partial<WatchlistEntryBriefHistoryItem> = {}
+): WatchlistEntryBriefHistoryItem {
+  return {
+    id: "legacy-id",
+    queriedCompanyName: "Test Co",
+    matchedCompanyName: "Test Co",
+    atsSourceUsed: "GREENHOUSE",
+    resultState: "supported_provider_matched_with_observed_openings",
+    companyMatchConfidence: "high",
+    sourceCoverageCompleteness: "single_matched_provider_only",
+    watchlistReadLabel: "Product and engineering buildout signal",
+    watchlistReadSummary: "Summary",
+    watchlistReadConfidence: "high",
+    proofRoleGrounding: "exact",
+    jobsObservedCount: jobsCount,
+    hiringMix: hiringMix.map(d => ({ ...d, sampleJobs: [] })),
+    functionalMix: undefined,
+    allJobsSnapshot: [],
+    proofRolesSnapshot: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...opts,
+  };
+}
+
+test.describe("6B-2D: functional mix comparison", () => {
+
+  // A. Both briefs have functionalMix — use functional comparison
+  test("A1. Both have functionalMix: uses functional_mix_changed category", () => {
+    const prev = mockHistoryItemWithFunctionalMix(
+      [["Engineering", 10], ["Sales", 3]],
+      13
+    );
+    const latest = mockHistoryItemWithFunctionalMix(
+      [["Engineering", 14], ["Sales", 3]],
+      17
+    );
+
+    const diff = buildWatchlistEntryDiff(latest, prev);
+    const mixChange = diff.changes.find(c => c.category === "functional_mix_changed");
+
+    expect(mixChange).toBeDefined();
+    expect(mixChange!.label).toBe("Functional hiring mix shifted");
+    expect(mixChange!.detail).toContain("Engineering openings increased from 10 to 14");
+    expect(mixChange!.detail).not.toContain("Source department");
+    // Must NOT use the raw ATS category
+    expect(diff.changes.some(c => c.category === "source_department_activity_changed")).toBe(false);
+  });
+
+  test("A2. Both have functionalMix: summary reflects functional bucket names", () => {
+    const prev = mockHistoryItemWithFunctionalMix(
+      [["Engineering", 8], ["Sales", 5]],
+      13
+    );
+    const latest = mockHistoryItemWithFunctionalMix(
+      [["Engineering", 12], ["Sales", 4]],
+      16
+    );
+
+    const diff = buildWatchlistEntryDiff(latest, prev);
+
+    expect(diff.summary).toContain("Functional hiring mix shifted");
+    expect(diff.summary).not.toContain("Source department activity shifted");
+  });
+
+  test("A3. Both have functionalMix: numbers are chart-consistent", () => {
+    // Simulate a board where computeFunctionalMix was used to build functionalMix.
+    // "Platform Engineer" (dept: Core Platform) maps to "Engineering" in the chart.
+    const jobs: Job[] = [
+      { title: "Platform Engineer", department: "Core Platform", location: null, source: "GREENHOUSE",
+        roleId: null, roleIdType: null, requisitionId: null, jobUrl: null, applyUrl: null,
+        sourceTimestamp: null, sourceTimestampType: null, observedAt: new Date().toISOString() },
+      { title: "Platform Engineer", department: "Core Platform", location: null, source: "GREENHOUSE",
+        roleId: null, roleIdType: null, requisitionId: null, jobUrl: null, applyUrl: null,
+        sourceTimestamp: null, sourceTimestampType: null, observedAt: new Date().toISOString() },
+      { title: "Account Executive", department: "Sales", location: null, source: "GREENHOUSE",
+        roleId: null, roleIdType: null, requisitionId: null, jobUrl: null, applyUrl: null,
+        sourceTimestamp: null, sourceTimestampType: null, observedAt: new Date().toISOString() },
+    ];
+    const computedMix = computeFunctionalMix(jobs);
+
+    // computedMix should be [["Engineering", 2], ["Sales", 1]]
+    const asMap = Object.fromEntries(computedMix);
+    expect(asMap["Engineering"]).toBe(2);
+    expect(asMap["Sales"]).toBe(1);
+    // "Core Platform" never appears as a bucket — chart always shows "Engineering"
+    expect(asMap["Core Platform"]).toBeUndefined();
+  });
+
+  // B. Both briefs lack functionalMix — raw ATS fallback
+  test("B. Neither has functionalMix: falls back to source_department_activity_changed", () => {
+    const prev = mockLegacyHistoryItem([{ department: "Sales", count: 5 }], 5);
+    const latest = mockLegacyHistoryItem(
+      [{ department: "Sales", count: 3 }, { department: "Engineering", count: 3 }],
+      6
+    );
+
+    const diff = buildWatchlistEntryDiff(latest, prev);
+
+    expect(diff.changes.some(c => c.category === "source_department_activity_changed")).toBe(true);
+    expect(diff.changes.some(c => c.category === "functional_mix_changed")).toBe(false);
+    expect(diff.summary).toContain("Source department activity shifted");
+  });
+
+  // C. Mixed pair — one has functionalMix, one does not
+  test("C1. Mixed pair: falls back to raw ATS comparison", () => {
+    const legacyBrief = mockLegacyHistoryItem([{ department: "Engineering", count: 10 }], 10);
+    const newBrief = mockHistoryItemWithFunctionalMix([["Engineering", 14]], 14);
+
+    // Latest is new, previous is legacy
+    const diff = buildWatchlistEntryDiff(newBrief, legacyBrief);
+
+    // Must not use functional_mix_changed — sources are incompatible
+    expect(diff.changes.some(c => c.category === "functional_mix_changed")).toBe(false);
+    // Should degrade to weak comparison
+    expect(diff.comparisonStrength).toBe("weak");
+  });
+
+  test("C2. Mixed pair: adds a comparison note about the legacy brief", () => {
+    const legacyBrief = mockLegacyHistoryItem([{ department: "Engineering", count: 5 }], 5);
+    const newBrief = mockHistoryItemWithFunctionalMix([["Engineering", 8]], 8);
+
+    const diff = buildWatchlistEntryDiff(newBrief, legacyBrief);
+
+    expect(diff.comparisonStrength).toBe("weak");
+    // The note should mention legacy and functional mix
+    const notesText = diff.comparisonNotes.join(" ").toLowerCase();
+    expect(notesText).toContain("functional mix");
+    expect(notesText).toMatch(/legacy|unavailable/);
+  });
+
+  test("C3. Reversed mixed pair (previous is new, latest is legacy) also falls back", () => {
+    const legacyBrief = mockLegacyHistoryItem([{ department: "Engineering", count: 10 }], 10);
+    const newBrief = mockHistoryItemWithFunctionalMix([["Engineering", 8]], 8);
+
+    // Latest is legacy, previous is new — still incompatible
+    const diff = buildWatchlistEntryDiff(legacyBrief, newBrief);
+
+    expect(diff.changes.some(c => c.category === "functional_mix_changed")).toBe(false);
+    expect(diff.comparisonStrength).toBe("weak");
+  });
+
+  // D. No crash on malformed functionalMix
+  test("D1. Malformed functionalMix (not an array) falls back to raw ATS", () => {
+    const malformed = {
+      ...mockLegacyHistoryItem([{ department: "Engineering", count: 5 }], 5),
+      // Override functionalMix with an invalid value
+      functionalMix: "not-an-array" as unknown as [string, number][],
+    };
+    const prev = mockLegacyHistoryItem([{ department: "Engineering", count: 3 }], 3);
+
+    const diff = buildWatchlistEntryDiff(malformed, prev);
+    // Should not throw; should fall back gracefully
+    expect(diff.changes.some(c => c.category === "source_department_activity_changed")).toBe(true);
+    expect(diff.changes.some(c => c.category === "functional_mix_changed")).toBe(false);
+  });
+
+  test("D2. Malformed functionalMix (wrong tuple shape) falls back to raw ATS", () => {
+    const malformed = {
+      ...mockLegacyHistoryItem([{ department: "Engineering", count: 5 }], 5),
+      functionalMix: [["Engineering", "not-a-number"]] as unknown as [string, number][],
+    };
+    const prev = mockLegacyHistoryItem([{ department: "Engineering", count: 3 }], 3);
+
+    const diff = buildWatchlistEntryDiff(malformed, prev);
+    expect(diff.changes.some(c => c.category === "functional_mix_changed")).toBe(false);
+  });
+
+  // E. Significance detection is preserved with functionalMix
+  test("E. Significance thresholds work on functionalMix buckets (small board)", () => {
+    const prev = mockHistoryItemWithFunctionalMix(
+      [["Engineering", 4], ["Sales", 2]],
+      6
+    );
+    const latest = mockHistoryItemWithFunctionalMix(
+      [["Engineering", 6], ["Sales", 2]],
+      8
+    );
+
+    const diff = buildWatchlistEntryDiff(latest, prev);
+
+    // Small board (<10): any delta is significant — Engineering +2 should fire
+    expect(diff.hasSignificantChange).toBe(true);
+    expect(diff.significanceDrivers).toContain("mix");
+  });
+
+  test("E2. No change in functionalMix produces no mix change event", () => {
+    const mix: [string, number][] = [["Engineering", 10], ["Sales", 5]];
+    const prev = mockHistoryItemWithFunctionalMix(mix, 15);
+    const latest = mockHistoryItemWithFunctionalMix(mix, 15);
+
+    const diff = buildWatchlistEntryDiff(latest, prev);
+
+    expect(diff.changes.some(c => c.category === "functional_mix_changed")).toBe(false);
+    expect(diff.hasSignificantChange).toBe(false);
   });
 });

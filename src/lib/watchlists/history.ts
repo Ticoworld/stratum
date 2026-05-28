@@ -24,6 +24,9 @@ export interface WatchlistEntryBriefHistoryItem {
   proofRoleGrounding: ProofRoleGrounding;
   jobsObservedCount: number;
   hiringMix: DepartmentBreakdown[];
+  /** Chart-consistent functional bucket breakdown from computeFunctionalMix().
+   *  Present for briefs created in Phase 6B-2C+; absent on legacy briefs. */
+  functionalMix?: [string, number][];
   allJobsSnapshot: Job[];
   proofRolesSnapshot: Job[];
   createdAt: string;
@@ -40,7 +43,8 @@ export type WatchlistEntryDiffCategory =
   | "proof_role_grounding_changed"
   | "open_roles_observed_changed"
   | "proof_roles_changed"
-  | "source_department_activity_changed";
+  | "source_department_activity_changed"
+  | "functional_mix_changed";
 
 export interface WatchlistEntryDiffChange {
   category: WatchlistEntryDiffCategory;
@@ -224,6 +228,20 @@ function buildComparisonNotes(
   return notes;
 }
 
+/** Validates that an unknown value from JSONB is a well-formed [string, number][] array. */
+function isValidFunctionalMix(value: unknown): value is [string, number][] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (entry) =>
+        Array.isArray(entry) &&
+        entry.length === 2 &&
+        typeof entry[0] === "string" &&
+        typeof entry[1] === "number"
+    )
+  );
+}
+
 export function toWatchlistEntryBriefHistoryItem(
   snapshot: StratumBriefSnapshot
 ): WatchlistEntryBriefHistoryItem {
@@ -245,6 +263,9 @@ export function toWatchlistEntryBriefHistoryItem(
     proofRoleGrounding: snapshot.proofRoleGrounding,
     jobsObservedCount: snapshot.jobsObservedCount ?? 0,
     hiringMix: snapshot.resultSnapshot?.hiringMix ?? [],
+    functionalMix: isValidFunctionalMix(snapshot.resultSnapshot?.functionalMix)
+      ? snapshot.resultSnapshot.functionalMix
+      : undefined,
     allJobsSnapshot: snapshot.resultSnapshot?.jobs ?? [],
     proofRolesSnapshot: snapshot.proofRolesSnapshot ?? [],
     createdAt: snapshot.createdAt,
@@ -371,14 +392,34 @@ export function buildWatchlistEntryDiff(
     });
   }
 
-  // Functional Mix Changes
-  const latestMix = new Map((latest.hiringMix || []).map((d) => [d.department, d.count]));
-  const previousMix = new Map((previous.hiringMix || []).map((d) => [d.department, d.count]));
+  // Mix comparison source selection (Phase 6B-2D):
+  // Use chart-consistent functionalMix when both briefs have it; otherwise fall
+  // back to raw ATS hiringMix (source_department_activity_changed — Phase 6B-2A).
+  const latestHasFunctional = isValidFunctionalMix(latest.functionalMix);
+  const previousHasFunctional = isValidFunctionalMix(previous.functionalMix);
+  const useFunctionalMix = latestHasFunctional && previousHasFunctional;
+
+  // Mixed pair: one brief has functionalMix, the other is legacy. Don't compare
+  // incompatible sources; note the limitation and degrade comparison strength.
+  if (latestHasFunctional !== previousHasFunctional) {
+    comparisonNotes.push(
+      "functional mix comparison is unavailable for one legacy brief; showing source department movement"
+    );
+    comparisonStrength = "weak";
+  }
+
+  const latestMix = useFunctionalMix
+    ? new Map(latest.functionalMix!)
+    : new Map((latest.hiringMix || []).map((d) => [d.department, d.count]));
+  const previousMix = useFunctionalMix
+    ? new Map(previous.functionalMix!)
+    : new Map((previous.hiringMix || []).map((d) => [d.department, d.count]));
+
   const allDepts = new Set([...latestMix.keys(), ...previousMix.keys()]);
   const mixDiffs: string[] = [];
 
   const totalBoardSize = Math.max(latest.jobsObservedCount, previous.jobsObservedCount);
-  
+
   const getTopTwoDepts = (mixMap: Map<string, number>) => {
     const sorted = Array.from(mixMap.entries()).sort((a, b) => b[1] - a[1]);
     return {
@@ -401,7 +442,7 @@ export function buildWatchlistEntryDiff(
     if (lCount !== pCount && (totalBoardSize < 10 || lCount > 2 || pCount > 2)) {
       const dir = lCount > pCount ? "increased" : "decreased";
       mixDiffs.push(`${dept} openings ${dir} from ${pCount} to ${lCount}`);
-      
+
       const isNewDominant = latestTop.topDept === dept && previousTop.topDept !== dept && latestTop.topCount > latestTop.secondCount;
       let isMixSignificant = false;
 
@@ -423,15 +464,23 @@ export function buildWatchlistEntryDiff(
   }
 
   if (mixDiffs.length > 0) {
-    // "Source department activity shifted" — not "Hiring mix shifted" — because the
-    // comparison here is between raw ATS department counts, which are not the same
-    // buckets shown in the Hiring Mix chart. Using the chart's language here would
-    // imply the numbers are comparable when they are not (Phase 6B-2A).
-    changes.push({
-      category: "source_department_activity_changed",
-      label: "Source department activity shifted",
-      detail: `Source department activity shifted: ${mixDiffs.join("; ")}.`,
-    });
+    if (useFunctionalMix) {
+      // Both briefs have chart-consistent functionalMix: numbers are directly
+      // comparable to the Hiring Mix chart — use the functional category.
+      changes.push({
+        category: "functional_mix_changed",
+        label: "Functional hiring mix shifted",
+        detail: `Functional hiring mix shifted: ${mixDiffs.join("; ")}.`,
+      });
+    } else {
+      // Raw ATS department fallback: numbers are NOT comparable to the chart —
+      // keep the Phase 6B-2A wording that makes the mismatch explicit.
+      changes.push({
+        category: "source_department_activity_changed",
+        label: "Source department activity shifted",
+        detail: `Source department activity shifted: ${mixDiffs.join("; ")}.`,
+      });
+    }
   }
 
   // Role-level Changes
