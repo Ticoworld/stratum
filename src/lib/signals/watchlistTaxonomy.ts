@@ -45,6 +45,16 @@ export interface DepartmentBreakdown {
 }
 
 export type CurrentSignalStrength = "strong" | "moderate" | "weak";
+
+export type EvidenceQuality = "strong" | "moderate" | "weak";
+
+export type SignalClarity =
+  | "concentrated"
+  | "broad"
+  | "mixed"
+  | "multi_location"
+  | "thin"
+  | "tentative";
 export type ChangeDirection =
   | "expansion"
   | "contraction"
@@ -891,6 +901,62 @@ export function deriveBriefPublicReadiness(args: {
     changeDirection: effectiveDirection,
     publicUse,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6C: Evidence Quality + Signal Clarity (pure helpers, no UI wiring yet)
+// ---------------------------------------------------------------------------
+
+/**
+ * Answers: "Can we trust the observed data?"
+ *
+ * Operates purely on data-quality signals — volume, confidence, and grounding.
+ * The approved label / signal shape is intentionally excluded: broad or mixed
+ * labels describe the strategic read, not the trustworthiness of the evidence.
+ */
+export function deriveEvidenceQuality(args: {
+  jobsCount: number;
+  companyMatchConfidence: WatchlistConfidenceLevel;
+  watchlistReadConfidence: WatchlistConfidenceLevel;
+  proofRoleGrounding: WatchlistProofGrounding;
+}): EvidenceQuality {
+  // Weak blockers — any single blocker is sufficient
+  if (args.jobsCount <= 2) return "weak";
+  if (args.companyMatchConfidence === "low" || args.companyMatchConfidence === "none") return "weak";
+  if (args.watchlistReadConfidence === "low" || args.watchlistReadConfidence === "none") return "weak";
+  if (args.proofRoleGrounding === "none" || args.proofRoleGrounding === "fallback") return "weak";
+
+  // Moderate caveats — any single caveat caps the result at moderate
+  if (args.jobsCount <= 4) return "moderate";
+  if (args.watchlistReadConfidence === "medium") return "moderate";
+  if (args.proofRoleGrounding === "partial") return "moderate";
+
+  return "strong";
+}
+
+/**
+ * Answers: "Is there a clean strategic read?"
+ *
+ * Derived entirely from the approved label — a dedicated not-null DB column
+ * available for every brief. No signal clusters or functional mix required.
+ */
+export function deriveSignalClarity(label: ApprovedWatchlistLabel): SignalClarity {
+  switch (label) {
+    case "Broad platform and GTM hiring signal":
+    case "Broad multi-function hiring signal":
+      return "broad";
+    case "Mixed hiring signal":
+      return "mixed";
+    case "Multi-location hiring signal":
+      return "multi_location";
+    case "Thin hiring signal":
+    case "Limited hiring signal":
+      return "thin";
+    case "Tentative hiring signal":
+      return "tentative";
+    default:
+      return "concentrated";
+  }
 }
 
 // ---------------------------------------------------------------------------
