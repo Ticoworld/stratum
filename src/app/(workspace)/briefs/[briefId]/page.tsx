@@ -255,10 +255,23 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
     }
   };
 
+  const formatSignalClarity = (clarity: string) => {
+    switch (clarity) {
+      case "concentrated": return "Concentrated";
+      case "broad": return "Broad";
+      case "mixed": return "Mixed";
+      case "multi_location": return "Multi-location";
+      case "thin": return "Thin";
+      case "tentative": return "Tentative";
+      default: return clarity;
+    }
+  };
+
   const heroFacts = [
     ["Snapshot", formatDateTimeValue(brief.createdAt)],
     ["Source", sourceLabel],
-    ["Board Evidence", readiness.currentSignal.charAt(0).toUpperCase() + readiness.currentSignal.slice(1)],
+    ["Evidence Quality", readiness.evidenceQuality.charAt(0).toUpperCase() + readiness.evidenceQuality.slice(1)],
+    ["Signal Clarity", formatSignalClarity(readiness.signalClarity)],
     ["Change Event", formatChangeEvent(readiness.changeSignificance, readiness.changeDirection)],
     ["Public Use", formatPublicUse(readiness.publicUse)],
   ] as const;
@@ -300,7 +313,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             {heroFacts.map(([label, value]) => (
               <div key={label} className="rounded-xl border bg-[var(--surface)] px-4 py-3" style={{ borderColor: "var(--border)" }}>
                 <p className="text-[10px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
