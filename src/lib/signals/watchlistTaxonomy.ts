@@ -70,6 +70,8 @@ export interface BriefPublicReadiness {
   reasons: string[];
   blockers: string[];
   currentSignal: CurrentSignalStrength;
+  evidenceQuality: EvidenceQuality;
+  signalClarity: SignalClarity;
   changeSignificance: ChangeSignificance;
   changeDirection: ChangeDirection;
   publicUse: PublicUseRecommendation;
@@ -829,15 +831,16 @@ export function deriveChangeSignificance(args: {
 }
 
 export function derivePublicUseRecommendation(
-  currentSignal: CurrentSignalStrength,
+  evidenceQuality: EvidenceQuality,
+  signalClarity: SignalClarity,
   changeSignificance: ChangeSignificance,
   changeDirection: ChangeDirection
 ): PublicUseRecommendation {
-  if (currentSignal === "weak") return "internal_only";
+  if (evidenceQuality === "weak") return "internal_only";
 
-  if (currentSignal === "strong") {
+  // Only a concentrated signal can escalate to strong_update or strong_baseline.
+  if (evidenceQuality === "strong" && signalClarity === "concentrated") {
     if (changeSignificance === "meaningful_change") {
-      // If it's contraction or replacement churn, it's a meaningful movement but maybe not a "strong update" in a positive sense
       if (changeDirection === "contraction" || changeDirection === "replacement_churn") {
         return "cautious_update";
       }
@@ -848,11 +851,23 @@ export function derivePublicUseRecommendation(
     return "cautious_baseline"; // limited_comparison
   }
 
-  // moderate signal
+  // Moderate evidence or non-concentrated signal → cautious variants only.
   if (changeSignificance === "baseline" || changeSignificance === "limited_comparison") {
     return "cautious_baseline";
   }
   return "cautious_update";
+}
+
+function buildSignalClarityReason(clarity: SignalClarity): string | null {
+  switch (clarity) {
+    case "broad": return "The strategic read is broad across multiple functional areas.";
+    case "mixed": return "The strategic read is non-concentrated across multiple functions.";
+    case "multi_location": return "The hiring signal is spread across multiple locations.";
+    case "thin": return "Limited role distribution makes the strategic read unclear.";
+    case "tentative": return "The hiring signal is tentative and not yet confirmed.";
+    case "concentrated": return null;
+    default: return null;
+  }
 }
 
 export function deriveBriefPublicReadiness(args: {
@@ -868,9 +883,13 @@ export function deriveBriefPublicReadiness(args: {
   comparisonStrength: "standard" | "weak" | "unavailable";
   changeDirection: ChangeDirection;
 }): BriefPublicReadiness {
-  const currentSignalResult = deriveCurrentSignalStrength(args);
+  const evidenceQuality = deriveEvidenceQuality(args);
+  const signalClarity = deriveSignalClarity(args.label);
+  // Keep calling the legacy helper so we inherit its human-readable blocker and
+  // evidence-caveat strings without duplicating them here.
+  const legacyStrengthResult = deriveCurrentSignalStrength(args);
   const changeResult = deriveChangeSignificance(args);
-  
+
   let effectiveDirection = args.changeDirection;
   if (changeResult.significance === "baseline") {
     effectiveDirection = "baseline";
@@ -879,12 +898,22 @@ export function deriveBriefPublicReadiness(args: {
   }
 
   const publicUse = derivePublicUseRecommendation(
-    currentSignalResult.strength,
+    evidenceQuality,
+    signalClarity,
     changeResult.significance,
     effectiveDirection
   );
 
-  // Map back to legacy level for backward compatibility
+  // Evidence-quality reasons: strip the label-based broad/non-concentrated
+  // caveat — that belongs in signal clarity, not evidence quality.
+  const evidenceReasons = legacyStrengthResult.caveats.filter(
+    (c) => !c.endsWith("is broad or non-concentrated.")
+  );
+
+  // Signal-clarity reason for non-concentrated reads.
+  const clarityReason = buildSignalClarityReason(signalClarity);
+
+  // Map back to legacy level for backward compatibility.
   let legacyLevel: BriefPublicReadinessLevel = "cautious";
   if (publicUse === "internal_only") {
     legacyLevel = "internal_only";
@@ -894,9 +923,15 @@ export function deriveBriefPublicReadiness(args: {
 
   return {
     level: legacyLevel,
-    reasons: [...currentSignalResult.caveats, ...changeResult.caveats],
-    blockers: currentSignalResult.blockers,
-    currentSignal: currentSignalResult.strength,
+    reasons: [
+      ...evidenceReasons,
+      ...(clarityReason ? [clarityReason] : []),
+      ...changeResult.caveats,
+    ],
+    blockers: legacyStrengthResult.blockers,
+    currentSignal: evidenceQuality,
+    evidenceQuality,
+    signalClarity,
     changeSignificance: changeResult.significance,
     changeDirection: effectiveDirection,
     publicUse,
