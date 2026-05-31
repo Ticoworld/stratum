@@ -20,6 +20,8 @@ import {
   type ChangeSignificance,
   type ChangeDirection,
 } from "@/lib/signals/watchlistTaxonomy";
+import { deriveSignalVerdict } from "@/lib/signals/signalVerdict";
+import type { StratumResultState } from "@/lib/services/StratumInvestigator";
 import type { AiSignalCluster } from "@/lib/signals/roleEnrichment";
 
 type BriefPageProps = {
@@ -218,6 +220,32 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
     changeDirection: (monitoring?.diff?.changeDirection ?? (monitoring?.comparisonAvailable ? "minor_movement" : "baseline")) as ChangeDirection,
   });
 
+  const signalVerdict = deriveSignalVerdict({
+    evidenceQuality: readiness.evidenceQuality,
+    signalClarity: readiness.signalClarity,
+    changeSignificance: readiness.changeSignificance,
+    changeDirection: readiness.changeDirection,
+    companyMatchConfidence: brief.companyMatchConfidence as WatchlistConfidenceLevel,
+    watchlistReadConfidence: brief.watchlistReadConfidence as WatchlistConfidenceLevel,
+    proofRoleGrounding: brief.proofRoleGrounding as WatchlistProofGrounding,
+    resultState: brief.resultState as StratumResultState,
+    jobsObservedCount: observedCount,
+  });
+
+  // Verdict display label (e.g. "verify_source" → "VERIFY SOURCE")
+  const formatVerdict = (v: string) =>
+    v === "verify_source" ? "VERIFY SOURCE" : v.toUpperCase();
+
+  // Verdict-level colors — minimal, no emojis
+  const verdictColors = {
+    act:           { border: "rgba(34, 197, 94, 0.3)",   bg: "rgba(34, 197, 94, 0.05)",  text: "rgb(21, 128, 61)" },
+    watch:         { border: "rgba(59, 130, 246, 0.3)",  bg: "rgba(59, 130, 246, 0.04)", text: "rgb(29, 78, 216)" },
+    wait:          { border: "var(--border)",             bg: "var(--surface)",           text: "var(--foreground-muted)" },
+    verify_source: { border: "rgba(245, 158, 11, 0.3)",  bg: "rgba(245, 158, 11, 0.04)", text: "rgb(146, 64, 14)" },
+    ignore:        { border: "var(--border)",             bg: "var(--surface)",           text: "var(--foreground-muted)" },
+  } as const;
+  const vc = verdictColors[signalVerdict.verdict];
+
   const formatChangeSignificance = (sig: string) => {
     switch (sig) {
       case "meaningful_change": return "Meaningful update";
@@ -243,18 +271,6 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
     }
   };
 
-  const formatPublicUse = (use: string) => {
-    switch (use) {
-      case "strong_baseline": return "Strong baseline";
-      case "strong_update": return "Strong update";
-      case "cautious_read": return "Cautious read";
-      case "cautious_update": return "Cautious update";
-      case "cautious_baseline": return "Cautious baseline";
-      case "internal_only": return "Internal-only";
-      default: return use;
-    }
-  };
-
   const formatSignalClarity = (clarity: string) => {
     switch (clarity) {
       case "concentrated": return "Concentrated";
@@ -267,13 +283,14 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
     }
   };
 
-  const heroFacts = [
-    ["Snapshot", formatDateTimeValue(brief.createdAt)],
+  // Support chips: four facts that give context below the verdict.
+  // Snapshot and Public Use are demoted — Snapshot moves to "Source and trust"
+  // below; Public Use is no longer the hero gate.
+  const supportFacts = [
     ["Source", sourceLabel],
     ["Evidence Quality", readiness.evidenceQuality.charAt(0).toUpperCase() + readiness.evidenceQuality.slice(1)],
     ["Signal Clarity", formatSignalClarity(readiness.signalClarity)],
     ["Change Event", formatChangeEvent(readiness.changeSignificance, readiness.changeDirection)],
-    ["Public Use", formatPublicUse(readiness.publicUse)],
   ] as const;
 
   const whatChangedDisplay = buildWhatChangedDisplay({
@@ -313,8 +330,22 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-            {heroFacts.map(([label, value]) => (
+          {/* Signal Verdict — dominant hero status */}
+          <div className="rounded-xl border px-5 py-4" style={{ borderColor: vc.border, backgroundColor: vc.bg }}>
+            <p className="text-[10px] font-semibold tracking-[0.08em] uppercase mb-1.5" style={{ color: vc.text }}>
+              {formatVerdict(signalVerdict.verdict)}
+            </p>
+            <p className="text-[14px] font-semibold leading-5" style={{ color: "var(--foreground)" }}>
+              {signalVerdict.headline}
+            </p>
+            <p className="mt-1 text-[12px] leading-5" style={{ color: "var(--foreground-secondary)" }}>
+              {signalVerdict.reason}
+            </p>
+          </div>
+
+          {/* Support chips */}
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {supportFacts.map(([label, value]) => (
               <div key={label} className="rounded-xl border bg-[var(--surface)] px-4 py-3" style={{ borderColor: "var(--border)" }}>
                 <p className="text-[10px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
                   {label}
@@ -327,8 +358,11 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
           </div>
         </header>
 
-        {/* Post-Worthiness Gate */}
-        {readiness.publicUse !== "strong_update" && readiness.publicUse !== "strong_baseline" && (
+        {/* Post-Worthiness Gate — suppressed when verdict already covers the message */}
+        {readiness.publicUse !== "strong_update" &&
+          readiness.publicUse !== "strong_baseline" &&
+          signalVerdict.verdict !== "verify_source" &&
+          signalVerdict.verdict !== "ignore" && (
           <div className="mb-6 rounded-xl border p-5" style={{ borderColor: readiness.publicUse === "internal_only" ? "rgba(239, 68, 68, 0.2)" : "var(--border)", backgroundColor: readiness.publicUse === "internal_only" ? "rgba(239, 68, 68, 0.02)" : "rgba(54, 91, 122, 0.02)" }}>
             <div className="flex items-start gap-4">
                <div className="mt-0.5 rounded-lg border bg-[var(--surface)] p-2 shadow-sm" style={{ borderColor: readiness.publicUse === "internal_only" ? "rgba(239, 68, 68, 0.3)" : "var(--border)" }}>
