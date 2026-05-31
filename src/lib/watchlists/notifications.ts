@@ -1,6 +1,7 @@
 import type { JobBoardSource } from "@/lib/api/boards";
 import type { ConfidenceLevel, StratumResultState } from "@/lib/services/StratumInvestigator";
 import type { WatchlistEntryDiff } from "@/lib/watchlists/history";
+import type { SignalVerdict } from "@/lib/signals/signalVerdict";
 import {
   formatAttemptResultStateLabel,
   formatMonitoringAttemptOriginLabel,
@@ -13,6 +14,18 @@ export type StratumNotificationCandidateKind = "meaningful_monitoring_change";
 export type StratumNotificationCandidateStatus = "unread" | "read" | "dismissed";
 export type StratumNotificationInboxFilter = "all" | "unread" | "read" | "dismissed";
 export type StratumNotificationDeliveryMode = "in_app_inbox_only";
+/**
+ * Alert priority for a notification candidate.
+ * - immediate: ACT-level verdict; surface prominently.
+ * - digest:    WATCH-level; collect into a normal inbox item.
+ * - source_issue: VERIFY_SOURCE or refresh_failed; something needs checking.
+ * - suppressed: stored as default before Phase 6E-2 migration runs.
+ */
+export type StratumNotificationAlertPriority =
+  | "immediate"
+  | "digest"
+  | "source_issue"
+  | "suppressed";
 export type StratumNotificationChangeType =
   | "refresh_failed"
   | "result_state_changed"
@@ -30,6 +43,7 @@ export interface WatchlistNotificationCandidate {
   status: StratumNotificationCandidateStatus;
   changeTypes: StratumNotificationChangeType[];
   summary: string;
+  alertPriority: StratumNotificationAlertPriority;
   createdAt: string;
   readAt: string | null;
   dismissedAt: string | null;
@@ -65,6 +79,7 @@ export interface NotificationCandidateDraft {
   candidateKind: StratumNotificationCandidateKind;
   changeTypes: StratumNotificationChangeType[];
   summary: string;
+  alertPriority: StratumNotificationAlertPriority;
 }
 
 function isoFromNow(offsetMs: number): string {
@@ -89,6 +104,7 @@ export function buildDevelopmentNotificationInboxPreview(args: {
       changeTypes: ["result_state_changed", "saved_brief_material_change"],
       summary:
         "Result state changed from No result state to Supported provider matched with observed openings. Saved brief comparison shows broader product and GTM hiring.",
+      alertPriority: "immediate",
       createdAt: isoFromNow(18 * 60 * 1000),
       readAt: null,
       dismissedAt: null,
@@ -111,6 +127,7 @@ export function buildDevelopmentNotificationInboxPreview(args: {
       changeTypes: ["watchlist_read_changed", "saved_brief_material_change"],
       summary:
         'Watchlist read changed from "Focused product hiring" to "Broader product and GTM buildout". Saved brief comparison now shows commercial hiring mixed into the same target.',
+      alertPriority: "digest",
       createdAt: isoFromNow(2 * 60 * 60 * 1000),
       readAt: null,
       dismissedAt: null,
@@ -133,6 +150,7 @@ export function buildDevelopmentNotificationInboxPreview(args: {
       changeTypes: ["ats_source_changed", "result_state_changed"],
       summary:
         "ATS source changed from No supported ATS source to Greenhouse. Result state changed to supported provider matched with observed openings.",
+      alertPriority: "digest",
       createdAt: isoFromNow(9 * 60 * 60 * 1000),
       readAt: null,
       dismissedAt: null,
@@ -155,6 +173,7 @@ export function buildDevelopmentNotificationInboxPreview(args: {
       changeTypes: ["refresh_failed"],
       summary:
         "Manual refresh failed and did not replace the current monitoring state: simulated provider timeout during review.",
+      alertPriority: "source_issue",
       createdAt: isoFromNow(26 * 60 * 60 * 1000),
       readAt: isoFromNow(23 * 60 * 60 * 1000),
       dismissedAt: null,
@@ -177,6 +196,7 @@ export function buildDevelopmentNotificationInboxPreview(args: {
       changeTypes: ["watchlist_read_changed"],
       summary:
         'Watchlist read changed from "Steady engineering hiring" to "Commercial hiring mixed in with platform roles".',
+      alertPriority: "digest",
       createdAt: isoFromNow(4 * 24 * 60 * 60 * 1000),
       readAt: isoFromNow(4 * 24 * 60 * 60 * 1000 - 45 * 60 * 1000),
       dismissedAt: isoFromNow(3 * 24 * 60 * 60 * 1000),
@@ -239,6 +259,33 @@ export function formatNotificationDeliveryModeLabel(
   }
 }
 
+/** Human-readable label for each alert priority level. */
+export function formatNotificationAlertPriorityLabel(
+  value: StratumNotificationAlertPriority
+): string {
+  switch (value) {
+    case "immediate":    return "Immediate";
+    case "source_issue": return "Source issue";
+    case "digest":       return "Watch update";
+    case "suppressed":   return "Suppressed";
+  }
+}
+
+/**
+ * Numeric rank for sorting — lower rank = higher priority.
+ * Order: immediate (0) → source_issue (1) → digest (2) → suppressed (3).
+ */
+export function getNotificationAlertPriorityRank(
+  value: StratumNotificationAlertPriority
+): number {
+  switch (value) {
+    case "immediate":    return 0;
+    case "source_issue": return 1;
+    case "digest":       return 2;
+    case "suppressed":   return 3;
+  }
+}
+
 export function formatNotificationChangeTypeLabel(
   value: StratumNotificationChangeType
 ): string {
@@ -293,12 +340,75 @@ function formatSource(value: JobBoardSource | null): string {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 6E-2: Verdict-based alert priority + suppression
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the alert priority and whether the notification should be suppressed
+ * based on the current and previous signal verdicts.
+ *
+ * Rules:
+ * - VERIFY_SOURCE        → source_issue, always notify (suppress repeated same-source-issue with no material change)
+ * - IGNORE               → suppressed, never notify
+ * - WAIT                 → suppressed, never notify
+ * - ACT                  → immediate; suppress ACT→ACT repeat without material change
+ * - WATCH                → digest; suppress WATCH→WATCH repeat without material change
+ * - No verdict (legacy)  → digest, not suppressed (preserve existing behavior)
+ */
+function resolveVerdictAlertPriority(args: {
+  currentVerdict: SignalVerdict | null | undefined;
+  previousVerdict: SignalVerdict | null | undefined;
+  hasMaterialChange: boolean;
+}): { alertPriority: StratumNotificationAlertPriority; suppress: boolean } {
+  const { currentVerdict, previousVerdict, hasMaterialChange } = args;
+
+  if (!currentVerdict) {
+    return { alertPriority: "digest", suppress: false };
+  }
+
+  if (currentVerdict === "verify_source") {
+    // Suppress repeated verify_source with no material change.
+    if (previousVerdict === "verify_source" && !hasMaterialChange) {
+      return { alertPriority: "source_issue", suppress: true };
+    }
+    return { alertPriority: "source_issue", suppress: false };
+  }
+
+  if (currentVerdict === "ignore") {
+    return { alertPriority: "suppressed", suppress: true };
+  }
+
+  if (currentVerdict === "wait") {
+    return { alertPriority: "suppressed", suppress: true };
+  }
+
+  if (currentVerdict === "act") {
+    // Suppress ACT→ACT repeat without a new material change.
+    if (previousVerdict === "act" && !hasMaterialChange) {
+      return { alertPriority: "immediate", suppress: true };
+    }
+    return { alertPriority: "immediate", suppress: false };
+  }
+
+  // currentVerdict === "watch"
+  // Suppress WATCH→WATCH repeat without a new material change.
+  if (previousVerdict === "watch" && !hasMaterialChange) {
+    return { alertPriority: "digest", suppress: true };
+  }
+  return { alertPriority: "digest", suppress: false };
+}
+
 export function buildNotificationCandidateDraft(args: {
   currentAttempt: WatchlistMonitoringAttemptHistoryItem;
   previousAttempt: WatchlistMonitoringAttemptHistoryItem | null;
   previousState: MonitoringStateComparisonSnapshot;
   currentState: MonitoringStateComparisonSnapshot;
   diff: WatchlistEntryDiff;
+  /** Phase 6E-2: signal verdict for the current brief (null for non-brief-created attempts). */
+  currentSignalVerdict?: SignalVerdict | null;
+  /** Phase 6E-2: signal verdict for the previous brief (null when no prior brief or legacy). */
+  previousSignalVerdict?: SignalVerdict | null;
 }): NotificationCandidateDraft | null {
   const { currentAttempt, previousAttempt, previousState, currentState, diff } = args;
 
@@ -323,6 +433,7 @@ export function buildNotificationCandidateDraft(args: {
       summary: currentAttempt.errorSummary
         ? `${originLabel} failed and did not replace the current monitoring state: ${currentAttempt.errorSummary}`
         : `${originLabel} failed and did not replace the current monitoring state.`,
+      alertPriority: "source_issue",
     };
   }
 
@@ -367,10 +478,23 @@ export function buildNotificationCandidateDraft(args: {
     return null;
   }
 
+  // Phase 6E-2: apply verdict-based priority and suppression.
+  const hasMaterialChange = diff.hasMaterialChange || changeTypes.includes("saved_brief_material_change");
+  const { alertPriority, suppress } = resolveVerdictAlertPriority({
+    currentVerdict: args.currentSignalVerdict,
+    previousVerdict: args.previousSignalVerdict,
+    hasMaterialChange,
+  });
+
+  if (suppress) {
+    return null;
+  }
+
   return {
     relatedBriefId: currentAttempt.relatedBriefId ?? null,
     candidateKind: "meaningful_monitoring_change",
     changeTypes,
     summary: summaryParts.join(" "),
+    alertPriority,
   };
 }

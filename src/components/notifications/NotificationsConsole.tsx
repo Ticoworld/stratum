@@ -5,13 +5,16 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import type {
   NotificationInboxCounts,
+  StratumNotificationAlertPriority,
   StratumNotificationChangeType,
   StratumNotificationInboxFilter,
   WatchlistNotificationInboxItem,
 } from "@/lib/watchlists/notifications";
 import {
+  formatNotificationAlertPriorityLabel,
   formatNotificationChangeTypeLabel,
   formatNotificationStatusLabel,
+  getNotificationAlertPriorityRank,
 } from "@/lib/watchlists/notifications";
 import {
   buildWatchlistDisplayIdentity,
@@ -35,6 +38,49 @@ const FILTERS: Array<{
   { value: "dismissed", label: "Dismissed" },
   { value: "all", label: "All" },
 ];
+
+// ---------------------------------------------------------------------------
+// Phase 6E-3: Alert priority presentation
+// ---------------------------------------------------------------------------
+
+/** Visual configuration for each alert priority level. */
+const PRIORITY_CHIP_STYLES: Record<
+  StratumNotificationAlertPriority,
+  { textColor: string; borderColor: string }
+> = {
+  immediate:    { textColor: "rgb(146, 64, 14)",    borderColor: "rgba(245, 158, 11, 0.45)" },
+  source_issue: { textColor: "rgb(185, 28, 28)",    borderColor: "rgba(239, 68, 68, 0.35)"  },
+  digest:       { textColor: "var(--foreground-muted)", borderColor: "var(--border)"          },
+  suppressed:   { textColor: "var(--foreground-muted)", borderColor: "var(--border)"          },
+};
+
+/** Left-border accent color for unread notifications, keyed by priority. */
+const PRIORITY_BORDER_ACCENT: Record<StratumNotificationAlertPriority, string> = {
+  immediate:    "rgba(245, 158, 11, 0.85)",
+  source_issue: "rgba(239, 68, 68, 0.65)",
+  digest:       "var(--foreground)",
+  suppressed:   "var(--foreground-muted)",
+};
+
+/**
+ * Sort notifications by alertPriority rank ascending, then by createdAt
+ * descending within the same priority level.
+ * Suppressed items are moved to the end and excluded from the main view
+ * (they should never be inserted, but this is a defensive guard).
+ */
+function sortAndFilterNotifications(
+  items: WatchlistNotificationInboxItem[]
+): WatchlistNotificationInboxItem[] {
+  return items
+    .filter((item) => item.alertPriority !== "suppressed")
+    .sort((a, b) => {
+      const rankDiff =
+        getNotificationAlertPriorityRank(a.alertPriority) -
+        getNotificationAlertPriorityRank(b.alertPriority);
+      if (rankDiff !== 0) return rankDiff;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+}
 
 function getFilterCount(
   filter: StratumNotificationInboxFilter,
@@ -254,6 +300,8 @@ export function NotificationsConsole({
     }
   };
 
+  const sortedNotifications = sortAndFilterNotifications(notificationsState);
+
   return (
     <div className="min-h-full bg-[var(--background)]">
       <div className="mx-auto max-w-6xl px-4 py-4 lg:px-6 lg:py-6">
@@ -343,14 +391,14 @@ export function NotificationsConsole({
                 Triage queue
               </p>
               <p className="mt-1 text-[13px]" style={{ color: "var(--foreground-secondary)" }}>
-                {notificationsState.length} item{notificationsState.length === 1 ? "" : "s"} in this view
+                {sortedNotifications.length} item{sortedNotifications.length === 1 ? "" : "s"} in this view
               </p>
             </div>
           </div>
 
-          {notificationsState.length > 0 ? (
+          {sortedNotifications.length > 0 ? (
             <div>
-              {notificationsState.map((notification, index) => {
+              {sortedNotifications.map((notification, index) => {
                 const pending = pendingId === notification.id;
                 const preferredBriefId = notification.relatedBriefId ?? notification.latestBriefId;
                 const identity = buildWatchlistDisplayIdentity({
@@ -364,6 +412,12 @@ export function NotificationsConsole({
                     (identity.uncertain ? "Identity unresolved" : identity.sourceGrounding.primary),
                 ]);
                 const changeHeadline = formatNotificationChangeHeadline(notification.changeTypes);
+                const priority = notification.alertPriority ?? "digest";
+                const priorityChip = PRIORITY_CHIP_STYLES[priority];
+                const priorityBorderAccent =
+                  notification.status === "unread"
+                    ? PRIORITY_BORDER_ACCENT[priority]
+                    : "none";
 
                 return (
                   <article
@@ -375,7 +429,7 @@ export function NotificationsConsole({
                         notification.status === "unread" ? "rgba(16,24,40,0.03)" : "transparent",
                       boxShadow:
                         notification.status === "unread"
-                          ? "inset 3px 0 0 var(--foreground)"
+                          ? `inset 3px 0 0 ${priorityBorderAccent}`
                           : "none",
                     }}
                   >
@@ -396,6 +450,16 @@ export function NotificationsConsole({
                             style={{ color: "var(--foreground-secondary)" }}
                           >
                             {formatNotificationStatusLabel(notification.status)}
+                          </span>
+                          {/* Priority chip — always visible, styled by alertPriority */}
+                          <span
+                            className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                            style={{
+                              borderColor: priorityChip.borderColor,
+                              color: priorityChip.textColor,
+                            }}
+                          >
+                            {formatNotificationAlertPriorityLabel(priority)}
                           </span>
                         </div>
 
@@ -532,7 +596,9 @@ export function NotificationsConsole({
             </div>
           ) : (
             <div className="px-6 py-8 text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
-              No inbox items match this view.
+              {notificationsState.length > 0
+                ? "All items in this view have been suppressed and are hidden from the inbox."
+                : "No inbox items match this view."}
             </div>
           )}
         </section>
