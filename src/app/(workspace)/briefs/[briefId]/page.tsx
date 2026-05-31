@@ -20,7 +20,7 @@ import {
   type ChangeSignificance,
   type ChangeDirection,
 } from "@/lib/signals/watchlistTaxonomy";
-import { deriveSignalVerdict } from "@/lib/signals/signalVerdict";
+import { deriveSignalVerdict, type SignalVerdictResult } from "@/lib/signals/signalVerdict";
 import type { StratumResultState } from "@/lib/services/StratumInvestigator";
 import type { AiSignalCluster } from "@/lib/signals/roleEnrichment";
 
@@ -220,17 +220,27 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
     changeDirection: (monitoring?.diff?.changeDirection ?? (monitoring?.comparisonAvailable ? "minor_movement" : "baseline")) as ChangeDirection,
   });
 
-  const signalVerdict = deriveSignalVerdict({
-    evidenceQuality: readiness.evidenceQuality,
-    signalClarity: readiness.signalClarity,
-    changeSignificance: readiness.changeSignificance,
-    changeDirection: readiness.changeDirection,
-    companyMatchConfidence: brief.companyMatchConfidence as WatchlistConfidenceLevel,
-    watchlistReadConfidence: brief.watchlistReadConfidence as WatchlistConfidenceLevel,
-    proofRoleGrounding: brief.proofRoleGrounding as WatchlistProofGrounding,
-    resultState: brief.resultState as StratumResultState,
-    jobsObservedCount: observedCount,
-  });
+  // Phase 6E-2: prefer persisted Signal Verdict (stored at notification-creation
+  // time when the diff was available). Fall back to render-time computation for
+  // legacy briefs that pre-date this phase or whose verdict update failed.
+  const signalVerdict: SignalVerdictResult = brief.signalVerdict
+    ? {
+        verdict: brief.signalVerdict,
+        headline: brief.signalVerdictHeadline ?? "Worth watching",
+        reason: brief.signalVerdictReason ?? "",
+        alertPriority: (brief.signalVerdictAlertPriority ?? "digest") as SignalVerdictResult["alertPriority"],
+      }
+    : deriveSignalVerdict({
+        evidenceQuality: readiness.evidenceQuality,
+        signalClarity: readiness.signalClarity,
+        changeSignificance: readiness.changeSignificance,
+        changeDirection: readiness.changeDirection,
+        companyMatchConfidence: brief.companyMatchConfidence as WatchlistConfidenceLevel,
+        watchlistReadConfidence: brief.watchlistReadConfidence as WatchlistConfidenceLevel,
+        proofRoleGrounding: brief.proofRoleGrounding as WatchlistProofGrounding,
+        resultState: brief.resultState as StratumResultState,
+        jobsObservedCount: observedCount,
+      });
 
   // Verdict display label (e.g. "verify_source" → "VERIFY SOURCE")
   const formatVerdict = (v: string) =>

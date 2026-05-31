@@ -7,6 +7,7 @@ import type {
   StratumResult,
   StratumResultState,
 } from "@/lib/services/StratumInvestigator";
+import type { SignalVerdict, SignalVerdictAlertPriority } from "@/lib/signals/signalVerdict";
 
 export interface StratumBriefSnapshot {
   id: string;
@@ -31,6 +32,12 @@ export interface StratumBriefSnapshot {
   resultSnapshot: StratumResult;
   unsupportedSourcePattern: UnsupportedSourcePattern | null;
   providerFailures: number;
+  /** Phase 6E-2: Signal Verdict persisted at notification-creation time when diff is available.
+   *  Null for briefs saved before this phase or before the notification was captured. */
+  signalVerdict: SignalVerdict | null;
+  signalVerdictAlertPriority: SignalVerdictAlertPriority | null;
+  signalVerdictHeadline: string | null;
+  signalVerdictReason: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -58,6 +65,10 @@ export const stratumBriefs = pgTable("stratum_briefs", {
   resultSnapshot: jsonb("result_snapshot").$type<StratumResult>().notNull(),
   unsupportedSourcePattern: text("unsupported_source_pattern"),
   providerFailures: integer("provider_failures").notNull().default(0),
+  signalVerdict: text("signal_verdict"),
+  signalVerdictAlertPriority: text("signal_verdict_alert_priority"),
+  signalVerdictHeadline: text("signal_verdict_headline"),
+  signalVerdictReason: text("signal_verdict_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

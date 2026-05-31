@@ -23,12 +23,13 @@ import type {
 // ---------------------------------------------------------------------------
 
 export type SignalVerdict = "act" | "watch" | "wait" | "verify_source" | "ignore";
+export type SignalVerdictAlertPriority = "immediate" | "digest" | "none" | "source_issue";
 
 export interface SignalVerdictResult {
   verdict: SignalVerdict;
   headline: string;
   reason: string;
-  alertPriority: "immediate" | "digest" | "none" | "source_issue";
+  alertPriority: SignalVerdictAlertPriority;
 }
 
 export interface SignalVerdictArgs {

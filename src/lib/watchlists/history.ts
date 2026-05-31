@@ -8,6 +8,7 @@ import {
   StratumResultState,
 } from "@/lib/services/StratumInvestigator";
 import { type ChangeDirection, type DepartmentBreakdown } from "@/lib/signals/watchlistTaxonomy";
+import type { SignalVerdict } from "@/lib/signals/signalVerdict";
 import { getNormalizedTrackedTargetName } from "@/lib/watchlists/identity";
 
 export interface WatchlistEntryBriefHistoryItem {
@@ -27,6 +28,8 @@ export interface WatchlistEntryBriefHistoryItem {
   /** Chart-consistent functional bucket breakdown from computeFunctionalMix().
    *  Present for briefs created in Phase 6B-2C+; absent on legacy briefs. */
   functionalMix?: [string, number][];
+  /** Phase 6E-2: persisted signal verdict. Absent for legacy briefs and test fixtures. */
+  signalVerdict?: SignalVerdict | null;
   allJobsSnapshot: Job[];
   proofRolesSnapshot: Job[];
   createdAt: string;
@@ -275,6 +278,7 @@ export function toWatchlistEntryBriefHistoryItem(
     functionalMix: isValidFunctionalMix(snapshot.resultSnapshot?.functionalMix)
       ? snapshot.resultSnapshot.functionalMix
       : undefined,
+    signalVerdict: (snapshot.signalVerdict as SignalVerdict | null | undefined) ?? null,
     allJobsSnapshot: snapshot.resultSnapshot?.jobs ?? [],
     proofRolesSnapshot: snapshot.proofRolesSnapshot ?? [],
     createdAt: snapshot.createdAt,

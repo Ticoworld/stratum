@@ -9,6 +9,7 @@ import {
 } from "@/db/schema/stratumWatchlists";
 import type {
   NotificationInboxCounts,
+  StratumNotificationAlertPriority,
   StratumNotificationCandidateKind,
   StratumNotificationCandidateStatus,
   StratumNotificationChangeType,
@@ -41,6 +42,7 @@ function mapNotificationCandidateRow(
     status: row.status as StratumNotificationCandidateStatus,
     changeTypes: (row.changeTypes as StratumNotificationChangeType[]) ?? [],
     summary: row.summary,
+    alertPriority: (row.alertPriority as StratumNotificationAlertPriority | null) ?? "digest",
     createdAt: toIsoString(row.createdAt),
     readAt: row.readAt ? toIsoString(row.readAt) : null,
     dismissedAt: row.dismissedAt ? toIsoString(row.dismissedAt) : null,
@@ -108,6 +110,7 @@ export async function createNotificationCandidate(args: {
   status?: StratumNotificationCandidateStatus;
   changeTypes: StratumNotificationChangeType[];
   summary: string;
+  alertPriority?: StratumNotificationAlertPriority;
   createdAt?: Date;
 }): Promise<WatchlistNotificationCandidate> {
   assertTenantlessCompatibilityAllowed(args.scope);
@@ -143,6 +146,7 @@ export async function createNotificationCandidate(args: {
       status: args.status ?? "unread",
       changeTypes: args.changeTypes,
       summary: args.summary.trim().slice(0, 1500),
+      alertPriority: args.alertPriority ?? "digest",
       createdAt: args.createdAt ?? new Date(),
     })
     .returning();

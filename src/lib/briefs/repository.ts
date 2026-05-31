@@ -6,6 +6,7 @@ import { stratumWatchlistEntries, stratumWatchlists } from "@/db/schema/stratumW
 
 import { buildStratumLimitations, getMatchedCompanyName } from "@/lib/briefs/presentation";
 import type { StratumResult } from "@/lib/services/StratumInvestigator";
+import type { SignalVerdict, SignalVerdictAlertPriority, SignalVerdictResult } from "@/lib/signals/signalVerdict";
 import { getNormalizedTrackedTargetName } from "@/lib/watchlists/identity";
 import {
   assertTenantlessCompatibilityAllowed,
@@ -90,6 +91,12 @@ function buildBriefSnapshot(result: StratumResult, briefId: string): StratumBrie
     resultSnapshot: sanitizeJson(resultSnapshot),
     unsupportedSourcePattern: result.unsupportedSourcePattern,
     providerFailures: result.providerFailures,
+    // Verdict is null at creation time; populated by updateStratumBriefVerdict
+    // after the monitoring notification capture has the diff context available.
+    signalVerdict: null,
+    signalVerdictAlertPriority: null,
+    signalVerdictHeadline: null,
+    signalVerdictReason: null,
     createdAt,
     updatedAt,
   };
@@ -170,9 +177,40 @@ function mapBriefRowToSnapshot(row: typeof stratumBriefs.$inferSelect): StratumB
     unsupportedSourcePattern:
       (row.unsupportedSourcePattern as StratumBriefSnapshot["unsupportedSourcePattern"]) ?? null,
     providerFailures: row.providerFailures,
+    signalVerdict: (row.signalVerdict as SignalVerdict | null | undefined) ?? null,
+    signalVerdictAlertPriority:
+      (row.signalVerdictAlertPriority as SignalVerdictAlertPriority | null | undefined) ?? null,
+    signalVerdictHeadline: row.signalVerdictHeadline ?? null,
+    signalVerdictReason: row.signalVerdictReason ?? null,
     createdAt,
     updatedAt,
   };
+}
+
+/**
+ * Phase 6E-2: Persists the Signal Verdict onto an existing brief.
+ * Called by captureNotificationCandidateForMonitoringEvent after the diff
+ * is available — the earliest point where a comparison-aware verdict can be
+ * computed.
+ *
+ * The operation is best-effort: if this fails, the brief page falls back to
+ * computing the verdict at render time via deriveSignalVerdict.
+ */
+export async function updateStratumBriefVerdict(
+  briefId: string,
+  verdict: SignalVerdictResult
+): Promise<void> {
+  await withDbRetry(() =>
+    db
+      .update(stratumBriefs)
+      .set({
+        signalVerdict: verdict.verdict,
+        signalVerdictAlertPriority: verdict.alertPriority,
+        signalVerdictHeadline: verdict.headline,
+        signalVerdictReason: verdict.reason,
+      })
+      .where(eq(stratumBriefs.id, briefId))
+  );
 }
 
 export async function getStratumBriefById(

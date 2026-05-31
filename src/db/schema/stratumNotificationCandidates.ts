@@ -3,6 +3,7 @@ import { stratumBriefs } from "@/db/schema/stratumBriefs";
 import { stratumMonitoringEvents } from "@/db/schema/stratumMonitoringEvents";
 import { stratumWatchlistEntries } from "@/db/schema/stratumWatchlists";
 import type {
+  StratumNotificationAlertPriority,
   StratumNotificationCandidateKind,
   StratumNotificationCandidateStatus,
   StratumNotificationChangeType,
@@ -19,6 +20,7 @@ export interface StratumNotificationCandidateRecord {
   status: StratumNotificationCandidateStatus;
   changeTypes: StratumNotificationChangeType[];
   summary: string;
+  alertPriority: StratumNotificationAlertPriority;
   createdAt: string;
   readAt: string | null;
   dismissedAt: string | null;
@@ -43,6 +45,7 @@ export const stratumNotificationCandidates = pgTable(
     status: text("status").notNull().default("unread"),
     changeTypes: jsonb("change_types").$type<StratumNotificationChangeType[]>().notNull(),
     summary: text("summary").notNull(),
+    alertPriority: text("alert_priority").notNull().default("digest"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     readAt: timestamp("read_at", { withTimezone: true }),
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
