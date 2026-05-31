@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, isNull, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import { db } from "@/db/client";
 import { stratumBriefs } from "@/db/schema/stratumBriefs";
+import { stratumNotificationCandidates } from "@/db/schema/stratumNotificationCandidates";
 import { listStratumBriefsByWatchlistEntryId } from "@/lib/briefs/repository";
 import {
   buildWatchlistEntryDiff,
@@ -65,6 +66,13 @@ export interface WatchlistEntryOverview {
   latestBriefUpdatedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Phase 6E-4: persisted Signal Verdict from the latest saved brief. Absent
+   *  when no brief exists or the brief pre-dates Phase 6E-2. */
+  latestSignalVerdict?: string | null;
+  /** Phase 6E-4: highest-priority (lowest rank) unread alert_priority across
+   *  all unread notification candidates for this entry. Absent when no unread
+   *  notifications exist. */
+  latestUnreadAlertPriority?: string | null;
 }
 
 export interface WatchlistOverview {
@@ -417,6 +425,16 @@ export async function createWatchlist(args: {
   return mapWatchlistRow(watchlist, []);
 }
 
+/** Inline priority ranker — avoids importing notifications.ts in repository. */
+function notifPriorityRank(value: string | null | undefined): number {
+  switch (value) {
+    case "immediate":    return 0;
+    case "source_issue": return 1;
+    case "digest":       return 2;
+    default:             return 3;
+  }
+}
+
 export async function listWatchlistsWithEntries(tenantId: string): Promise<WatchlistOverview[]> {
   await ensureDefaultWatchlist(tenantId);
 
@@ -433,9 +451,52 @@ export async function listWatchlistsWithEntries(tenantId: string): Promise<Watch
     .where(eq(stratumWatchlists.tenantId, tenantId))
     .orderBy(desc(stratumWatchlistEntries.updatedAt));
 
+  // Phase 6E-4: batch-fetch signal verdicts from latest saved briefs.
+  const latestBriefIds = [
+    ...new Set(entries.map((r) => r.entry.latestBriefId).filter((id): id is string => !!id)),
+  ];
+  const briefVerdictMap = new Map<string, string | null>();
+  if (latestBriefIds.length > 0) {
+    const briefRows = await db
+      .select({ id: stratumBriefs.id, signalVerdict: stratumBriefs.signalVerdict })
+      .from(stratumBriefs)
+      .where(inArray(stratumBriefs.id, latestBriefIds));
+    for (const row of briefRows) {
+      briefVerdictMap.set(row.id, row.signalVerdict ?? null);
+    }
+  }
+
+  // Phase 6E-4: batch-fetch highest-priority unread notification per entry.
+  // Entry IDs come from a tenant-scoped query above, so no extra join is needed.
+  const entryIds = entries.map((r) => r.entry.id);
+  const unreadAlertPriorityMap = new Map<string, string>();
+  if (entryIds.length > 0) {
+    const notifRows = await db
+      .select({
+        watchlistEntryId: stratumNotificationCandidates.watchlistEntryId,
+        alertPriority: stratumNotificationCandidates.alertPriority,
+      })
+      .from(stratumNotificationCandidates)
+      .where(
+        and(
+          inArray(stratumNotificationCandidates.watchlistEntryId, entryIds),
+          eq(stratumNotificationCandidates.status, "unread")
+        )
+      );
+    for (const row of notifRows) {
+      const existing = unreadAlertPriorityMap.get(row.watchlistEntryId);
+      if (!existing || notifPriorityRank(row.alertPriority) < notifPriorityRank(existing)) {
+        unreadAlertPriorityMap.set(row.watchlistEntryId, row.alertPriority);
+      }
+    }
+  }
+
   const entriesByWatchlist = new Map<string, WatchlistEntryOverview[]>();
   for (const row of entries) {
     const mapped = mapEntryRow(row.entry);
+    const briefId = row.entry.latestBriefId;
+    mapped.latestSignalVerdict = briefId ? (briefVerdictMap.get(briefId) ?? null) : null;
+    mapped.latestUnreadAlertPriority = unreadAlertPriorityMap.get(row.entry.id) ?? null;
     if (!entriesByWatchlist.has(row.entry.watchlistId)) entriesByWatchlist.set(row.entry.watchlistId, []);
     entriesByWatchlist.get(row.entry.watchlistId)!.push(mapped);
   }

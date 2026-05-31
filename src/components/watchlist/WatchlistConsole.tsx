@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, ChevronDown, ChevronUp, ExternalLink, Plus } from "lucide-react";
-import { WatchlistEntriesTable } from "@/components/watchlist/WatchlistEntriesTable";
+import { WatchlistSignalInbox } from "@/components/watchlist/WatchlistSignalInbox";
 import { WatchlistWorkspaceSidebar } from "@/components/watchlist/WatchlistWorkspaceSidebar";
 import { Dialog } from "@/components/ui/Dialog";
 import { Drawer } from "@/components/ui/Drawer";
@@ -533,7 +533,7 @@ export function WatchlistConsole({
               </div>
             </header>
 
-            <WatchlistEntriesTable
+            <WatchlistSignalInbox
               watchlist={activeWatchlist}
               activeEntryId={null}
               pendingRemovalId={pendingRemovalId}
