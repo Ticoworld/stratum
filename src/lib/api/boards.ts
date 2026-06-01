@@ -704,15 +704,6 @@ export async function fetchCompanyJobs(companyName: string): Promise<FetchCompan
   const attempts: FetchAttempt[] = [];
   let zeroMatch: { source: JobBoardSource; token: string } | null = null;
   const candidateMatches: SourceCandidateMatch[] = [];
-  let primaryMatch:
-    | {
-        jobs: Job[];
-        source: JobBoardSource;
-        token: string;
-        matchedAs: string | undefined;
-        resolutionKind: CompanyResolutionKind;
-      }
-    | null = null;
 
   for (const token of tokensToTry) {
     for (const source of sourceOrder) {
@@ -737,20 +728,36 @@ export async function fetchCompanyJobs(companyName: string): Promise<FetchCompan
           matchedAs: matchedAs ?? null,
         });
 
-        if (outcome.status === "jobs_found" && !primaryMatch) {
-          primaryMatch = {
-            jobs: outcome.jobs,
-            source,
-            token,
-            matchedAs,
-            resolutionKind,
-          };
-        }
-
         if (outcome.status === "jobs_found" && primarySource && source !== primarySource) {
           console.warn(
             `[Stratum:COMPANY_MAP] Primary source ${primarySource} failed, returned 0 jobs, or did not match for "${companyName}" (token: ${normalizedToken}). Fallback ${source} succeeded. Consider updating COMPANY_MAP.`
           );
+        }
+
+        if (outcome.status === "jobs_found") {
+          const trailingAttempts =
+            sourceInputMode === "supported_source_input"
+              ? buildNotApplicableAttempts(normalizedToken, supportedSourceHint?.source ?? null)
+              : buildNotAttemptedAfterMatchAttempts({
+                  attempts,
+                  matchedSource: source,
+                  token,
+                });
+
+          return {
+            jobs: outcome.jobs,
+            source,
+            requestedToken,
+            normalizedToken,
+            resolvedToken: token,
+            matchedAs,
+            resolutionKind,
+            attempts: [...attempts, ...trailingAttempts],
+            candidateMatches,
+            sourceInputMode,
+            requestedSourceHint: supportedSourceHint?.source ?? null,
+            unsupportedSourcePattern,
+          };
         }
       }
 
@@ -758,28 +765,6 @@ export async function fetchCompanyJobs(companyName: string): Promise<FetchCompan
         zeroMatch = { source, token };
       }
     }
-  }
-
-  if (primaryMatch) {
-    const trailingAttempts =
-      sourceInputMode === "supported_source_input"
-        ? buildNotApplicableAttempts(normalizedToken, supportedSourceHint?.source ?? null)
-        : [];
-
-    return {
-      jobs: primaryMatch.jobs,
-      source: primaryMatch.source,
-      requestedToken,
-      normalizedToken,
-      resolvedToken: primaryMatch.token,
-      matchedAs: primaryMatch.matchedAs,
-      resolutionKind: primaryMatch.resolutionKind,
-      attempts: [...attempts, ...trailingAttempts],
-      candidateMatches,
-      sourceInputMode,
-      requestedSourceHint: supportedSourceHint?.source ?? null,
-      unsupportedSourcePattern,
-    };
   }
 
   if (zeroMatch) {
