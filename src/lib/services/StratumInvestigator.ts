@@ -25,6 +25,7 @@ import {
   type AiRoleEnrichmentStatus,
   type AiSignalCluster,
   type AiRoleEnrichmentMeta,
+  buildEnrichmentRoleKey,
 } from "@/lib/signals/roleEnrichment";
 import { buildSignalClusters } from "@/lib/signals/roleClusters";
 import {
@@ -32,10 +33,8 @@ import {
   buildApprovedWatchlistSummary,
   computeFunctionalMix,
   deriveApprovedWatchlistLabel,
-  getDominantFunctionalSignal,
-  getFunctionalSignal,
-  getSignalCounts,
-  type FunctionalSignal,
+  deriveSignalClarity,
+  mapToFunctionalBucket,
   type DepartmentBreakdown,
 } from "@/lib/signals/watchlistTaxonomy";
 import { getNormalizedTrackedTargetName } from "@/lib/watchlists/identity";
@@ -325,7 +324,87 @@ function normalizeRoleTitle(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function selectProofRoles(jobs: Job[], notableRoles?: string[], limit = 5): ProofRoleSelection {
+// ---------------------------------------------------------------------------
+// Phase 6F-2: Representative proof-role selection
+//
+// Multi-objective selector that aligns proof roles with:
+//   1. The Hiring Mix chart (uses mapToFunctionalBucket — same classifier)
+//   2. The top signal cluster (at least one cluster role where available)
+//   3. AI notable roles as tie-breakers within each bucket
+//
+// Selection clarity (concentrated / broad / thin) drives budget allocation:
+//   - concentrated: 3 slots for top bucket, remaining for secondary + cluster
+//   - broad: max 2 slots for top bucket, 1 per additional bucket
+//   - thin: no forced allocation, fill from source order
+// ---------------------------------------------------------------------------
+
+export interface ProofRoleSelectionOptions {
+  enrichments?: Record<string, AiRoleEnrichment>;
+  signalClusters?: AiSignalCluster[];
+  functionalMix?: [string, number][];
+  watchlistReadLabel?: ApprovedWatchlistLabel | string | null;
+  limit?: number;
+}
+
+function resolveSelectionClarity(
+  watchlistReadLabel: string | null | undefined,
+  funcMix: [string, number][],
+  jobCount: number
+): "concentrated" | "broad" | "thin" {
+  if (watchlistReadLabel) {
+    const clarity = deriveSignalClarity(watchlistReadLabel as ApprovedWatchlistLabel);
+    if (clarity === "concentrated") return "concentrated";
+    if (clarity === "thin" || clarity === "tentative") return "thin";
+    return "broad";
+  }
+  if (jobCount <= 4 || funcMix.length === 0) return "thin";
+  const total = funcMix.reduce((s, [, c]) => s + c, 0);
+  if (total <= 4) return "thin";
+  const topRatio = total > 0 ? funcMix[0][1] / total : 0;
+  return topRatio >= 0.55 ? "concentrated" : "broad";
+}
+
+function computeBucketAllocation(
+  clarity: "concentrated" | "broad",
+  funcMix: [string, number][],
+  limit: number
+): Map<string, number> {
+  const alloc = new Map<string, number>();
+  if (funcMix.length === 0) return alloc;
+
+  let remaining = limit;
+
+  if (clarity === "concentrated") {
+    const topBucket = funcMix[0][0];
+    const topSlots = Math.min(Math.ceil(limit * 0.6), remaining);
+    alloc.set(topBucket, topSlots);
+    remaining -= topSlots;
+    for (let i = 1; i < funcMix.length && remaining > 0; i++) {
+      alloc.set(funcMix[i][0], 1);
+      remaining--;
+    }
+  } else {
+    // Broad: cap top bucket at 2 to enforce spread
+    const topBucket = funcMix[0][0];
+    const topSlots = Math.min(2, remaining);
+    alloc.set(topBucket, topSlots);
+    remaining -= topSlots;
+    for (let i = 1; i < funcMix.length && remaining > 0; i++) {
+      alloc.set(funcMix[i][0], 1);
+      remaining--;
+    }
+  }
+
+  return alloc;
+}
+
+export function selectProofRoles(
+  jobs: Job[],
+  notableRoles?: string[],
+  options?: ProofRoleSelectionOptions
+): ProofRoleSelection {
+  const limit = options?.limit ?? 5;
+
   if (jobs.length === 0) {
     return {
       roles: [],
@@ -337,134 +416,209 @@ function selectProofRoles(jobs: Job[], notableRoles?: string[], limit = 5): Proo
     };
   }
 
-  const selected: Job[] = [];
-  const usedIndexes = new Set<number>();
+  const { signalClusters: clusters, functionalMix: providedMix, watchlistReadLabel } =
+    options ?? {};
+
+  // Compute or reuse functionalMix (same classifier as the Hiring Mix chart)
+  const funcMix: [string, number][] =
+    providedMix && providedMix.length > 0 ? providedMix : computeFunctionalMix(jobs);
+
+  // Normalize notable titles for tie-breaking within buckets
   const requestedTitles = (notableRoles ?? [])
-    .map((role) => normalizeRoleTitle(role))
+    .map((r) => normalizeRoleTitle(r))
     .filter(Boolean);
-  
-  let exactMatches = 0;
-  let partialMatches = 0;
 
-  const counts = getSignalCounts(jobs);
-  const dominant = getDominantFunctionalSignal(jobs);
-  
-  const addJob = (job: Job, index: number) => {
-    if (usedIndexes.has(index)) return false;
-    selected.push(job);
-    usedIndexes.add(index);
-    return true;
-  };
+  // Pre-compute per-job bucket and normalized title to avoid redundant calls
+  const jobBuckets = jobs.map((job) => mapToFunctionalBucket(job));
+  const jobTitlesNorm = jobs.map((job) => normalizeRoleTitle(job.title));
 
-  // 1. Assistive AI Suggestions: Match notable roles that align with the signal.
-  for (const requestedTitle of requestedTitles) {
-    const exactIndex = jobs.findIndex(
-      (job, index) => !usedIndexes.has(index) && normalizeRoleTitle(job.title) === requestedTitle
-    );
-
-    if (exactIndex !== -1) {
-      const signal = getFunctionalSignal(jobs[exactIndex]);
-      // If signal is very concentrated (>70%) and this role is different, deprioritize in first pass.
-      if (dominant.ratio > 0.7 && signal !== dominant.signal && signal !== "unclassified") {
-        // Skip for now
-      } else {
-        addJob(jobs[exactIndex], exactIndex);
-        exactMatches++;
-        if (selected.length >= limit) break;
-        continue;
-      }
-    }
-
-    const partialIndex = jobs.findIndex(
-      (job, index) =>
-        !usedIndexes.has(index) &&
-        (normalizeRoleTitle(job.title).includes(requestedTitle) ||
-          requestedTitle.includes(normalizeRoleTitle(job.title)))
-    );
-
-    if (partialIndex !== -1) {
-      const signal = getFunctionalSignal(jobs[partialIndex]);
-      if (dominant.ratio > 0.7 && signal !== dominant.signal && signal !== "unclassified") {
-        // Skip
-      } else {
-        addJob(jobs[partialIndex], partialIndex);
-        partialMatches++;
-        if (selected.length >= limit) break;
-      }
-    }
+  // Role-key index for O(1) cluster matching
+  const roleKeyIndex = new Map<string, number>();
+  for (let i = 0; i < jobs.length; i++) {
+    roleKeyIndex.set(buildEnrichmentRoleKey(jobs[i]), i);
   }
 
-  // 2. Deterministic Alignment: Ensure the dominant signal is represented.
-  if (selected.length < limit && dominant.signal !== "unclassified") {
-    const targetSignalCount = Math.min(Math.ceil(limit * 0.6), dominant.count);
-    let currentSignalCount = selected.filter(j => getFunctionalSignal(j) === dominant.signal).length;
+  // Top qualifying cluster (highest roleCount among high/medium confidence)
+  const topCluster =
+    (clusters ?? []).find(
+      (c) => c.roleCount >= 2 && (c.confidence === "high" || c.confidence === "medium")
+    ) ?? null;
+  const topClusterKeySet = topCluster ? new Set(topCluster.roleKeys) : null;
 
-    if (currentSignalCount < targetSignalCount) {
-      for (let i = 0; i < jobs.length; i++) {
-        if (!usedIndexes.has(i) && getFunctionalSignal(jobs[i]) === dominant.signal) {
-          addJob(jobs[i], i);
-          currentSignalCount++;
-          if (selected.length >= limit || currentSignalCount >= targetSignalCount) break;
+  const clarity = resolveSelectionClarity(watchlistReadLabel, funcMix, jobs.length);
+  const bucketAlloc = clarity === "thin"
+    ? new Map<string, number>()
+    : computeBucketAllocation(clarity, funcMix, limit);
+
+  const selected: Job[] = [];
+  const usedIndexes = new Set<number>();
+  let exactMatches = 0;
+  let partialMatches = 0;
+  let clusterRoleAdded = false;
+
+  const addAt = (i: number): void => {
+    selected.push(jobs[i]);
+    usedIndexes.add(i);
+    if (topClusterKeySet && topClusterKeySet.has(buildEnrichmentRoleKey(jobs[i]))) {
+      clusterRoleAdded = true;
+    }
+  };
+
+  // -------------------------------------------------------------------------
+  // Phase 1: Per-bucket allocation
+  // Fill each bucket's slots in priority order:
+  //   a. Cluster roles in this bucket
+  //   b. AI notable roles in this bucket (exact then partial)
+  //   c. Any remaining roles in this bucket (source order)
+  // -------------------------------------------------------------------------
+  for (const [bucket, slots] of bucketAlloc.entries()) {
+    let addedForBucket = 0;
+
+    // 1a. Cluster roles that belong to this bucket
+    if (topCluster && topClusterKeySet) {
+      for (const roleKey of topCluster.roleKeys) {
+        if (addedForBucket >= slots) break;
+        const idx = roleKeyIndex.get(roleKey);
+        if (idx === undefined || usedIndexes.has(idx)) continue;
+        if (jobBuckets[idx] === bucket) {
+          addAt(idx);
+          addedForBucket++;
         }
       }
     }
-  }
 
-  // 3. Mixed Evidence Representation: If space remains, show variety across top departments.
-  if (selected.length < limit) {
-    const significantDepts = (Object.entries(counts) as [FunctionalSignal, number][])
-      .filter(([dept, count]) => dept !== dominant.signal && count > 0 && dept !== "unclassified")
-      .sort((a, b) => b[1] - a[1]);
+    // 1b. AI notable roles in this bucket (exact first, then partial)
+    for (const title of requestedTitles) {
+      if (addedForBucket >= slots) break;
+      // Exact match
+      let found = -1;
+      for (let i = 0; i < jobs.length; i++) {
+        if (!usedIndexes.has(i) && jobTitlesNorm[i] === title && jobBuckets[i] === bucket) {
+          found = i;
+          break;
+        }
+      }
+      if (found !== -1) {
+        addAt(found);
+        addedForBucket++;
+        exactMatches++;
+        continue;
+      }
+      // Partial match
+      for (let i = 0; i < jobs.length; i++) {
+        if (usedIndexes.has(i) || jobBuckets[i] !== bucket) continue;
+        const t = jobTitlesNorm[i];
+        if (t.includes(title) || title.includes(t)) {
+          addAt(i);
+          addedForBucket++;
+          partialMatches++;
+          break;
+        }
+      }
+    }
 
-    for (const [dept] of significantDepts) {
-      const deptIndex = jobs.findIndex((j, i) => !usedIndexes.has(i) && getFunctionalSignal(j) === dept);
-      if (deptIndex !== -1) {
-        addJob(jobs[deptIndex], deptIndex);
-        if (selected.length >= limit) break;
+    // 1c. Any remaining role in this bucket, source order
+    for (let i = 0; i < jobs.length && addedForBucket < slots; i++) {
+      if (!usedIndexes.has(i) && jobBuckets[i] === bucket) {
+        addAt(i);
+        addedForBucket++;
       }
     }
   }
 
-  // 4. Fill remaining slots with remaining observed roles.
-  if (selected.length < limit) {
+  // -------------------------------------------------------------------------
+  // Phase 2: Guarantee at least one cluster role if not yet placed
+  // -------------------------------------------------------------------------
+  if (!clusterRoleAdded && topCluster && selected.length < limit) {
+    for (const roleKey of topCluster.roleKeys) {
+      const idx = roleKeyIndex.get(roleKey);
+      if (idx !== undefined && !usedIndexes.has(idx)) {
+        addAt(idx);
+        break;
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Phase 3: Remaining AI notable roles (bucket-agnostic)
+  // -------------------------------------------------------------------------
+  for (const title of requestedTitles) {
+    if (selected.length >= limit) break;
+    // Exact
+    let found = -1;
     for (let i = 0; i < jobs.length; i++) {
-      if (!usedIndexes.has(i)) {
-        addJob(jobs[i], i);
-        if (selected.length >= limit) break;
+      if (!usedIndexes.has(i) && jobTitlesNorm[i] === title) {
+        found = i;
+        break;
+      }
+    }
+    if (found !== -1) {
+      addAt(found);
+      exactMatches++;
+      continue;
+    }
+    // Partial
+    for (let i = 0; i < jobs.length; i++) {
+      if (usedIndexes.has(i)) continue;
+      const t = jobTitlesNorm[i];
+      if (t.includes(title) || title.includes(t)) {
+        addAt(i);
+        partialMatches++;
+        break;
       }
     }
   }
 
-  // Determine grounding status and build explanation
-  let grounding: ProofRoleGrounding = "fallback";
-  let groundingExplanation = "";
+  // -------------------------------------------------------------------------
+  // Phase 4: Source-order fill for remaining slots
+  // -------------------------------------------------------------------------
+  for (let i = 0; i < jobs.length && selected.length < limit; i++) {
+    if (!usedIndexes.has(i)) addAt(i);
+  }
 
+  // -------------------------------------------------------------------------
+  // Grounding + explanation
+  // -------------------------------------------------------------------------
+  let grounding: ProofRoleGrounding;
   if (requestedTitles.length === 0) {
     grounding = "fallback";
-    groundingExplanation = "The read did not return grounded proof-role titles, so Stratum selected representative roles from the board instead.";
   } else if (exactMatches === requestedTitles.length) {
     grounding = "exact";
-    groundingExplanation = `The read is grounded in ${exactMatches} proof roles matched exactly by title.`;
   } else if (exactMatches + partialMatches > 0) {
     grounding = "partial";
-    groundingExplanation = `The read is partially grounded: ${exactMatches + partialMatches} of ${requestedTitles.length} roles matched by title.`;
   } else {
     grounding = "fallback";
-    groundingExplanation = "The read could not be grounded to model-picked titles, so Stratum selected representative roles from the board instead.";
   }
 
-  // Append selection strategy reasoning
-  const strategyReason = dominant.signal !== "unclassified" && dominant.ratio >= 0.45
-    ? `Selection prioritized roles from the dominant ${dominant.signal.replace(/_/g, " ")} pattern.`
-    : "Displayed roles are examples from the observed board, not a full representation of all hiring themes.";
-  
+  const clusterNote = topCluster
+    ? ` Roles from the "${topCluster.label}" signal cluster were prioritized.`
+    : "";
+  const strategyNote =
+    clarity === "broad"
+      ? "Proof roles are distributed across the top hiring mix buckets to represent the board's actual spread."
+      : clarity === "concentrated"
+      ? "Selection prioritized the concentrated signal bucket."
+      : "Proof roles are from the observed board.";
+
+  let explanation: string;
+  switch (grounding) {
+    case "exact":
+      explanation = `The read is grounded in ${exactMatches} proof roles matched exactly by title.${clusterNote}`;
+      break;
+    case "partial":
+      explanation = `The read is partially grounded: ${exactMatches + partialMatches} of ${requestedTitles.length} roles matched by title. ${strategyNote}${clusterNote}`;
+      break;
+    default:
+      explanation = `${strategyNote}${clusterNote}`;
+  }
+
   return {
     roles: selected,
     grounding,
     requestedRoleCount: requestedTitles.length,
     exactMatches,
     partialMatches,
-    explanation: `${groundingExplanation} ${strategyReason}`,
+    explanation,
   };
 }
 
@@ -1165,7 +1319,14 @@ export class StratumInvestigator {
 
     const analysis: StratumAnalysisResult | null = await runStratumAnalysis(trimmed, jobs);
     const enrichmentResult = await runRoleEnrichment(trimmed, jobs);
-    const proofRoleSelection = selectProofRoles(jobs, analysis?.notableRoles);
+
+    // Build signal clusters BEFORE proof role selection so they can influence it.
+    const signalClusters = buildSignalClusters(enrichmentResult.enrichments, enrichmentResult.status);
+
+    const proofRoleSelection = selectProofRoles(jobs, analysis?.notableRoles, {
+      signalClusters,
+      functionalMix,
+    });
     const watchlistReadConfidence = deriveWatchlistReadConfidence({
       state: resultState,
       jobs,
@@ -1194,7 +1355,7 @@ export class StratumInvestigator {
         roleEnrichments: enrichmentResult.enrichments,
         aiRoleEnrichmentStatus: enrichmentResult.status,
         aiRoleEnrichmentMeta: enrichmentResult.meta,
-        signalClusters: buildSignalClusters(enrichmentResult.enrichments, enrichmentResult.status),
+        signalClusters,
         analyzedAt: new Date().toISOString(),
         analysisTimeMs: elapsed,
         apiSource,
@@ -1226,8 +1387,6 @@ export class StratumInvestigator {
       companyMatchConfidence: companyMatchConfidence.level,
       watchlistReadConfidence: watchlistReadConfidence.level,
     });
-
-    const signalClusters = buildSignalClusters(enrichmentResult.enrichments, enrichmentResult.status);
 
     const restrainedSummary = buildWatchlistSummary({
       label: restrainedVerdict,
