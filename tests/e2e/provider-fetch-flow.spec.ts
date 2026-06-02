@@ -82,6 +82,28 @@ function attemptSignatures(result: Awaited<ReturnType<typeof fetchCompanyJobs>>)
   return result.attempts.map((attempt) => `${attempt.source}:${attempt.status}`);
 }
 
+function attemptForSource(
+  result: Awaited<ReturnType<typeof fetchCompanyJobs>>,
+  source: ProviderSource
+) {
+  return result.attempts.find((attempt) => attempt.source === source);
+}
+
+function plainThrownError(message: string, extra: Record<string, unknown> = {}): unknown {
+  return {
+    name: "Error",
+    message,
+    ...extra,
+  };
+}
+
+function abortThrownError(message = "The operation was aborted."): unknown {
+  return {
+    name: "AbortError",
+    message,
+  };
+}
+
 test.beforeEach(() => {
   globalThis.fetch = originalFetch;
 });
@@ -264,5 +286,167 @@ test.describe("Phase 6I-2 provider flow", () => {
     expect(skipped.map((attempt) => attempt.source)).toEqual(["LEVER", "ASHBY", "WORKABLE"]);
     expect(skipped.every((attempt) => attempt.jobsCount === 0)).toBe(true);
     expect(skipped.every((attempt) => attempt.errorMessage === undefined)).toBe(true);
+  });
+});
+
+test.describe("Phase 6J-2 provider failure classification", () => {
+  test("A: 404 responses classify as not_found", async () => {
+    const calls = installFetchMock((source) => {
+      switch (source) {
+        case "GREENHOUSE":
+        case "LEVER":
+        case "ASHBY":
+        case "WORKABLE":
+          return jsonResponse({}, { status: 404 });
+      }
+    });
+
+    const result = await fetchCompanyJobs("404 Classification Labs");
+    const greenhouse = attemptForSource(result, "GREENHOUSE");
+
+    expect(calls).toEqual(["GREENHOUSE", "LEVER", "ASHBY", "WORKABLE"]);
+    expect(greenhouse?.status).toBe("not_found");
+    expect(greenhouse?.providerErrorKind).toBe("not_found");
+    expect(greenhouse?.httpStatus).toBe(404);
+    expect(greenhouse?.errorMessage).toBeUndefined();
+    expect(greenhouse?.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  test("B: 429 responses classify as rate_limit", async () => {
+    const calls = installFetchMock((source) => {
+      if (source === "GREENHOUSE") return jsonResponse({}, { status: 429 });
+      return jsonResponse({}, { status: 404 });
+    });
+
+    const result = await fetchCompanyJobs("429 Classification Labs");
+    const greenhouse = attemptForSource(result, "GREENHOUSE");
+
+    expect(calls).toEqual(["GREENHOUSE", "LEVER", "ASHBY", "WORKABLE"]);
+    expect(greenhouse?.status).toBe("error");
+    expect(greenhouse?.providerErrorKind).toBe("rate_limit");
+    expect(greenhouse?.httpStatus).toBe(429);
+    expect(greenhouse?.errorMessage).toContain("429");
+    expect(greenhouse?.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  test("C: 5xx responses classify as provider_http_error", async () => {
+    const calls = installFetchMock((source) => {
+      if (source === "GREENHOUSE") return jsonResponse({}, { status: 503 });
+      return jsonResponse({}, { status: 404 });
+    });
+
+    const result = await fetchCompanyJobs("503 Classification Labs");
+    const greenhouse = attemptForSource(result, "GREENHOUSE");
+
+    expect(calls).toEqual(["GREENHOUSE", "LEVER", "ASHBY", "WORKABLE"]);
+    expect(greenhouse?.status).toBe("error");
+    expect(greenhouse?.providerErrorKind).toBe("provider_http_error");
+    expect(greenhouse?.httpStatus).toBe(503);
+    expect(greenhouse?.errorMessage).toContain("503");
+  });
+
+  test("D: timeout-like thrown errors classify as timeout", async () => {
+    const calls = installFetchMock((source) => {
+      if (source === "GREENHOUSE") throw abortThrownError();
+      return jsonResponse({}, { status: 404 });
+    });
+
+    const result = await fetchCompanyJobs("Timeout Classification Labs");
+    const greenhouse = attemptForSource(result, "GREENHOUSE");
+
+    expect(calls).toEqual(["GREENHOUSE", "LEVER", "ASHBY", "WORKABLE"]);
+    expect(greenhouse?.status).toBe("error");
+    expect(greenhouse?.providerErrorKind).toBe("timeout");
+    expect(greenhouse?.httpStatus).toBeUndefined();
+  });
+
+  test("E: network-like thrown errors classify as network_error", async () => {
+    const calls = installFetchMock((source) => {
+      if (source === "GREENHOUSE") {
+        throw plainThrownError("getaddrinfo ENOTFOUND api.greenhouse.io", {
+          code: "ENOTFOUND",
+        });
+      }
+      return jsonResponse({}, { status: 404 });
+    });
+
+    const result = await fetchCompanyJobs("Network Classification Labs");
+    const greenhouse = attemptForSource(result, "GREENHOUSE");
+
+    expect(calls).toEqual(["GREENHOUSE", "LEVER", "ASHBY", "WORKABLE"]);
+    expect(greenhouse?.status).toBe("error");
+    expect(greenhouse?.providerErrorKind).toBe("network_error");
+    expect(greenhouse?.httpStatus).toBeUndefined();
+  });
+
+  test("F: invalid JSON responses classify as parse_error", async () => {
+    const calls = installFetchMock((source) => {
+      if (source === "GREENHOUSE") {
+        return new Response("{\"jobs\":", {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return jsonResponse({}, { status: 404 });
+    });
+
+    const result = await fetchCompanyJobs("Parse Classification Labs");
+    const greenhouse = attemptForSource(result, "GREENHOUSE");
+
+    expect(calls).toEqual(["GREENHOUSE", "LEVER", "ASHBY", "WORKABLE"]);
+    expect(greenhouse?.status).toBe("error");
+    expect(greenhouse?.providerErrorKind).toBe("parse_error");
+    expect(greenhouse?.httpStatus).toBeUndefined();
+  });
+
+  test("G: malformed successful payloads classify as unexpected_shape", async () => {
+    const calls = installFetchMock((source) => {
+      if (source === "GREENHOUSE") return jsonResponse({ jobs: { total: 1 } });
+      return jsonResponse({}, { status: 404 });
+    });
+
+    const result = await fetchCompanyJobs("Shape Classification Labs");
+    const greenhouse = attemptForSource(result, "GREENHOUSE");
+
+    expect(calls).toEqual(["GREENHOUSE", "LEVER", "ASHBY", "WORKABLE"]);
+    expect(greenhouse?.status).toBe("error");
+    expect(greenhouse?.providerErrorKind).toBe("unexpected_shape");
+    expect(greenhouse?.httpStatus).toBe(200);
+  });
+
+  test("H: skipped providers after first match carry no failure metadata", async () => {
+    const calls = installFetchMock((source) => {
+      if (source === "GREENHOUSE") return jsonResponse({ jobs: [greenhouseJob()] });
+      throw new Error(`Unexpected fetch for ${source}`);
+    });
+
+    const result = await fetchCompanyJobs("Skip Metadata Labs");
+    const skipped = result.attempts.filter((attempt) => attempt.status === "not_attempted_after_match");
+
+    expect(calls).toEqual(["GREENHOUSE"]);
+    expect(skipped).toHaveLength(3);
+    expect(skipped.map((attempt) => attempt.source)).toEqual(["LEVER", "ASHBY", "WORKABLE"]);
+    expect(skipped.every((attempt) => attempt.providerErrorKind === undefined)).toBe(true);
+    expect(skipped.every((attempt) => attempt.httpStatus === undefined)).toBe(true);
+    expect(skipped.every((attempt) => attempt.errorMessage === undefined)).toBe(true);
+    expect(skipped.every((attempt) => attempt.durationMs === undefined)).toBe(true);
+  });
+
+  test("I: unsupported source URLs still short-circuit to not_applicable attempts", async () => {
+    const calls = installFetchMock(() => {
+      throw new Error("No provider fetch should occur for unsupported sources.");
+    });
+
+    const result = await fetchCompanyJobs("https://jobs.workday.com/acme");
+
+    expect(calls).toEqual([]);
+    expect(result.sourceInputMode).toBe("unsupported_source_input");
+    expect(result.unsupportedSourcePattern).toBe("WORKDAY");
+    expect(result.source).toBeNull();
+    expect(result.attempts).toHaveLength(4);
+    expect(result.attempts.every((attempt) => attempt.status === "not_applicable")).toBe(true);
+    expect(result.attempts.every((attempt) => attempt.providerErrorKind === undefined)).toBe(true);
+    expect(result.attempts.every((attempt) => attempt.httpStatus === undefined)).toBe(true);
+    expect(result.attempts.every((attempt) => attempt.errorMessage === undefined)).toBe(true);
   });
 });

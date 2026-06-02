@@ -5,6 +5,10 @@
 
 import type { Job } from "./boards";
 import { fetchWithRetry } from "./fetchWithRetry";
+import {
+  createProviderHttpError,
+  createProviderUnexpectedShapeError,
+} from "./providerErrors";
 
 const ASHBY_BASE = "https://api.ashbyhq.com/posting-api/job-board";
 
@@ -43,12 +47,15 @@ export async function fetchFromAshby(companyToken: string): Promise<Job[]> {
   });
 
   if (!res.ok) {
-    if (res.status === 404) throw new Error("NOT_FOUND");
-    throw new Error(`Ashby: ${res.status}`);
+    throw createProviderHttpError("Ashby", res.status);
   }
 
   const data = await res.json();
-  const jobs: AshbyJobRaw[] = Array.isArray(data.jobs) ? data.jobs : [];
+  if (!data || typeof data !== "object" || !Array.isArray((data as { jobs?: unknown }).jobs)) {
+    throw createProviderUnexpectedShapeError("Ashby", res.status);
+  }
+
+  const jobs: AshbyJobRaw[] = (data as { jobs: AshbyJobRaw[] }).jobs;
   const observedAt = new Date().toISOString();
 
   return jobs.map((j: AshbyJobRaw) => {

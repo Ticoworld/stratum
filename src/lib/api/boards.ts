@@ -7,6 +7,12 @@
 import { fetchWithRetry } from "./fetchWithRetry";
 import { fetchFromAshby } from "./ashby";
 import { fetchFromWorkable } from "./workable";
+import {
+  classifyProviderError,
+  createProviderHttpError,
+  createProviderUnexpectedShapeError,
+  type ProviderErrorKind,
+} from "./providerErrors";
 import { humanizeIdentityToken } from "../watchlists/identity";
 
 export type JobBoardSource = "GREENHOUSE" | "LEVER" | "ASHBY" | "WORKABLE";
@@ -51,6 +57,10 @@ export interface FetchAttempt {
   source: JobBoardSource;
   status: FetchAttemptStatus;
   jobsCount: number;
+  providerErrorKind?: ProviderErrorKind;
+  httpStatus?: number;
+  durationMs?: number;
+  retryCount?: number;
   errorMessage?: string;
 }
 
@@ -239,6 +249,17 @@ function getMatchedAs(
 /**
  * Fetches jobs from Greenhouse API.
  */
+interface GreenhouseJobRaw {
+  id?: number;
+  internal_job_id?: number | null;
+  title?: string;
+  location?: { name?: string };
+  departments?: { id?: number; name?: string }[];
+  updated_at?: string;
+  requisition_id?: string | null;
+  absolute_url?: string;
+}
+
 async function fetchFromGreenhouse(boardToken: string): Promise<Job[]> {
   const url = `${GREENHOUSE_BASE}/${boardToken}/jobs?content=true`;
   const res = await fetchWithRetry(url, {
@@ -246,25 +267,19 @@ async function fetchFromGreenhouse(boardToken: string): Promise<Job[]> {
   });
 
   if (!res.ok) {
-    if (res.status === 404) throw new Error("NOT_FOUND");
-    throw new Error(`Greenhouse: ${res.status}`);
+    throw createProviderHttpError("Greenhouse", res.status);
   }
 
   const data = await res.json();
-  const jobs = data.jobs ?? [];
+  if (!data || typeof data !== "object" || !Array.isArray((data as { jobs?: unknown }).jobs)) {
+    throw createProviderUnexpectedShapeError("Greenhouse", res.status);
+  }
+
+  const jobs = (data as { jobs: GreenhouseJobRaw[] }).jobs;
   const observedAt = new Date().toISOString();
 
   return jobs.map(
-    (j: {
-      id?: number;
-      internal_job_id?: number | null;
-      title?: string;
-      location?: { name?: string };
-      departments?: { id?: number; name?: string }[];
-      updated_at?: string;
-      requisition_id?: string | null;
-      absolute_url?: string;
-    }) => {
+    (j: GreenhouseJobRaw) => {
       const sourceTimestamp = parseIsoDateOrNull(j.updated_at);
       return {
         title: normalizeText(j.title) ?? "Unknown",
@@ -304,12 +319,13 @@ async function fetchFromLever(siteToken: string): Promise<Job[]> {
   });
 
   if (!res.ok) {
-    if (res.status === 404) throw new Error("NOT_FOUND");
-    throw new Error(`Lever: ${res.status}`);
+    throw createProviderHttpError("Lever", res.status);
   }
 
   const jobs = await res.json();
-  if (!Array.isArray(jobs)) return [];
+  if (!Array.isArray(jobs)) {
+    throw createProviderUnexpectedShapeError("Lever", res.status);
+  }
 
   const observedAt = new Date().toISOString();
 
@@ -394,12 +410,45 @@ export interface FetchCompanyJobsResult {
 const ALL_SOURCES: JobBoardSource[] = ["GREENHOUSE", "LEVER", "ASHBY", "WORKABLE"];
 
 type SourceOutcome =
-  | { status: "jobs_found"; jobs: Job[]; source: JobBoardSource; token: string }
-  | { status: "zero_jobs"; jobs: Job[]; source: JobBoardSource; token: string }
-  | { status: "not_found"; jobs: Job[]; source: JobBoardSource; token: string }
-  | { status: "error"; jobs: Job[]; source: JobBoardSource; token: string; errorMessage: string };
+  | {
+      status: "jobs_found";
+      jobs: Job[];
+      source: JobBoardSource;
+      token: string;
+      providerErrorKind: ProviderErrorKind;
+      durationMs: number;
+    }
+  | {
+      status: "zero_jobs";
+      jobs: Job[];
+      source: JobBoardSource;
+      token: string;
+      providerErrorKind: ProviderErrorKind;
+      durationMs: number;
+    }
+  | {
+      status: "not_found";
+      jobs: Job[];
+      source: JobBoardSource;
+      token: string;
+      providerErrorKind: ProviderErrorKind;
+      httpStatus: number;
+      durationMs: number;
+    }
+  | {
+      status: "error";
+      jobs: Job[];
+      source: JobBoardSource;
+      token: string;
+      providerErrorKind: ProviderErrorKind;
+      httpStatus?: number;
+      durationMs: number;
+      errorMessage: string;
+    };
 
 async function tryFetchOutcome(token: string, source: JobBoardSource): Promise<SourceOutcome> {
+  const startedAt = Date.now();
+
   try {
     let jobs: Job[];
 
@@ -423,10 +472,23 @@ async function tryFetchOutcome(token: string, source: JobBoardSource): Promise<S
       jobs,
       source,
       token,
+      providerErrorKind: "none",
+      durationMs: Date.now() - startedAt,
     };
   } catch (error) {
-    if (error instanceof Error && error.message === "NOT_FOUND") {
-      return { status: "not_found", jobs: [], source, token };
+    const classification = classifyProviderError(error);
+    const durationMs = Date.now() - startedAt;
+
+    if (classification.providerErrorKind === "not_found") {
+      return {
+        status: "not_found",
+        jobs: [],
+        source,
+        token,
+        providerErrorKind: classification.providerErrorKind,
+        httpStatus: classification.httpStatus ?? 404,
+        durationMs,
+      };
     }
 
     return {
@@ -434,7 +496,11 @@ async function tryFetchOutcome(token: string, source: JobBoardSource): Promise<S
       jobs: [],
       source,
       token,
-      errorMessage: error instanceof Error ? error.message : String(error),
+      providerErrorKind: classification.providerErrorKind,
+      httpStatus: classification.httpStatus,
+      durationMs,
+      errorMessage:
+        classification.errorMessage ?? (error instanceof Error ? error.message : String(error)),
     };
   }
 }
@@ -714,7 +780,11 @@ export async function fetchCompanyJobs(companyName: string): Promise<FetchCompan
         source,
         status: outcome.status,
         jobsCount: outcome.jobs.length,
+        providerErrorKind: outcome.providerErrorKind,
+        httpStatus: "httpStatus" in outcome ? outcome.httpStatus : undefined,
+        durationMs: outcome.durationMs,
         errorMessage: outcome.status === "error" ? outcome.errorMessage : undefined,
+        retryCount: undefined,
       });
 
       if (outcome.status === "jobs_found" || outcome.status === "zero_jobs") {

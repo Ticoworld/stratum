@@ -5,6 +5,10 @@
 
 import type { Job } from "./boards";
 import { fetchWithRetry } from "./fetchWithRetry";
+import {
+  createProviderHttpError,
+  createProviderUnexpectedShapeError,
+} from "./providerErrors";
 
 const WORKABLE_BASE = "https://apply.workable.com/api/v1/widget/accounts";
 
@@ -50,12 +54,15 @@ export async function fetchFromWorkable(companyToken: string): Promise<Job[]> {
   });
 
   if (!res.ok) {
-    if (res.status === 404) throw new Error("NOT_FOUND");
-    throw new Error(`Workable: ${res.status}`);
+    throw createProviderHttpError("Workable", res.status);
   }
 
   const data = await res.json();
-  const jobs: WorkableJobRaw[] = Array.isArray(data.jobs) ? data.jobs : [];
+  if (!data || typeof data !== "object" || !Array.isArray((data as { jobs?: unknown }).jobs)) {
+    throw createProviderUnexpectedShapeError("Workable", res.status);
+  }
+
+  const jobs: WorkableJobRaw[] = (data as { jobs: WorkableJobRaw[] }).jobs;
   const observedAt = new Date().toISOString();
 
   return jobs.map((j: WorkableJobRaw) => {
