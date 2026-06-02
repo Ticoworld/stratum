@@ -205,9 +205,13 @@ test.describe("Phase 6I-2 provider flow", () => {
 
     const result = await fetchCompanyJobs("Northstar Labs");
 
-    expect(calls).toEqual(["GREENHOUSE", "LEVER"]);
+    expect(calls).toEqual(["GREENHOUSE", "GREENHOUSE", "LEVER"]);
     expect(result.source).toBe("LEVER");
     expect(result.candidateMatches.map((match) => match.source)).toEqual(["LEVER"]);
+    expect(result.attempts.find((attempt) => attempt.source === "GREENHOUSE")?.attemptCount).toBe(
+      2
+    );
+    expect(result.attempts.find((attempt) => attempt.source === "GREENHOUSE")?.retryCount).toBe(1);
     expect(result.attempts.find((attempt) => attempt.source === "GREENHOUSE")?.errorMessage).toBe(
       "Greenhouse: 500"
     );
@@ -338,11 +342,13 @@ test.describe("Phase 6J-2 provider failure classification", () => {
     const result = await fetchCompanyJobs("503 Classification Labs");
     const greenhouse = attemptForSource(result, "GREENHOUSE");
 
-    expect(calls).toEqual(["GREENHOUSE", "LEVER", "ASHBY", "WORKABLE"]);
+    expect(calls).toEqual(["GREENHOUSE", "GREENHOUSE", "LEVER", "ASHBY", "WORKABLE"]);
     expect(greenhouse?.status).toBe("error");
     expect(greenhouse?.providerErrorKind).toBe("provider_http_error");
     expect(greenhouse?.httpStatus).toBe(503);
     expect(greenhouse?.errorMessage).toContain("503");
+    expect(greenhouse?.attemptCount).toBe(2);
+    expect(greenhouse?.retryCount).toBe(1);
   });
 
   test("D: timeout-like thrown errors classify as timeout", async () => {

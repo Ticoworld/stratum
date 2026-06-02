@@ -4,15 +4,13 @@
  */
 
 import type { Job } from "./boards";
-import {
-  fetchWithRetryWithTelemetry,
-  type FetchWithRetryTelemetry,
-} from "./fetchWithRetry";
+import type { FetchWithRetryTelemetry } from "./fetchWithRetry";
 import {
   attachProviderTelemetry,
   createProviderHttpError,
   createProviderUnexpectedShapeError,
 } from "./providerErrors";
+import { fetchProviderWithHttpRetry } from "./providerHttpRetry";
 
 const ASHBY_BASE = "https://api.ashbyhq.com/posting-api/job-board";
 
@@ -51,7 +49,7 @@ interface ProviderFetchResult {
 
 export async function fetchFromAshby(companyToken: string): Promise<ProviderFetchResult> {
   const url = `${ASHBY_BASE}/${encodeURIComponent(companyToken)}`;
-  const fetchResult = await fetchWithRetryWithTelemetry(url, {
+  const fetchResult = await fetchProviderWithHttpRetry(url, {
     headers: { Accept: "application/json" },
   });
   const { response: res, ...retryTelemetry } = fetchResult;

@@ -5,11 +5,11 @@
  */
 
 import {
-  fetchWithRetryWithTelemetry,
   type FetchWithRetryTelemetry,
 } from "./fetchWithRetry";
 import { fetchFromAshby } from "./ashby";
 import { fetchFromWorkable } from "./workable";
+import { fetchProviderWithHttpRetry } from "./providerHttpRetry";
 import {
   attachProviderTelemetry,
   classifyProviderError,
@@ -273,7 +273,7 @@ interface GreenhouseJobRaw {
 
 async function fetchFromGreenhouse(boardToken: string): Promise<ProviderFetchResult> {
   const url = `${GREENHOUSE_BASE}/${boardToken}/jobs?content=true`;
-  const fetchResult = await fetchWithRetryWithTelemetry(url, {
+  const fetchResult = await fetchProviderWithHttpRetry(url, {
     headers: { Accept: "application/json" },
   });
   const { response: res, ...retryTelemetry } = fetchResult;
@@ -334,7 +334,7 @@ async function fetchFromGreenhouse(boardToken: string): Promise<ProviderFetchRes
  */
 async function fetchFromLever(siteToken: string): Promise<ProviderFetchResult> {
   const url = `${LEVER_BASE}/${siteToken}?mode=json`;
-  const fetchResult = await fetchWithRetryWithTelemetry(url, {
+  const fetchResult = await fetchProviderWithHttpRetry(url, {
     headers: { Accept: "application/json" },
   });
   const { response: res, ...retryTelemetry } = fetchResult;
