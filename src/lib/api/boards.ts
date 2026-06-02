@@ -4,13 +4,18 @@
  * publicly available evidence for each role, plus fetch-state metadata.
  */
 
-import { fetchWithRetry } from "./fetchWithRetry";
+import {
+  fetchWithRetryWithTelemetry,
+  type FetchWithRetryTelemetry,
+} from "./fetchWithRetry";
 import { fetchFromAshby } from "./ashby";
 import { fetchFromWorkable } from "./workable";
 import {
+  attachProviderTelemetry,
   classifyProviderError,
   createProviderHttpError,
   createProviderUnexpectedShapeError,
+  getProviderRetryTelemetry,
   type ProviderErrorKind,
 } from "./providerErrors";
 import { humanizeIdentityToken } from "../watchlists/identity";
@@ -57,6 +62,7 @@ export interface FetchAttempt {
   source: JobBoardSource;
   status: FetchAttemptStatus;
   jobsCount: number;
+  attemptCount?: number;
   providerErrorKind?: ProviderErrorKind;
   httpStatus?: number;
   durationMs?: number;
@@ -246,6 +252,11 @@ function getMatchedAs(
   return undefined;
 }
 
+interface ProviderFetchResult {
+  jobs: Job[];
+  retryTelemetry: FetchWithRetryTelemetry;
+}
+
 /**
  * Fetches jobs from Greenhouse API.
  */
@@ -260,109 +271,129 @@ interface GreenhouseJobRaw {
   absolute_url?: string;
 }
 
-async function fetchFromGreenhouse(boardToken: string): Promise<Job[]> {
+async function fetchFromGreenhouse(boardToken: string): Promise<ProviderFetchResult> {
   const url = `${GREENHOUSE_BASE}/${boardToken}/jobs?content=true`;
-  const res = await fetchWithRetry(url, {
+  const fetchResult = await fetchWithRetryWithTelemetry(url, {
     headers: { Accept: "application/json" },
   });
+  const { response: res, ...retryTelemetry } = fetchResult;
 
-  if (!res.ok) {
-    throw createProviderHttpError("Greenhouse", res.status);
-  }
-
-  const data = await res.json();
-  if (!data || typeof data !== "object" || !Array.isArray((data as { jobs?: unknown }).jobs)) {
-    throw createProviderUnexpectedShapeError("Greenhouse", res.status);
-  }
-
-  const jobs = (data as { jobs: GreenhouseJobRaw[] }).jobs;
-  const observedAt = new Date().toISOString();
-
-  return jobs.map(
-    (j: GreenhouseJobRaw) => {
-      const sourceTimestamp = parseIsoDateOrNull(j.updated_at);
-      return {
-        title: normalizeText(j.title) ?? "Unknown",
-        location: normalizeText(j.location?.name),
-        department: normalizeText(j.departments?.[0]?.name),
-        source: "GREENHOUSE" as const,
-        roleId:
-          typeof j.id === "number"
-            ? String(j.id)
-            : typeof j.internal_job_id === "number"
-              ? String(j.internal_job_id)
-              : null,
-        roleIdType:
-          typeof j.id === "number"
-            ? "posting_id"
-            : typeof j.internal_job_id === "number"
-              ? "internal_job_id"
-              : null,
-        requisitionId: normalizeText(j.requisition_id),
-        jobUrl: normalizeText(j.absolute_url),
-        applyUrl: normalizeText(j.absolute_url),
-        sourceTimestamp,
-        sourceTimestampType: sourceTimestamp ? "updated_at" : null,
-        observedAt,
-      };
+  try {
+    if (!res.ok) {
+      throw createProviderHttpError("Greenhouse", res.status);
     }
-  );
+
+    const data = await res.json();
+    if (!data || typeof data !== "object" || !Array.isArray((data as { jobs?: unknown }).jobs)) {
+      throw createProviderUnexpectedShapeError("Greenhouse", res.status);
+    }
+
+    const jobs = (data as { jobs: GreenhouseJobRaw[] }).jobs;
+    const observedAt = new Date().toISOString();
+
+    return {
+      jobs: jobs.map((j: GreenhouseJobRaw) => {
+        const sourceTimestamp = parseIsoDateOrNull(j.updated_at);
+        return {
+          title: normalizeText(j.title) ?? "Unknown",
+          location: normalizeText(j.location?.name),
+          department: normalizeText(j.departments?.[0]?.name),
+          source: "GREENHOUSE" as const,
+          roleId:
+            typeof j.id === "number"
+              ? String(j.id)
+              : typeof j.internal_job_id === "number"
+                ? String(j.internal_job_id)
+                : null,
+          roleIdType:
+            typeof j.id === "number"
+              ? "posting_id"
+              : typeof j.internal_job_id === "number"
+                ? "internal_job_id"
+                : null,
+          requisitionId: normalizeText(j.requisition_id),
+          jobUrl: normalizeText(j.absolute_url),
+          applyUrl: normalizeText(j.absolute_url),
+          sourceTimestamp,
+          sourceTimestampType: sourceTimestamp ? "updated_at" : null,
+          observedAt,
+        };
+      }),
+      retryTelemetry,
+    };
+  } catch (error) {
+    throw attachProviderTelemetry(
+      error instanceof Error ? error : new Error(String(error)),
+      retryTelemetry
+    );
+  }
 }
 
 /**
  * Fetches jobs from Lever API.
  */
-async function fetchFromLever(siteToken: string): Promise<Job[]> {
+async function fetchFromLever(siteToken: string): Promise<ProviderFetchResult> {
   const url = `${LEVER_BASE}/${siteToken}?mode=json`;
-  const res = await fetchWithRetry(url, {
+  const fetchResult = await fetchWithRetryWithTelemetry(url, {
     headers: { Accept: "application/json" },
   });
+  const { response: res, ...retryTelemetry } = fetchResult;
 
-  if (!res.ok) {
-    throw createProviderHttpError("Lever", res.status);
-  }
-
-  const jobs = await res.json();
-  if (!Array.isArray(jobs)) {
-    throw createProviderUnexpectedShapeError("Lever", res.status);
-  }
-
-  const observedAt = new Date().toISOString();
-
-  return jobs.map(
-    (j: {
-      id?: string;
-      text?: string;
-      categories?: {
-        location?: string;
-        department?: string;
-      };
-      hostedUrl?: string;
-      applyUrl?: string;
-      updatedAt?: number;
-      workplaceType?: string;
-    }) => {
-      const sourceTimestamp = parseIsoDateOrNull(j.updatedAt);
-      const roleId = normalizeText(j.id);
-
-      return {
-        title: normalizeText(j.text) ?? "Unknown",
-        location:
-          normalizeText(j.categories?.location) ??
-          (normalizeText(j.workplaceType)?.toLowerCase() === "remote" ? "Remote" : null),
-        department: normalizeText(j.categories?.department),
-        source: "LEVER" as const,
-        roleId,
-        roleIdType: roleId ? "posting_id" : null,
-        requisitionId: null,
-        jobUrl: normalizeText(j.hostedUrl),
-        applyUrl: normalizeText(j.applyUrl),
-        sourceTimestamp,
-        sourceTimestampType: sourceTimestamp ? "updated_at" : null,
-        observedAt,
-      };
+  try {
+    if (!res.ok) {
+      throw createProviderHttpError("Lever", res.status);
     }
-  );
+
+    const jobs = await res.json();
+    if (!Array.isArray(jobs)) {
+      throw createProviderUnexpectedShapeError("Lever", res.status);
+    }
+
+    const observedAt = new Date().toISOString();
+
+    return {
+      jobs: jobs.map(
+        (j: {
+          id?: string;
+          text?: string;
+          categories?: {
+            location?: string;
+            department?: string;
+          };
+          hostedUrl?: string;
+          applyUrl?: string;
+          updatedAt?: number;
+          workplaceType?: string;
+        }) => {
+          const sourceTimestamp = parseIsoDateOrNull(j.updatedAt);
+          const roleId = normalizeText(j.id);
+
+          return {
+            title: normalizeText(j.text) ?? "Unknown",
+            location:
+              normalizeText(j.categories?.location) ??
+              (normalizeText(j.workplaceType)?.toLowerCase() === "remote" ? "Remote" : null),
+            department: normalizeText(j.categories?.department),
+            source: "LEVER" as const,
+            roleId,
+            roleIdType: roleId ? "posting_id" : null,
+            requisitionId: null,
+            jobUrl: normalizeText(j.hostedUrl),
+            applyUrl: normalizeText(j.applyUrl),
+            sourceTimestamp,
+            sourceTimestampType: sourceTimestamp ? "updated_at" : null,
+            observedAt,
+          };
+        }
+      ),
+      retryTelemetry,
+    };
+  } catch (error) {
+    throw attachProviderTelemetry(
+      error instanceof Error ? error : new Error(String(error)),
+      retryTelemetry
+    );
+  }
 }
 
 /**
@@ -415,69 +446,83 @@ type SourceOutcome =
       jobs: Job[];
       source: JobBoardSource;
       token: string;
-      providerErrorKind: ProviderErrorKind;
+      attemptCount: number;
+      retryCount: number;
       durationMs: number;
+      providerErrorKind: ProviderErrorKind;
     }
   | {
       status: "zero_jobs";
       jobs: Job[];
       source: JobBoardSource;
       token: string;
-      providerErrorKind: ProviderErrorKind;
+      attemptCount: number;
+      retryCount: number;
       durationMs: number;
+      providerErrorKind: ProviderErrorKind;
     }
   | {
       status: "not_found";
       jobs: Job[];
       source: JobBoardSource;
       token: string;
+      attemptCount: number;
+      retryCount: number;
+      durationMs: number;
       providerErrorKind: ProviderErrorKind;
       httpStatus: number;
-      durationMs: number;
     }
   | {
       status: "error";
       jobs: Job[];
       source: JobBoardSource;
       token: string;
+      attemptCount: number;
+      retryCount: number;
+      durationMs: number;
       providerErrorKind: ProviderErrorKind;
       httpStatus?: number;
-      durationMs: number;
       errorMessage: string;
     };
 
 async function tryFetchOutcome(token: string, source: JobBoardSource): Promise<SourceOutcome> {
-  const startedAt = Date.now();
-
   try {
-    let jobs: Job[];
+    let result: ProviderFetchResult;
 
     switch (source) {
       case "GREENHOUSE":
-        jobs = await fetchFromGreenhouse(token);
+        result = await fetchFromGreenhouse(token);
         break;
       case "LEVER":
-        jobs = await fetchFromLever(token);
+        result = await fetchFromLever(token);
         break;
       case "ASHBY":
-        jobs = await fetchFromAshby(token);
+        result = await fetchFromAshby(token);
         break;
       case "WORKABLE":
-        jobs = await fetchFromWorkable(token);
+        result = await fetchFromWorkable(token);
         break;
     }
+
+    const { jobs, retryTelemetry } = result;
 
     return {
       status: jobs.length > 0 ? "jobs_found" : "zero_jobs",
       jobs,
       source,
       token,
+      attemptCount: retryTelemetry.attemptCount,
+      retryCount: retryTelemetry.retryCount,
+      durationMs: retryTelemetry.elapsedMs,
       providerErrorKind: "none",
-      durationMs: Date.now() - startedAt,
     };
   } catch (error) {
     const classification = classifyProviderError(error);
-    const durationMs = Date.now() - startedAt;
+    const retryTelemetry = getProviderRetryTelemetry(error) ?? {
+      attemptCount: 1,
+      retryCount: 0,
+      elapsedMs: 0,
+    };
 
     if (classification.providerErrorKind === "not_found") {
       return {
@@ -485,9 +530,11 @@ async function tryFetchOutcome(token: string, source: JobBoardSource): Promise<S
         jobs: [],
         source,
         token,
+        attemptCount: retryTelemetry.attemptCount,
+        retryCount: retryTelemetry.retryCount,
+        durationMs: retryTelemetry.elapsedMs,
         providerErrorKind: classification.providerErrorKind,
         httpStatus: classification.httpStatus ?? 404,
-        durationMs,
       };
     }
 
@@ -496,9 +543,11 @@ async function tryFetchOutcome(token: string, source: JobBoardSource): Promise<S
       jobs: [],
       source,
       token,
+      attemptCount: retryTelemetry.attemptCount,
+      retryCount: retryTelemetry.retryCount,
+      durationMs: retryTelemetry.elapsedMs,
       providerErrorKind: classification.providerErrorKind,
       httpStatus: classification.httpStatus,
-      durationMs,
       errorMessage:
         classification.errorMessage ?? (error instanceof Error ? error.message : String(error)),
     };
@@ -780,11 +829,12 @@ export async function fetchCompanyJobs(companyName: string): Promise<FetchCompan
         source,
         status: outcome.status,
         jobsCount: outcome.jobs.length,
+        attemptCount: outcome.attemptCount,
         providerErrorKind: outcome.providerErrorKind,
         httpStatus: "httpStatus" in outcome ? outcome.httpStatus : undefined,
         durationMs: outcome.durationMs,
         errorMessage: outcome.status === "error" ? outcome.errorMessage : undefined,
-        retryCount: undefined,
+        retryCount: outcome.retryCount,
       });
 
       if (outcome.status === "jobs_found" || outcome.status === "zero_jobs") {

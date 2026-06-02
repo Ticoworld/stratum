@@ -4,8 +4,12 @@
  */
 
 import type { Job } from "./boards";
-import { fetchWithRetry } from "./fetchWithRetry";
 import {
+  fetchWithRetryWithTelemetry,
+  type FetchWithRetryTelemetry,
+} from "./fetchWithRetry";
+import {
+  attachProviderTelemetry,
   createProviderHttpError,
   createProviderUnexpectedShapeError,
 } from "./providerErrors";
@@ -47,59 +51,75 @@ function toIsoDate(value: string | undefined): string | null {
   }
 }
 
-export async function fetchFromWorkable(companyToken: string): Promise<Job[]> {
+interface ProviderFetchResult {
+  jobs: Job[];
+  retryTelemetry: FetchWithRetryTelemetry;
+}
+
+export async function fetchFromWorkable(companyToken: string): Promise<ProviderFetchResult> {
   const url = `${WORKABLE_BASE}/${encodeURIComponent(companyToken)}`;
-  const res = await fetchWithRetry(url, {
+  const fetchResult = await fetchWithRetryWithTelemetry(url, {
     headers: { Accept: "application/json" },
   });
+  const { response: res, ...retryTelemetry } = fetchResult;
 
-  if (!res.ok) {
-    throw createProviderHttpError("Workable", res.status);
-  }
+  try {
+    if (!res.ok) {
+      throw createProviderHttpError("Workable", res.status);
+    }
 
-  const data = await res.json();
-  if (!data || typeof data !== "object" || !Array.isArray((data as { jobs?: unknown }).jobs)) {
-    throw createProviderUnexpectedShapeError("Workable", res.status);
-  }
+    const data = await res.json();
+    if (!data || typeof data !== "object" || !Array.isArray((data as { jobs?: unknown }).jobs)) {
+      throw createProviderUnexpectedShapeError("Workable", res.status);
+    }
 
-  const jobs: WorkableJobRaw[] = (data as { jobs: WorkableJobRaw[] }).jobs;
-  const observedAt = new Date().toISOString();
-
-  return jobs.map((j: WorkableJobRaw) => {
-    const firstLocation = Array.isArray(j.locations) ? j.locations[0] : undefined;
-    const sourceTimestamp = toIsoDate(j.created_at);
-    const roleId = normalizeText(j.shortcode);
-    const location =
-      normalizeText(j.location) ||
-      normalizeText(firstLocation?.location) ||
-      [j.city, j.state, j.country]
-        .map((part) => normalizeText(part))
-        .filter((part): part is string => Boolean(part))
-        .join(", ") ||
-      [firstLocation?.city, firstLocation?.state, firstLocation?.country]
-        .map((part) => normalizeText(part))
-        .filter((part): part is string => Boolean(part))
-        .join(", ") ||
-      (
-        normalizeText(j.workplace_type)?.toLowerCase() === "remote" ||
-        normalizeText(firstLocation?.workplace_type)?.toLowerCase() === "remote"
-          ? "Remote"
-          : null
-      );
+    const jobs: WorkableJobRaw[] = (data as { jobs: WorkableJobRaw[] }).jobs;
+    const observedAt = new Date().toISOString();
 
     return {
-      title: normalizeText(j.title) ?? "Unknown",
-      location: typeof location === "string" ? location.trim() || null : null,
-      department: normalizeText(j.department),
-      source: "WORKABLE",
-      roleId,
-      roleIdType: roleId ? "shortcode" : null,
-      requisitionId: null,
-      jobUrl: normalizeText(j.url),
-      applyUrl: normalizeText(j.url),
-      sourceTimestamp,
-      sourceTimestampType: sourceTimestamp ? "created_at" : null,
-      observedAt,
+      jobs: jobs.map((j: WorkableJobRaw) => {
+        const firstLocation = Array.isArray(j.locations) ? j.locations[0] : undefined;
+        const sourceTimestamp = toIsoDate(j.created_at);
+        const roleId = normalizeText(j.shortcode);
+        const location =
+          normalizeText(j.location) ||
+          normalizeText(firstLocation?.location) ||
+          [j.city, j.state, j.country]
+            .map((part) => normalizeText(part))
+            .filter((part): part is string => Boolean(part))
+            .join(", ") ||
+          [firstLocation?.city, firstLocation?.state, firstLocation?.country]
+            .map((part) => normalizeText(part))
+            .filter((part): part is string => Boolean(part))
+            .join(", ") ||
+          (
+            normalizeText(j.workplace_type)?.toLowerCase() === "remote" ||
+            normalizeText(firstLocation?.workplace_type)?.toLowerCase() === "remote"
+              ? "Remote"
+              : null
+          );
+
+        return {
+          title: normalizeText(j.title) ?? "Unknown",
+          location: typeof location === "string" ? location.trim() || null : null,
+          department: normalizeText(j.department),
+          source: "WORKABLE",
+          roleId,
+          roleIdType: roleId ? "shortcode" : null,
+          requisitionId: null,
+          jobUrl: normalizeText(j.url),
+          applyUrl: normalizeText(j.url),
+          sourceTimestamp,
+          sourceTimestampType: sourceTimestamp ? "created_at" : null,
+          observedAt,
+        };
+      }),
+      retryTelemetry: retryTelemetry as FetchWithRetryTelemetry,
     };
-  });
+  } catch (error) {
+    throw attachProviderTelemetry(
+      error instanceof Error ? error : new Error(String(error)),
+      retryTelemetry as FetchWithRetryTelemetry
+    );
+  }
 }

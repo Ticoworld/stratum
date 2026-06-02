@@ -1,3 +1,5 @@
+import type { FetchWithRetryTelemetry } from "./fetchWithRetry";
+
 export type ProviderErrorKind =
   | "none"
   | "not_found"
@@ -14,6 +16,9 @@ export type ProviderErrorKind =
 export interface ProviderFetchError extends Error {
   providerErrorKind: ProviderErrorKind;
   httpStatus?: number;
+  attemptCount?: number;
+  retryCount?: number;
+  elapsedMs?: number;
 }
 
 export interface ProviderErrorClassification {
@@ -155,6 +160,31 @@ export function createProviderUnexpectedShapeError(
   return createProviderFetchError("unexpected_shape", `${providerName}: unexpected response shape`, {
     httpStatus,
   });
+}
+
+export function attachProviderTelemetry<T extends Error>(
+  error: T,
+  telemetry: FetchWithRetryTelemetry
+): T & FetchWithRetryTelemetry {
+  return Object.assign(error, telemetry);
+}
+
+export function getProviderRetryTelemetry(error: unknown): FetchWithRetryTelemetry | null {
+  if (typeof error !== "object" || error === null) return null;
+
+  const attemptCount = (error as { attemptCount?: unknown }).attemptCount;
+  const retryCount = (error as { retryCount?: unknown }).retryCount;
+  const elapsedMs = (error as { elapsedMs?: unknown }).elapsedMs;
+
+  if (
+    typeof attemptCount === "number" &&
+    typeof retryCount === "number" &&
+    typeof elapsedMs === "number"
+  ) {
+    return { attemptCount, retryCount, elapsedMs };
+  }
+
+  return null;
 }
 
 export function classifyProviderError(error: unknown): ProviderErrorClassification {
