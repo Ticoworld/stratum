@@ -5,6 +5,7 @@ import { ArrowLeft, ExternalLink, ShieldCheck, MapPin, Layers, Info, History, Sh
 import { buildSignInRedirectPath, requireAuthSession } from "@/lib/auth/session";
 import { getStratumBriefById } from "@/lib/briefs/repository";
 import { buildStratumLimitations, formatSourceLabel } from "@/lib/briefs/presentation";
+import { buildProviderDiagnosticsView } from "@/lib/briefs/providerDiagnostics";
 import { buildWhatChangedDisplay } from "@/lib/briefs/whatChangedDisplay";
 import { getWatchlistBriefReplayContext } from "@/lib/watchlists/repository";
 import {
@@ -154,6 +155,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
   const allJobs = brief.resultSnapshot?.jobs || [];
   const hasFullData = allJobs.length > 0;
   const roles = brief.proofRolesSnapshot || [];
+  const providerDiagnostics = buildProviderDiagnosticsView(brief.resultSnapshot);
   
   const hiringMix = computeFunctionalMix(hasFullData ? allJobs : roles);
   const geography = getGeographySpread(hasFullData ? allJobs : roles);
@@ -625,6 +627,151 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                       ))}
                     </ul>
                   </div>
+                )}
+              </div>
+            </details>
+
+            <details className="group rounded-[24px] border bg-[var(--surface)] p-6 lg:p-7" style={{ borderColor: "var(--border)" }}>
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 transition-colors hover:text-[var(--accent)]">
+                <div className="space-y-1">
+                  <h2 className="text-[13px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
+                    Advanced provider diagnostics
+                  </h2>
+                  <p className="text-[12px] leading-5" style={{ color: "var(--foreground-secondary)" }}>
+                    Shows provider attempts, retry telemetry, and skipped-source status for debugging.
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2 text-[11px] font-medium tracking-[0.02em] opacity-25">
+                  <span className="group-open:hidden">Show details</span>
+                  <span className="hidden group-open:block">Hide details</span>
+                </div>
+              </summary>
+
+              <div className="mt-4">
+                {providerDiagnostics.hasDiagnostics ? (
+                  <div className="space-y-3">
+                    {providerDiagnostics.rows.map((row) => (
+                      <article
+                        key={row.source}
+                        className="rounded-2xl border px-4 py-4"
+                        style={{
+                          background: "var(--background)",
+                          borderColor: "var(--border)",
+                        }}
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0 space-y-1">
+                            <p className="text-[10px] font-medium uppercase tracking-[0.22em]" style={{ color: "var(--foreground-muted)" }}>
+                              {row.sourceLabel}
+                            </p>
+                            <p className="text-[13px] font-medium leading-6" style={{ color: "var(--foreground)" }}>
+                              Status: {row.statusLabel}
+                            </p>
+                          </div>
+                          <div
+                            className="rounded-full border px-3 py-1 text-[11px] font-medium"
+                            style={{
+                              borderColor: "var(--border)",
+                              color: row.usedForBrief ? "var(--foreground)" : "var(--foreground-secondary)",
+                            }}
+                          >
+                            {row.usedForBrief ? "Used for brief" : "Not used for brief"}
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-1 gap-2 text-[11px] leading-5 sm:grid-cols-2 lg:grid-cols-3">
+                          <p style={{ color: "var(--foreground-secondary)" }}>
+                            <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                              jobsCount
+                            </span>{" "}
+                            {row.jobsCount}
+                          </p>
+                          <p style={{ color: "var(--foreground-secondary)" }}>
+                            <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                              usedForBrief
+                            </span>{" "}
+                            {row.usedForBrief ? "yes" : "no"}
+                          </p>
+                          <p className="sm:col-span-2 lg:col-span-3" style={{ color: "var(--foreground-secondary)" }}>
+                            <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                              note
+                            </span>{" "}
+                            {row.note}
+                          </p>
+                        </div>
+
+                        {row.attempts.length > 0 && (
+                          <div className="mt-4 space-y-2">
+                            <p className="text-[10px] font-medium uppercase tracking-[0.22em]" style={{ color: "var(--foreground-muted)" }}>
+                              Attempt telemetry
+                            </p>
+                            <div className="space-y-2">
+                              {row.attempts.map((attempt, index) => (
+                                <div
+                                  key={`${row.source}-${index}`}
+                                  className="rounded-xl border px-3 py-3"
+                                  style={{
+                                    background: "var(--surface)",
+                                    borderColor: "var(--border)",
+                                  }}
+                                >
+                                  <p className="text-[11px] font-medium leading-5" style={{ color: "var(--foreground)" }}>
+                                    Attempt {index + 1}: {attempt.statusLabel}
+                                  </p>
+                                  <div className="mt-2 grid grid-cols-1 gap-2 text-[11px] leading-5 sm:grid-cols-2 lg:grid-cols-3">
+                                    {attempt.providerErrorKind ? (
+                                      <p style={{ color: "var(--foreground-secondary)" }}>
+                                        <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                          providerErrorKind
+                                        </span>{" "}
+                                        {attempt.providerErrorKind}
+                                      </p>
+                                    ) : null}
+                                    {attempt.httpStatus !== null ? (
+                                      <p style={{ color: "var(--foreground-secondary)" }}>
+                                        <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                          httpStatus
+                                        </span>{" "}
+                                        {attempt.httpStatus}
+                                      </p>
+                                    ) : null}
+                                    {attempt.attemptCount !== null ? (
+                                      <p style={{ color: "var(--foreground-secondary)" }}>
+                                        <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                          attemptCount
+                                        </span>{" "}
+                                        {attempt.attemptCount}
+                                      </p>
+                                    ) : null}
+                                    {attempt.retryCount !== null ? (
+                                      <p style={{ color: "var(--foreground-secondary)" }}>
+                                        <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                          retryCount
+                                        </span>{" "}
+                                        {attempt.retryCount}
+                                      </p>
+                                    ) : null}
+                                    {attempt.durationMs !== null ? (
+                                      <p style={{ color: "var(--foreground-secondary)" }}>
+                                        <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                          durationMs
+                                        </span>{" "}
+                                        {attempt.durationMs} ms
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[12px] leading-6" style={{ color: "var(--foreground-muted)" }}>
+                    No provider diagnostics were stored for this brief.
+                  </p>
                 )}
               </div>
             </details>

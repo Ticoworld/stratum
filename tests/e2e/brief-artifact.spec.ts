@@ -148,6 +148,14 @@ test("saved brief reads like a durable artifact and keeps replay context obvious
   await expect(page.getByRole("heading", { name: "Snapshot details" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Evidence" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Watchlist context" })).toBeVisible();
+  const providerDiagnosticsToggle = page.getByRole("button", { name: /Advanced provider diagnostics/i });
+  await expect(providerDiagnosticsToggle).toBeVisible();
+  await providerDiagnosticsToggle.click();
+  await expect(
+    page.getByText("Shows provider attempts, retry telemetry, and skipped-source status for debugging.")
+  ).toBeVisible();
+  await expect(page.getByText("jobsCount")).toBeVisible();
+  await expect(page.getByText("usedForBrief")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Limits and caveats" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Quick links" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Back to watchlist" })).toBeVisible();
