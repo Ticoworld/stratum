@@ -38,6 +38,7 @@ export default defineConfig({
           STRATUM_DB_DRIVER: "pglite",
           STRATUM_PGLITE_DATA_DIR: e2ePgliteDataDir,
           STRATUM_E2E_MODE: "1",
+          STRATUM_E2E_DISABLE_GEMINI: "1",
           STRATUM_E2E_NO_MATCH_QUERY: fixture.noMatchQuery,
           STRATUM_E2E_PROVIDER_FAILURE_QUERY: fixture.providerFailureQuery,
           STRATUM_E2E_THROW_QUERY: fixture.throwErrorQuery,

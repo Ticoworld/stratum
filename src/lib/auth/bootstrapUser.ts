@@ -39,7 +39,7 @@ export async function bootstrapUser(
   const email = normalizeEmail(input.email);
   const name = input.name.trim() || email;
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const [existingUser] = await tx
       .select()
       .from(users)
@@ -87,6 +87,7 @@ export async function bootstrapUser(
         userId,
         tenantId: existingMembership.tenantId,
         role: existingMembership.role as MemberRole,
+        recoverLegacyData: false,
       };
     }
 
@@ -126,13 +127,23 @@ export async function bootstrapUser(
       throw new Error("Failed to bootstrap a default tenant membership.");
     }
 
-    // Trigger one-time legacy data recovery during user bootstrap
-    await recoverLegacyTenantDataForTenant(membership.tenantId);
-
     return {
       userId,
       tenantId: membership.tenantId,
       role: membership.role as MemberRole,
+      recoverLegacyData: true,
     };
   });
+
+  // Run legacy recovery after the bootstrap transaction commits so the
+  // single-connection E2E database does not deadlock on nested transactions.
+  if (result.recoverLegacyData) {
+    await recoverLegacyTenantDataForTenant(result.tenantId);
+  }
+
+  return {
+    userId: result.userId,
+    tenantId: result.tenantId,
+    role: result.role,
+  };
 }

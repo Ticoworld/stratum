@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { encode } from "@auth/core/jwt";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import fixture from "./phase10-fixture.json";
 
 type Persona = {
   userId: string;
@@ -59,7 +60,7 @@ async function bootstrapPersonas(request: APIRequestContext, runKey: string) {
 }
 
 async function ensureTargetComposerOpen(page: Page): Promise<void> {
-  const targetInput = page.getByPlaceholder("Company name, website, or LinkedIn company URL");
+  const targetInput = page.getByLabel("Company name or URL");
   if (!(await targetInput.isVisible())) {
     await page.getByRole("button", { name: "Track company" }).click();
     await expect(targetInput).toBeVisible();
@@ -68,7 +69,8 @@ async function ensureTargetComposerOpen(page: Page): Promise<void> {
 
 async function resolveAndConfirmTarget(page: Page, input: string): Promise<string> {
   await ensureTargetComposerOpen(page);
-  await page.getByPlaceholder("Company name, website, or LinkedIn company URL").fill(input);
+  const targetInput = page.getByLabel("Company name or URL");
+  await targetInput.fill(input);
 
   const [resolveResponse] = await Promise.all([
     page.waitForResponse(
@@ -76,11 +78,11 @@ async function resolveAndConfirmTarget(page: Page, input: string): Promise<strin
         response.url().includes("/api/watchlists/resolve") &&
         response.request().method() === "POST"
     ),
-    page.getByRole("button", { name: "Find source" }).click(),
+    page.getByRole("button", { name: "Continue" }).click(),
   ]);
   const resolveJson = await resolveResponse.json();
   expect(resolveJson.success).toBeTruthy();
-  await expect(page.getByText("Resolution preview")).toBeVisible();
+  await expect(page.getByText("Match summary")).toBeVisible();
 
   const [createResponse, refreshResponse] = await Promise.all([
     page.waitForResponse(
@@ -93,7 +95,7 @@ async function resolveAndConfirmTarget(page: Page, input: string): Promise<strin
         response.url().includes("/api/analyze-unified") &&
         response.request().method() === "POST"
     ),
-    page.getByRole("button", { name: "Confirm and start baseline" }).click(),
+    page.locator("div.fixed.inset-0").getByRole("button", { name: "Track company" }).click(),
   ]);
 
   const createJson = await createResponse.json();
@@ -115,48 +117,44 @@ test("saved brief reads like a durable artifact and keeps replay context obvious
   await authenticate(page, personas.ownerA);
 
   const watchlistName = `Brief Artifact ${runKey}`;
-  const query = "Notion";
+  const query = fixture.multiCandidateQuery;
   const targetLabel = "Notion";
 
   await page.goto("/watchlists");
-  await page.getByRole("button", { name: "New watchlist" }).click();
-  await page.getByPlaceholder("Name this watchlist").fill(watchlistName);
+  await page.locator("aside").getByRole("button", { name: "New" }).click();
+  await page.getByLabel("Watchlist name").fill(watchlistName);
   await Promise.all([
     page.waitForResponse((response) => response.url().includes("/api/watchlists") && response.request().method() === "POST"),
     page.getByRole("button", { name: "Create watchlist" }).click(),
   ]);
 
   await resolveAndConfirmTarget(page, query);
-  await expect(page.getByText("Baseline saved", { exact: true }).first()).toBeVisible();
 
-  const targetRow = page.locator("table").locator("tr").filter({ hasText: "Notion" }).first();
-  await expect(targetRow).toBeVisible();
-
-  const [refreshResponse] = await Promise.all([
-    page.waitForResponse(
-      (response) => response.url().includes("/api/analyze-unified") && response.request().method() === "POST"
-    ),
-    targetRow.getByRole("button", { name: "Refresh" }).click(),
-  ]);
-  const refreshJson = await refreshResponse.json();
-  expect(refreshJson.success).toBeTruthy();
-  expect(refreshJson.data.briefId).toBeTruthy();
-
-  await page.goto(`/briefs/${refreshJson.data.briefId}`);
-  await expect(page.getByRole("main").getByText("Saved brief", { exact: true })).toBeVisible();
+  const latestBriefLink = page.getByRole("link", { name: "Brief", exact: true }).first();
+  await expect(latestBriefLink).toBeVisible();
+  await latestBriefLink.click();
+  await expect(page.getByText("saved brief", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: targetLabel })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Snapshot details" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Evidence" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Watchlist context" })).toBeVisible();
-  const providerDiagnosticsToggle = page.getByRole("button", { name: /Advanced provider diagnostics/i });
+  await expect(page.getByRole("heading", { name: "Executive summary" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Why this matters" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Example openings from the observed board" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hiring mix and geography" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What changed" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Displayed proof roles/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Source and trust/i })).toBeVisible();
+  const providerDiagnosticsToggle = page
+    .locator("details")
+    .filter({ hasText: /Advanced provider diagnostics/i })
+    .locator("summary");
   await expect(providerDiagnosticsToggle).toBeVisible();
   await providerDiagnosticsToggle.click();
+  const providerDiagnosticsSection = page
+    .locator("details")
+    .filter({ hasText: /Advanced provider diagnostics/i });
   await expect(
-    page.getByText("Shows provider attempts, retry telemetry, and skipped-source status for debugging.")
+    providerDiagnosticsSection.getByText("Shows provider attempts, retry telemetry, and skipped-source status for debugging.")
   ).toBeVisible();
-  await expect(page.getByText("jobsCount")).toBeVisible();
-  await expect(page.getByText("usedForBrief")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Limits and caveats" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Quick links" })).toBeVisible();
+  await expect(providerDiagnosticsSection).toContainText("jobsCount");
+  await expect(providerDiagnosticsSection).toContainText("usedForBrief");
   await expect(page.getByRole("link", { name: "Back to watchlist" })).toBeVisible();
 });
