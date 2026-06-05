@@ -59,8 +59,8 @@ async function assignUniqueClientIp(page: Page): Promise<void> {
 
 async function createWatchlist(page: Page, name: string): Promise<string> {
   await page.goto("/watchlists");
-  await page.getByRole("button", { name: "New watchlist" }).click();
-  await page.getByPlaceholder("Name this watchlist").fill(name);
+  await page.getByRole("button", { name: "New" }).click();
+  await page.getByLabel("Watchlist name").fill(name);
 
   const [response] = await Promise.all([
     page.waitForResponse(
@@ -80,7 +80,7 @@ async function createWatchlist(page: Page, name: string): Promise<string> {
 }
 
 async function ensureTargetComposerOpen(page: Page): Promise<void> {
-  const targetInput = page.getByPlaceholder("Company name, website, or LinkedIn company URL");
+  const targetInput = page.getByLabel("Company name or URL");
   if (!(await targetInput.isVisible())) {
     await page.getByRole("button", { name: "Track company" }).click();
     await expect(targetInput).toBeVisible();
@@ -89,7 +89,7 @@ async function ensureTargetComposerOpen(page: Page): Promise<void> {
 
 async function resolveAndConfirmTarget(page: Page, query: string): Promise<string> {
   await ensureTargetComposerOpen(page);
-  await page.getByPlaceholder("Company name, website, or LinkedIn company URL").fill(query);
+  await page.getByLabel("Company name or URL").fill(query);
 
   const [resolveResponse] = await Promise.all([
     page.waitForResponse(
@@ -97,10 +97,10 @@ async function resolveAndConfirmTarget(page: Page, query: string): Promise<strin
         candidate.url().includes("/api/watchlists/resolve") &&
         candidate.request().method() === "POST"
     ),
-    page.getByRole("button", { name: "Find source" }).click(),
+    page.getByRole("button", { name: "Continue" }).click(),
   ]);
   expect((await resolveResponse.json()).success).toBeTruthy();
-  await expect(page.getByText("Resolution preview")).toBeVisible();
+  await expect(page.getByText("Match summary")).toBeVisible();
 
   const [createResponse, refreshResponse] = await Promise.all([
     page.waitForResponse(
@@ -113,22 +113,22 @@ async function resolveAndConfirmTarget(page: Page, query: string): Promise<strin
         candidate.url().includes("/api/analyze-unified") &&
         candidate.request().method() === "POST"
     ),
-    page.getByRole("button", { name: "Confirm and start baseline" }).click(),
+    page.locator("div.fixed.inset-0").getByRole("button", { name: "Track company" }).click(),
   ]);
 
   const createJson = await createResponse.json();
   expect(createJson.success).toBeTruthy();
   expect((await refreshResponse.json()).success).toBeTruthy();
+  await expect(page.getByText("WATCH", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Brief", exact: true }).first()).toBeVisible();
   const entryId = createJson.data.entry.id as string;
-  await expect(page).toHaveURL(
-    new RegExp(`/watchlists\\?watchlistId=${createJson.data.watchlist.id}&entryId=${entryId}$`)
-  );
+  await expect(page).toHaveURL(new RegExp(`/watchlists\\?watchlistId=${createJson.data.watchlist.id}$`));
   return entryId;
 }
 
 async function resolveOnlyTarget(page: Page, query: string): Promise<void> {
   await ensureTargetComposerOpen(page);
-  await page.getByPlaceholder("Company name, website, or LinkedIn company URL").fill(query);
+  await page.getByLabel("Company name or URL").fill(query);
 
   const [resolveResponse] = await Promise.all([
     page.waitForResponse(
@@ -136,12 +136,12 @@ async function resolveOnlyTarget(page: Page, query: string): Promise<void> {
         candidate.url().includes("/api/watchlists/resolve") &&
         candidate.request().method() === "POST"
     ),
-    page.getByRole("button", { name: "Find source" }).click(),
+    page.getByRole("button", { name: "Continue" }).click(),
   ]);
 
   const resolveJson = await resolveResponse.json();
   expect(resolveJson.success).toBeTruthy();
-  await expect(page.getByText("Resolution preview")).toBeVisible();
+  await expect(page.getByText("Match summary")).toBeVisible();
 }
 
 test.describe.configure({ mode: "serial" });
@@ -177,14 +177,24 @@ test("company-first intake keeps manual ATS paste clearly secondary", async ({ p
 
   await page.goto("/watchlists");
   await page.getByRole("button", { name: "Track company" }).click();
-  await expect(page.getByPlaceholder("Company name, website, or LinkedIn company URL")).toBeVisible();
-  await expect(page.getByText("company name, website, or LinkedIn company URL")).toBeVisible();
-  await expect(page.getByText("Stratum resolves the likely hiring source before tracking starts.")).toBeVisible();
+  await expect(page.getByLabel("Company name or URL")).toBeVisible();
+  await expect(
+    page.getByText(
+      "Track companies you care about. Stratum will add the company and run the first check automatically when a supported source is confirmed."
+    )
+  ).toBeVisible();
+  await expect(
+    page.getByText("Enter a company name or careers page URL to add it to this watchlist and start the first check.")
+  ).toBeVisible();
 
-  await page.getByRole("button", { name: "I already know the source" }).click();
-  await expect(page.getByPlaceholder("Paste ATS or careers URL")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Resolve manual source" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Company first" })).toBeVisible();
+  await resolveOnlyTarget(page, "Notion");
+  const drawer = page.locator("div.fixed.inset-0");
+  await expect(drawer.getByRole("button", { name: "Track company" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Try another source" })).toBeVisible();
+
+  await drawer.getByRole("button", { name: "Try another source" }).click();
+  await expect(page.getByLabel("Company name or URL")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
 });
 
 test("resolution preview keeps confidence, unsupported paths, and baseline start explicit", async ({ page }) => {
@@ -194,27 +204,34 @@ test("resolution preview keeps confidence, unsupported paths, and baseline start
 
   await resolveOnlyTarget(page, "Notion");
   await expect(page.getByText("Company", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("Likely source", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("ATS/provider", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Careers source", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Confidence", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("Status", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Confirm and start baseline" })).toBeVisible();
-  await expect(page.getByText("Sources checked")).toBeVisible();
-  await expect(page.getByText("What happens next")).toBeVisible();
+  await expect(page.getByText("Why this match?", { exact: true })).toBeVisible();
+  const drawer = page.locator("div.fixed.inset-0");
+  await expect(drawer.getByRole("button", { name: "Track company" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Try another source" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Edit input" }).click();
+  await drawer.getByRole("button", { name: "Try another source" }).click();
   await resolveOnlyTarget(page, fixture.homeQuery);
-  await expect(page.getByText("Unsupported", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("Workday", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Track unsupported source" })).toBeVisible();
-  await expect(page.getByText("The source is visible, but Stratum only treats it as a limited unsupported target.")).toBeVisible();
+  await expect(
+    page.getByText("Visible careers source, but it matches WORKDAY, which Stratum does not treat as a supported ATS path.")
+  ).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Track company" })).toBeVisible();
+  await drawer.getByRole("button", { name: "Track company" }).click();
+  await expect(page.getByText("Track this company anyway?")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Go back" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Track anyway" })).toBeVisible();
+  await page.getByRole("button", { name: "Go back" }).click();
 
-  await page.getByRole("button", { name: "Edit input" }).click();
+  await drawer.getByRole("button", { name: "Try another source" }).click();
   await resolveOnlyTarget(page, fixture.noMatchQuery);
-  await expect(page.getByText("Low confidence", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("Unresolved", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Use manual source" })).toBeVisible();
-  await expect(page.getByText("Refine the company or switch to the manual ATS/careers URL fallback.")).toBeVisible();
+  await expect(
+    page.getByText("No supported ATS path was confirmed, so the match stays cautious.")
+  ).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Track company" })).toBeVisible();
+  await drawer.getByRole("button", { name: "Track company" }).click();
+  await expect(page.getByText("Track this company anyway?")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Track anyway" })).toBeVisible();
 });
 
 test("ambiguous source resolution requires an explicit candidate choice", async ({ page }) => {
@@ -223,11 +240,12 @@ test("ambiguous source resolution requires an explicit candidate choice", async 
   await createWatchlist(page, `Smoke Candidate ${randomUUID().slice(0, 8)}`);
 
   await resolveOnlyTarget(page, fixture.multiCandidateQuery);
-  await expect(page.getByText("Choose a source", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Choose a source to continue" })).toBeDisabled();
-
-  await page.getByRole("button", { name: "Choose ASHBY source for Notion" }).click();
-  await expect(page.getByRole("button", { name: "Confirm and start baseline" })).toBeVisible();
+  await expect(page.getByText("Company", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Careers source", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Confidence", { exact: true }).first()).toBeVisible();
+  const drawer = page.locator("div.fixed.inset-0");
+  await expect(drawer.getByRole("button", { name: "Track company" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Try another source" })).toBeVisible();
 
   const [createResponse, refreshResponse] = await Promise.all([
     page.waitForResponse(
@@ -240,12 +258,13 @@ test("ambiguous source resolution requires an explicit candidate choice", async 
         candidate.url().includes("/api/analyze-unified") &&
         candidate.request().method() === "POST"
     ),
-    page.getByRole("button", { name: "Confirm and start baseline" }).click(),
+    drawer.getByRole("button", { name: "Track company" }).click(),
   ]);
 
   expect((await createResponse.json()).success).toBeTruthy();
   expect((await refreshResponse.json()).success).toBeTruthy();
-  await expect(page.getByText("Baseline saved", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Brief", exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Broad platform and GTM hiring signal", { exact: true })).toBeVisible();
 });
 
 test("watchlists hand off cleanly to saved briefs and back again", async ({ page }) => {
@@ -254,36 +273,41 @@ test("watchlists hand off cleanly to saved briefs and back again", async ({ page
   const watchlistId = await createWatchlist(page, `Smoke Brief ${randomUUID().slice(0, 8)}`);
   await resolveAndConfirmTarget(page, "Notion");
 
-  const targetRow = page.locator("table tr").filter({ hasText: "Notion" }).first();
-  await expect(targetRow).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "Current state" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "Source grounding" })).toBeVisible();
+  const targetLink = page.getByRole("link", { name: "Notion" }).first();
+  await expect(targetLink).toBeVisible();
+  await expect(page.getByText("WATCH", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Brief", exact: true }).first()).toBeVisible();
 
-  const [refreshResponse] = await Promise.all([
-    page.waitForResponse(
-      (response) => response.url().includes("/api/analyze-unified") && response.request().method() === "POST"
-    ),
-    targetRow.getByRole("button", { name: "Refresh" }).click(),
+  await Promise.all([
+    page.waitForURL(new RegExp(`/watchlists/${watchlistId}/entries/[^/]+$`)),
+    targetLink.click(),
   ]);
-  const refreshJson = await refreshResponse.json();
-  expect(refreshJson.success).toBeTruthy();
-  expect(refreshJson.data.briefId).toBeTruthy();
+  await expect(page).toHaveURL(new RegExp(`/watchlists/${watchlistId}/entries/[^/]+$`));
+  await expect(page.getByText("Current state", { exact: true })).toBeVisible();
+  await expect(page.getByText("Source and trust", { exact: true })).toBeVisible();
+  await expect(page.getByText("Latest brief", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open saved brief" }).first()).toBeVisible();
+  await expect(page.getByText("Recent activity", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Update frequency")).toBeVisible();
 
-  const latestBriefLink = targetRow.getByRole("link", { name: "Latest brief", exact: true });
-  await expect(latestBriefLink).toBeVisible();
-
-  await latestBriefLink.click();
+  await page.getByRole("link", { name: "Open saved brief" }).first().click();
   await expect(page).toHaveURL(/\/briefs\/[^/]+$/);
-  await expect(page.getByRole("main").getByText("Saved brief", { exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Snapshot details" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Watchlist context" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Quick links" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Back to watchlist" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Executive summary" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Why this matters" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Example openings from the observed board" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hiring mix and geography" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What changed" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Displayed proof roles/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Source and trust/i })).toBeVisible();
+
   await expect(page.getByRole("link", { name: "Back to watchlist" })).toBeVisible();
 
   await page.getByRole("link", { name: "Back to watchlist" }).click();
   await expect(page).toHaveURL(new RegExp(`/watchlists\\?watchlistId=${watchlistId}(?:&entryId=[^&]+)?$`));
-  await expect(page.locator("table").getByText("Notion", { exact: true })).toHaveCount(1);
-  await expect(page.locator("table").getByText("Latest brief", { exact: true })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: "Notion" }).first()).toBeVisible();
+  await expect(page.getByText("WATCH", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Brief", exact: true }).first()).toBeVisible();
 });
 
 test("inbox triage stays linked to the tracked target and watchlist context", async ({ page }) => {
@@ -316,8 +340,17 @@ test("inbox triage stays linked to the tracked target and watchlist context", as
     page.waitForURL(new RegExp(`/watchlists\\?watchlistId=${watchlistId}&entryId=${entryId}$`)),
     failureCard.getByRole("link", { name: "Inspect target" }).click(),
   ]);
-  await expect(page.getByRole("columnheader", { name: "Current state" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "Source grounding" })).toBeVisible();
+  await expect(page.getByText("Signal inbox", { exact: true })).toBeVisible();
+
+  const targetLink = page.getByRole("link", { name: "Notion" }).first();
+  await expect(targetLink).toBeVisible();
+
+  await Promise.all([
+    page.waitForURL(new RegExp(`/watchlists/${watchlistId}/entries/${entryId}$`)),
+    targetLink.click(),
+  ]);
+  await expect(page.getByText("Current state", { exact: true })).toBeVisible();
+  await expect(page.getByText("Source and trust", { exact: true })).toBeVisible();
   await expect(page.getByText("Recent activity", { exact: true })).toBeVisible();
 });
 
@@ -327,22 +360,23 @@ test("schedule edits stay readable and the heavy refresh control remains explici
   const watchlistId = await createWatchlist(page, `Smoke Schedule ${randomUUID().slice(0, 8)}`);
   const entryId = await resolveAndConfirmTarget(page, "Notion");
 
-  await page.goto(`/watchlists?watchlistId=${watchlistId}&entryId=${entryId}`);
-  await expect(page.getByText("Schedule and actions", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Refresh now" })).toBeVisible();
+  await page.goto(`/watchlists/${watchlistId}/entries/${entryId}`);
+  await expect(page.getByLabel("Update frequency")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
+  await expect(page.getByLabel("Update frequency")).toBeVisible();
 
-  await page.locator("select").first().selectOption("daily");
+  await page.getByLabel("Update frequency").selectOption("daily");
   const [saveResponse] = await Promise.all([
     page.waitForResponse(
       (response) =>
         response.url().includes(`/api/watchlists/${watchlistId}/entries/${entryId}`) &&
         response.request().method() === "PATCH"
     ),
-    page.getByRole("button", { name: "Save schedule" }).click(),
+    page.getByRole("button", { name: "Update schedule" }).click(),
   ]);
   const saveJson = await saveResponse.json();
   expect(saveJson.success).toBeTruthy();
   expect(saveJson.data.entry.scheduleCadence).toBe("daily");
-  await expect(page.getByText("Scheduled refresh set to daily.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Run due refreshes" })).toBeVisible();
+  await expect(page.getByText("Schedule updated.")).toBeVisible();
+  await expect(page.getByLabel("Update frequency")).toHaveValue("daily");
 });
