@@ -37,7 +37,7 @@ export default async function DataHandlingPage() {
 
       <section className="mt-6 rounded-[24px] border bg-[var(--surface)] p-6" style={{ borderColor: "var(--border)" }}>
         <ul className="space-y-3 text-[13px] leading-7" style={{ color: "var(--foreground-secondary)" }}>
-          <li>Stratum stores watched companies, scan results, saved briefs, notification candidates, and provider diagnostics needed to explain each signal.</li>
+          <li>Stratum stores watched companies, scan results, saved briefs, notifications, and scan details needed to explain each signal.</li>
           <li>Stratum reads supported public hiring sources. It does not claim full company coverage.</li>
           <li>Self-serve export, deletion, and retention controls are not exposed yet during beta. Contact the Stratum team for support.</li>
           <li>Do not use Stratum for sensitive internal company data during beta.</li>

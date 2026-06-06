@@ -163,9 +163,49 @@ test.describe("provider diagnostics view model", () => {
     const lever = view.rows.find((row) => row.source === "LEVER");
     const workable = view.rows.find((row) => row.source === "WORKABLE");
 
-    expect(lever?.statusLabel).toBe("Not attempted after match");
-    expect(workable?.statusLabel).toBe("Not applicable");
+    expect(lever?.statusLabel).toBe("Skipped");
+    expect(workable?.statusLabel).toBe("Not checked");
     expect(lever?.note).not.toBe(workable?.note);
+  });
+
+  test("skipped provider note says 'Skipped. Another source already matched.'", () => {
+    const view = buildProviderDiagnosticsView(
+      makeResult({
+        providerAttemptSummaries: [
+          {
+            source: "LEVER",
+            status: "not_attempted_after_match",
+            jobsCount: 0,
+            tokensTried: [],
+            errorMessages: [],
+            usedForBrief: false,
+            note: undefined as unknown as string,
+          },
+        ],
+      })
+    );
+    const lever = view.rows.find((row) => row.source === "LEVER");
+    expect(lever?.note).toBe("Skipped. Another source already matched.");
+  });
+
+  test("not-applicable provider note says 'Not checked for this input.'", () => {
+    const view = buildProviderDiagnosticsView(
+      makeResult({
+        providerAttemptSummaries: [
+          {
+            source: "WORKABLE",
+            status: "not_applicable",
+            jobsCount: 0,
+            tokensTried: [],
+            errorMessages: [],
+            usedForBrief: false,
+            note: undefined as unknown as string,
+          },
+        ],
+      })
+    );
+    const workable = view.rows.find((row) => row.source === "WORKABLE");
+    expect(workable?.note).toBe("Not checked for this input.");
   });
 
   test("renders legacy briefs without provider diagnostics safely", () => {

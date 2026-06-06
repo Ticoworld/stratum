@@ -13,7 +13,6 @@ import {
   buildApprovedWatchlistSummary,
   buildWhyThisMattersInterpretation,
   formatHiringMixBucketLabel,
-  deriveHeroFocusFromHiringMix,
   computeFunctionalMix,
   type ApprovedWatchlistLabel,
   type WatchlistConfidenceLevel,
@@ -163,13 +162,11 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
 
   // Editorial Hero Logic
   const sourceLabel = formatSourceLabel(brief.atsSourceUsed);
-  // GTM hero only fires when Sales or Marketing is the #1 bucket.
-  // Being #2 while Engineering leads is not enough — see audit Phase 6B-1.
-  const isGTMFocus = deriveHeroFocusFromHiringMix(hiringMix) === "gtm";
-  
   const observedCount = brief.jobsObservedCount ?? allJobs.length ?? roles.length;
+  const topBucket = hiringMix[0]?.[0];
+  const topBucketLabel = topBucket ? formatHiringMixBucketLabel(topBucket) : null;
   const heroSentence = observedCount > 0
-    ? `${isGTMFocus ? "Go-to-market hiring read" : "Active hiring read"} from ${observedCount} ${sourceLabel} openings.`
+    ? `${topBucketLabel ? `${topBucketLabel}-led hiring` : "Active hiring"} from ${observedCount} ${sourceLabel} jobs.`
     : "No active hiring signals detected for this company.";
   
   // Derive proof role keys from the saved snapshot so the cluster scoring
@@ -262,14 +259,14 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
     switch (sig) {
       case "meaningful_change": return "Meaningful update";
       case "minor_change": return "Minor movement";
-      case "baseline": return "First baseline";
+      case "baseline": return "First scan";
       case "limited_comparison": return "Limited history";
       default: return sig;
     }
   };
 
   const formatChangeEvent = (sig: ChangeSignificance, dir: ChangeDirection) => {
-    if (sig === "baseline") return "First baseline";
+    if (sig === "baseline") return "First scan";
     if (sig === "limited_comparison") return "Limited history";
     
     switch (dir) {
@@ -300,15 +297,15 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
   // below; Public Use is no longer the hero gate.
   const supportFacts = [
     ["Source", sourceLabel],
-    ["Evidence Quality", readiness.evidenceQuality.charAt(0).toUpperCase() + readiness.evidenceQuality.slice(1)],
-    ["Signal Clarity", formatSignalClarity(readiness.signalClarity)],
-    ["Change Event", formatChangeEvent(readiness.changeSignificance, readiness.changeDirection)],
+    ["Jobs", observedCount.toString()],
+    ["Hiring pattern", formatSignalClarity(readiness.signalClarity)],
+    ["Change", formatChangeEvent(readiness.changeSignificance, readiness.changeDirection)],
   ] as const;
   const localFallbackAnalysisUsed =
     Array.isArray(brief.resultSnapshot?.keywordFindings) &&
     brief.resultSnapshot.keywordFindings.some((finding) => finding.startsWith("Local fallback analysis"));
   const aiFallbackNote = localFallbackAnalysisUsed
-    ? "AI enrichment was unavailable for this brief, so Stratum used local fallback analysis."
+    ? "AI enrichment was unavailable for this brief. Stratum used basic analysis instead."
     : null;
 
   const whatChangedDisplay = buildWhatChangedDisplay({
@@ -381,37 +378,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
           )}
         </header>
 
-        {/* Post-Worthiness Gate — suppressed when verdict already covers the message */}
-        {readiness.publicUse !== "strong_update" &&
-          readiness.publicUse !== "strong_baseline" &&
-          signalVerdict.verdict !== "verify_source" &&
-          signalVerdict.verdict !== "ignore" && (
-          <div className="mb-6 rounded-xl border p-5" style={{ borderColor: readiness.publicUse === "internal_only" ? "rgba(239, 68, 68, 0.2)" : "var(--border)", backgroundColor: readiness.publicUse === "internal_only" ? "rgba(239, 68, 68, 0.02)" : "rgba(54, 91, 122, 0.02)" }}>
-            <div className="flex items-start gap-4">
-               <div className="mt-0.5 rounded-lg border bg-[var(--surface)] p-2 shadow-sm" style={{ borderColor: readiness.publicUse === "internal_only" ? "rgba(239, 68, 68, 0.3)" : "var(--border)" }}>
-                 {readiness.publicUse === "internal_only" ? <ShieldAlert className="h-5 w-5 text-red-500" /> : <Info className="h-5 w-5 text-amber-500" />}
-               </div>
-               <div className="space-y-2">
-                 <h3 className="text-sm font-bold tracking-tight" style={{ color: "var(--foreground)" }}>
-                   {readiness.publicUse === "internal_only" ? "Internal-only read: Brief is not yet post-ready" : "Cautious read: Brief has caveats"}
-                 </h3>
-                 <p className="text-xs leading-5" style={{ color: "var(--foreground-secondary)" }}>
-                   {readiness.publicUse === "internal_only" 
-                     ? "This brief is not yet ready for external strategic content due to critical data blockers:" 
-                     : "This brief should be qualified in public strategic posts due to these factors:"}
-                 </p>
-                 <ul className="mt-3 grid gap-1.5 sm:grid-cols-2">
-                   {(readiness.publicUse === "internal_only" ? readiness.blockers : readiness.reasons).map((text, i) => (
-                     <li key={i} className="flex items-start gap-2 text-[11px] font-medium leading-4" style={{ color: "var(--foreground-muted)" }}>
-                       <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-current opacity-40" />
-                       {text}
-                     </li>
-                   ))}
-                 </ul>
-               </div>
-            </div>
-          </div>
-        )}
+
 
         <div className="grid grid-cols-1 gap-8">
           
@@ -572,7 +539,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
             <details className="group">
               <summary className="flex cursor-pointer list-none items-center justify-between transition-colors hover:text-[var(--accent)]" style={{ borderColor: "var(--border)" }}>
                 <div className="flex items-center gap-3">
-                  <h2 className="text-[13px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground)" }}>Displayed proof roles</h2>
+                  <h2 className="text-[13px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground)" }}>Example jobs</h2>
                   <span className="text-[10px] font-medium opacity-45" style={{ color: "var(--foreground-muted)" }}>{roles.length} examples</span>
                 </div>
                 <div className="flex items-center gap-2 text-[11px] font-medium tracking-[0.02em] opacity-25">
@@ -615,11 +582,11 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                   <p className="text-[12px] font-medium">{formatDateTimeValue(brief.createdAt)}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] font-medium tracking-[0.02em] opacity-45">Confidence</p>
+                  <p className="text-[10px] font-medium tracking-[0.02em] opacity-45">Read strength</p>
                   <p className="text-[12px] font-medium capitalize">{brief.watchlistReadConfidence}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] font-medium tracking-[0.02em] opacity-45">Proof basis</p>
+                  <p className="text-[10px] font-medium tracking-[0.02em] opacity-45">Examples</p>
                   <p className="text-[12px] font-medium capitalize">{brief.proofRoleGrounding}</p>
                 </div>
                 <div className="space-y-1">
@@ -628,7 +595,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                 </div>
                 {limitations.length > 0 && (
                   <div className="col-span-full pt-2">
-                    <p className="pb-2 text-[10px] font-medium tracking-[0.02em] opacity-30">Analysis caveats</p>
+                    <p className="pb-2 text-[10px] font-medium tracking-[0.02em] opacity-30">Scan notes</p>
                     <ul className="grid grid-cols-1 gap-1 lg:grid-cols-2">
                       {limitations.map((l, i) => (
                         <li key={i} className="flex items-start gap-2 text-[11px] leading-relaxed" style={{ color: "var(--foreground-secondary)" }}>
@@ -646,10 +613,10 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 transition-colors hover:text-[var(--accent)]">
                 <div className="space-y-1">
                   <h2 className="text-[13px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
-                    Advanced provider diagnostics
+                    Scan details for support
                   </h2>
                   <p className="text-[12px] leading-5" style={{ color: "var(--foreground-secondary)" }}>
-                    Shows provider attempts, retry telemetry, and skipped-source status for debugging.
+                    Shows source checks and scan details. Share with support if something looks wrong.
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2 text-[11px] font-medium tracking-[0.02em] opacity-25">
@@ -711,71 +678,77 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                           </p>
                         </div>
 
-                        {row.attempts.length > 0 && (
-                          <div className="mt-4 space-y-2">
-                            <p className="text-[10px] font-medium uppercase tracking-[0.22em]" style={{ color: "var(--foreground-muted)" }}>
-                              Attempt telemetry
-                            </p>
-                            <div className="space-y-2">
-                              {row.attempts.map((attempt, index) => (
-                                <div
-                                  key={`${row.source}-${index}`}
-                                  className="rounded-xl border px-3 py-3"
-                                  style={{
-                                    background: "var(--surface)",
-                                    borderColor: "var(--border)",
-                                  }}
-                                >
-                                  <p className="text-[11px] font-medium leading-5" style={{ color: "var(--foreground)" }}>
-                                    Attempt {index + 1}: {attempt.statusLabel}
-                                  </p>
-                                  <div className="mt-2 grid grid-cols-1 gap-2 text-[11px] leading-5 sm:grid-cols-2 lg:grid-cols-3">
-                                    {attempt.providerErrorKind ? (
-                                      <p style={{ color: "var(--foreground-secondary)" }}>
-                                        <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                                          providerErrorKind
-                                        </span>{" "}
-                                        {attempt.providerErrorKind}
-                                      </p>
-                                    ) : null}
-                                    {attempt.httpStatus !== null ? (
-                                      <p style={{ color: "var(--foreground-secondary)" }}>
-                                        <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                                          httpStatus
-                                        </span>{" "}
-                                        {attempt.httpStatus}
-                                      </p>
-                                    ) : null}
-                                    {attempt.attemptCount !== null ? (
-                                      <p style={{ color: "var(--foreground-secondary)" }}>
-                                        <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                                          attemptCount
-                                        </span>{" "}
-                                        {attempt.attemptCount}
-                                      </p>
-                                    ) : null}
-                                    {attempt.retryCount !== null ? (
-                                      <p style={{ color: "var(--foreground-secondary)" }}>
-                                        <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                                          retryCount
-                                        </span>{" "}
-                                        {attempt.retryCount}
-                                      </p>
-                                    ) : null}
-                                    {attempt.durationMs !== null ? (
-                                      <p style={{ color: "var(--foreground-secondary)" }}>
-                                        <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                                          durationMs
-                                        </span>{" "}
-                                        {attempt.durationMs} ms
-                                      </p>
-                                    ) : null}
+                        {(() => {
+                          const runnableAttempts = row.attempts.filter(
+                            (a) => a.status !== "not_attempted_after_match" && a.status !== "not_applicable"
+                          );
+                          if (runnableAttempts.length === 0) return null;
+                          return (
+                            <div className="mt-4 space-y-2">
+                              <p className="text-[10px] font-medium uppercase tracking-[0.22em]" style={{ color: "var(--foreground-muted)" }}>
+                                Scan attempts
+                              </p>
+                              <div className="space-y-2">
+                                {runnableAttempts.map((attempt, index) => (
+                                  <div
+                                    key={`${row.source}-${index}`}
+                                    className="rounded-xl border px-3 py-3"
+                                    style={{
+                                      background: "var(--surface)",
+                                      borderColor: "var(--border)",
+                                    }}
+                                  >
+                                    <p className="text-[11px] font-medium leading-5" style={{ color: "var(--foreground)" }}>
+                                      Check {index + 1}: {attempt.statusLabel}
+                                    </p>
+                                    <div className="mt-2 grid grid-cols-1 gap-2 text-[11px] leading-5 sm:grid-cols-2 lg:grid-cols-3">
+                                      {attempt.providerErrorKind ? (
+                                        <p style={{ color: "var(--foreground-secondary)" }}>
+                                          <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                            providerErrorKind
+                                          </span>{" "}
+                                          {attempt.providerErrorKind}
+                                        </p>
+                                      ) : null}
+                                      {attempt.httpStatus !== null ? (
+                                        <p style={{ color: "var(--foreground-secondary)" }}>
+                                          <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                            httpStatus
+                                          </span>{" "}
+                                          {attempt.httpStatus}
+                                        </p>
+                                      ) : null}
+                                      {attempt.attemptCount !== null ? (
+                                        <p style={{ color: "var(--foreground-secondary)" }}>
+                                          <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                            attemptCount
+                                          </span>{" "}
+                                          {attempt.attemptCount}
+                                        </p>
+                                      ) : null}
+                                      {attempt.retryCount !== null ? (
+                                        <p style={{ color: "var(--foreground-secondary)" }}>
+                                          <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                            retryCount
+                                          </span>{" "}
+                                          {attempt.retryCount}
+                                        </p>
+                                      ) : null}
+                                      {attempt.durationMs !== null ? (
+                                        <p style={{ color: "var(--foreground-secondary)" }}>
+                                          <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                            durationMs
+                                          </span>{" "}
+                                          {attempt.durationMs} ms
+                                        </p>
+                                      ) : null}
+                                    </div>
                                   </div>
-                                </div>
-                              ))}
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
                       </article>
                     ))}
                   </div>

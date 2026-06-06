@@ -318,7 +318,7 @@ export function NotificationsConsole({
                 className="mt-2 text-[1.7rem] font-semibold tracking-[-0.03em] lg:text-[1.95rem]"
                 style={{ color: "var(--foreground)" }}
               >
-                Meaningful change queue
+                Important updates
               </h1>
               <p className="mt-2 text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
                 Review meaningful monitoring changes across tracked companies.

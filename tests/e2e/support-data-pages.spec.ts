@@ -86,7 +86,7 @@ test("support page explains beta support boundaries", async ({ page }) => {
   await expect(page.getByText("Stratum is currently invite-only beta software.")).toBeVisible();
   await expect(page.getByText("Support is handled directly by the Stratum team during beta.")).toBeVisible();
   await expect(
-    page.getByText("Provider diagnostics on a brief may help debug source or scan problems.")
+    page.getByText("The scan details section on a brief can help identify source or scan problems.")
   ).toBeVisible();
 });
 
@@ -95,7 +95,7 @@ test("data handling page explains beta data boundaries", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "Data handling" })).toBeVisible();
   await expect(
-    page.getByText("Stratum stores watched companies, scan results, saved briefs, notification candidates, and provider diagnostics needed to explain each signal.")
+    page.getByText("Stratum stores watched companies, scan results, saved briefs, notifications, and scan details needed to explain each signal.")
   ).toBeVisible();
   await expect(
     page.getByText("Self-serve export, deletion, and retention controls are not exposed yet during beta. Contact the Stratum team for support.")

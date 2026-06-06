@@ -140,22 +140,29 @@ test("saved brief reads like a durable artifact and keeps replay context obvious
   await expect(page.getByRole("heading", { name: "Example openings from the observed board" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Hiring mix and geography" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "What changed" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /Displayed proof roles/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Example jobs/i })).toBeVisible();
   await expect(page.getByRole("heading", { name: /Source and trust/i })).toBeVisible();
+  // Plain-language guards: these old labels must not appear
+  await expect(page.getByText("Evidence Quality")).not.toBeVisible();
+  await expect(page.getByText("Signal Clarity")).not.toBeVisible();
+  await expect(page.getByText("Cautious read")).not.toBeVisible();
+  await expect(page.getByText("public strategic posts")).not.toBeVisible();
+  await expect(page.getByText("Displayed proof roles")).not.toBeVisible();
+  await expect(page.getByText("Advanced provider diagnostics")).not.toBeVisible();
   await expect(
-    page.getByText("AI enrichment was unavailable for this brief, so Stratum used local fallback analysis.")
+    page.getByText("AI enrichment was unavailable for this brief. Stratum used basic analysis instead.")
   ).toBeVisible();
   const providerDiagnosticsToggle = page
     .locator("details")
-    .filter({ hasText: /Advanced provider diagnostics/i })
+    .filter({ hasText: /Scan details for support/i })
     .locator("summary");
   await expect(providerDiagnosticsToggle).toBeVisible();
   await providerDiagnosticsToggle.click();
   const providerDiagnosticsSection = page
     .locator("details")
-    .filter({ hasText: /Advanced provider diagnostics/i });
+    .filter({ hasText: /Scan details for support/i });
   await expect(
-    providerDiagnosticsSection.getByText("Shows provider attempts, retry telemetry, and skipped-source status for debugging.")
+    providerDiagnosticsSection.getByText("Shows source checks and scan details. Share with support if something looks wrong.")
   ).toBeVisible();
   await expect(providerDiagnosticsSection).toContainText("jobsCount");
   await expect(providerDiagnosticsSection).toContainText("usedForBrief");

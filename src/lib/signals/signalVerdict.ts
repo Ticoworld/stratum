@@ -263,11 +263,11 @@ function buildWatchReason(args: SignalVerdictArgs): string {
   const { changeSignificance, changeDirection, signalClarity, evidenceQuality } = args;
 
   if (changeSignificance === "baseline") {
-    return "First baseline established. Track for meaningful movement.";
+    return "First scan complete. No previous scan to compare yet.";
   }
 
   if (changeSignificance === "minor_change") {
-    return "Minor movement only. No material change detected yet.";
+    return "Minor movement only. Nothing material changed.";
   }
 
   if (changeDirection === "replacement_churn") {

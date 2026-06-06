@@ -743,8 +743,8 @@ export function WatchlistConsole({
                 <ul className="mt-3 space-y-2 text-[12px] leading-6" style={{ color: "var(--foreground-secondary)" }}>
                   <li>Supported sources: Greenhouse, Ashby, Lever, and Workable. Other hiring sources may not be recognized.</li>
                   <li>Alerts stay in Stratum&apos;s in-app inbox during beta.</li>
-                  <li>Scheduled checks may run manually outside production.</li>
-                  <li>If Gemini is unavailable, Stratum uses local fallback analysis and still shows a brief.</li>
+                  <li>During beta, some checks may need a manual refresh.</li>
+                  <li>If AI is unavailable, Stratum still shows a brief using basic analysis.</li>
                   <li>Stratum does not claim full company coverage.</li>
                 </ul>
                 <div className="mt-4 flex flex-wrap items-center gap-2 text-[12px] leading-6">

@@ -188,7 +188,7 @@ test("company-first intake keeps manual ATS paste clearly secondary", async ({ p
   ).toBeVisible();
   await expect(drawer.getByText("Alerts stay in Stratum's in-app inbox during beta.")).toBeVisible();
   await expect(
-    drawer.getByText("If Gemini is unavailable, Stratum uses local fallback analysis and still shows a brief.")
+    drawer.getByText("If AI is unavailable, Stratum still shows a brief using basic analysis.")
   ).toBeVisible();
   await expect(
     drawer.getByText(
@@ -309,7 +309,7 @@ test("watchlists hand off cleanly to saved briefs and back again", async ({ page
   await expect(page.getByRole("heading", { name: "Example openings from the observed board" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Hiring mix and geography" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "What changed" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /Displayed proof roles/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Example jobs/i })).toBeVisible();
   await expect(page.getByRole("heading", { name: /Source and trust/i })).toBeVisible();
 
   await expect(page.getByRole("link", { name: "Back to watchlist" })).toBeVisible();
@@ -340,7 +340,7 @@ test("inbox triage stays linked to the tracked target and watchlist context", as
   expect(failureResponse.status()).toBe(500);
 
   await page.goto("/notifications?status=all");
-  await expect(page.getByRole("heading", { name: "Meaningful change queue" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Important updates" })).toBeVisible();
 
   const failureCard = page.locator("article").filter({ hasText: "Simulated E2E monitoring failure." }).first();
   await expect(failureCard).toBeVisible();

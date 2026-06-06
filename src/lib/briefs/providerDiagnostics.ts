@@ -49,9 +49,9 @@ function getProviderStatusLabel(status: FetchAttemptStatus): string {
     case "error":
       return "Error";
     case "not_applicable":
-      return "Not applicable";
+      return "Not checked";
     case "not_attempted_after_match":
-      return "Not attempted after match";
+      return "Skipped";
   }
 
   return status;
@@ -87,10 +87,10 @@ function getProviderNote(args: {
       return "This provider request failed during the search.";
     case "not_applicable":
       return sourceInputMode === "supported_source_input" && requestedSourceHint
-        ? `Not attempted because the query specified ${formatSourceLabel(requestedSourceHint)} directly.`
-        : "Not attempted because it was outside the supported-source path for this query.";
+        ? `Not checked. Query pointed directly to ${formatSourceLabel(requestedSourceHint)}.`
+        : "Not checked for this input.";
     case "not_attempted_after_match":
-      return "Not attempted because Stratum stopped after the first provider returned openings.";
+      return "Skipped. Another source already matched.";
   }
 
   return "No provider diagnostics were stored for this brief.";

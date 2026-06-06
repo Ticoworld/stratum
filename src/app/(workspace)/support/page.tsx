@@ -40,7 +40,7 @@ export default async function SupportPage() {
           <li>Stratum is currently invite-only beta software.</li>
           <li>Support is handled directly by the Stratum team during beta.</li>
           <li>Include the company name, watchlist entry, brief link, and what looked wrong when reporting an issue.</li>
-          <li>Provider diagnostics on a brief may help debug source or scan problems.</li>
+          <li>The scan details section on a brief can help identify source or scan problems.</li>
         </ul>
       </section>
     </div>
