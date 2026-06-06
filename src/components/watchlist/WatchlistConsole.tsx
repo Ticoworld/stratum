@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, ChevronDown, ChevronUp, ExternalLink, Plus } from "lucide-react";
@@ -14,7 +15,7 @@ import type { CompanyIntakeResolution } from "@/lib/watchlists/intakeResolution"
 import type { JobBoardSource } from "@/lib/api/boards";
 import type { StratumScheduledAutomationStatus } from "@/lib/watchlists/automation";
 import { buildWatchlistDisplayIdentity } from "@/lib/watchlists/presentation";
-import type { WatchlistEntryDetail, WatchlistOverview } from "@/lib/watchlists/repository";
+import type { WatchlistOverview } from "@/lib/watchlists/repository";
 
 interface WatchlistConsoleProps {
   initialWatchlists: WatchlistOverview[];
@@ -177,9 +178,9 @@ export function WatchlistConsole({
     }
   };
   
-  const isWeakMatch = (res: any) => 
-    res?.confidence === "low" || 
-    res?.supportStatus === "unsupported" || 
+  const isWeakMatch = (res: CompanyIntakeResolution | null | undefined) =>
+    res?.confidence === "low" ||
+    res?.supportStatus === "unsupported" ||
     res?.supportStatus === "unresolved";
 
   const handleTrackCompany = async (force: boolean = false) => {
@@ -731,6 +732,32 @@ export function WatchlistConsole({
               <p className="text-sm" style={{ color: "var(--foreground-secondary)" }}>
                 {isResolving ? "Researching company..." : "Track companies you care about. Stratum will add the company and run the first check automatically when a supported source is confirmed."}
               </p>
+
+              <section
+                className="rounded-[18px] border bg-[var(--surface)] p-4"
+                style={{ borderColor: "var(--border)" }}
+              >
+                <h2 className="text-[11px] font-medium tracking-[0.12em] uppercase" style={{ color: "var(--foreground-muted)" }}>
+                  Beta limits
+                </h2>
+                <ul className="mt-3 space-y-2 text-[12px] leading-6" style={{ color: "var(--foreground-secondary)" }}>
+                  <li>Supported sources: Greenhouse, Ashby, Lever, and Workable. Other hiring sources may not be recognized.</li>
+                  <li>Alerts stay in Stratum&apos;s in-app inbox during beta.</li>
+                  <li>Scheduled checks may run manually outside production.</li>
+                  <li>If Gemini is unavailable, Stratum uses local fallback analysis and still shows a brief.</li>
+                  <li>Stratum does not claim full company coverage.</li>
+                </ul>
+                <div className="mt-4 flex flex-wrap items-center gap-2 text-[12px] leading-6">
+                  <span style={{ color: "var(--foreground-muted)" }}>Need help?</span>
+                  <Link href="/support" className="font-medium text-[color:var(--accent)] hover:underline">
+                    Support
+                  </Link>
+                  <span style={{ color: "var(--foreground-muted)" }}>|</span>
+                  <Link href="/data-handling" className="font-medium text-[color:var(--accent)] hover:underline">
+                    Data handling
+                  </Link>
+                </div>
+              </section>
 
               <div className="space-y-2">
                 <label htmlFor="intake-input" className="text-[11px] font-medium tracking-tight" style={{ color: "var(--foreground-muted)" }}>

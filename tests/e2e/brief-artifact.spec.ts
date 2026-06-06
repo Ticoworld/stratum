@@ -142,6 +142,9 @@ test("saved brief reads like a durable artifact and keeps replay context obvious
   await expect(page.getByRole("heading", { name: "What changed" })).toBeVisible();
   await expect(page.getByRole("heading", { name: /Displayed proof roles/i })).toBeVisible();
   await expect(page.getByRole("heading", { name: /Source and trust/i })).toBeVisible();
+  await expect(
+    page.getByText("AI enrichment was unavailable for this brief, so Stratum used local fallback analysis.")
+  ).toBeVisible();
   const providerDiagnosticsToggle = page
     .locator("details")
     .filter({ hasText: /Advanced provider diagnostics/i })

@@ -177,18 +177,29 @@ test("company-first intake keeps manual ATS paste clearly secondary", async ({ p
 
   await page.goto("/watchlists");
   await page.getByRole("button", { name: "Track company" }).click();
-  await expect(page.getByLabel("Company name or URL")).toBeVisible();
+  const drawer = page.locator("div.fixed.inset-0.z-50.flex.justify-end");
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByLabel("Company name or URL")).toBeVisible();
+  await expect(drawer.getByRole("heading", { name: "Beta limits" })).toBeVisible();
   await expect(
-    page.getByText(
+    drawer.getByText(
+      "Supported sources: Greenhouse, Ashby, Lever, and Workable. Other hiring sources may not be recognized."
+    )
+  ).toBeVisible();
+  await expect(drawer.getByText("Alerts stay in Stratum's in-app inbox during beta.")).toBeVisible();
+  await expect(
+    drawer.getByText("If Gemini is unavailable, Stratum uses local fallback analysis and still shows a brief.")
+  ).toBeVisible();
+  await expect(
+    drawer.getByText(
       "Track companies you care about. Stratum will add the company and run the first check automatically when a supported source is confirmed."
     )
   ).toBeVisible();
   await expect(
-    page.getByText("Enter a company name or careers page URL to add it to this watchlist and start the first check.")
+    drawer.getByText("Enter a company name or careers page URL to add it to this watchlist and start the first check.")
   ).toBeVisible();
 
   await resolveOnlyTarget(page, "Notion");
-  const drawer = page.locator("div.fixed.inset-0");
   await expect(drawer.getByRole("button", { name: "Track company" })).toBeVisible();
   await expect(drawer.getByRole("button", { name: "Try another source" })).toBeVisible();
 

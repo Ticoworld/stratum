@@ -304,6 +304,12 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
     ["Signal Clarity", formatSignalClarity(readiness.signalClarity)],
     ["Change Event", formatChangeEvent(readiness.changeSignificance, readiness.changeDirection)],
   ] as const;
+  const localFallbackAnalysisUsed =
+    Array.isArray(brief.resultSnapshot?.keywordFindings) &&
+    brief.resultSnapshot.keywordFindings.some((finding) => finding.startsWith("Local fallback analysis"));
+  const aiFallbackNote = localFallbackAnalysisUsed
+    ? "AI enrichment was unavailable for this brief, so Stratum used local fallback analysis."
+    : null;
 
   const whatChangedDisplay = buildWhatChangedDisplay({
     briefPosition: monitoring?.briefPosition ?? null,
@@ -368,6 +374,11 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
               </div>
             ))}
           </div>
+          {aiFallbackNote && (
+            <p className="text-[12px] leading-6" style={{ color: "var(--foreground-secondary)" }}>
+              {aiFallbackNote}
+            </p>
+          )}
         </header>
 
         {/* Post-Worthiness Gate — suppressed when verdict already covers the message */}

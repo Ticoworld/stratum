@@ -10,6 +10,8 @@ const NAV_ITEMS = [
 ] as const;
 
 function getCurrentSection(pathname: string): string {
+  if (pathname.startsWith("/support")) return "Support";
+  if (pathname.startsWith("/data-handling")) return "Data handling";
   if (pathname.startsWith("/notifications")) return "Inbox";
   if (pathname.startsWith("/briefs/")) return "Saved brief";
   return "Watchlists";
