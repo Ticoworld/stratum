@@ -306,10 +306,10 @@ test("watchlists hand off cleanly to saved briefs and back again", async ({ page
   await expect(page.getByRole("link", { name: "Back to watchlist" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Executive summary" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Why this matters" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Example openings from the observed board" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Example openings from the observed board" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Hiring mix and geography" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "What changed" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /Example jobs/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Example jobs" })).toHaveCount(1);
   await expect(page.getByRole("heading", { name: /Source and trust/i })).toBeVisible();
 
   await expect(page.getByRole("link", { name: "Back to watchlist" })).toBeVisible();

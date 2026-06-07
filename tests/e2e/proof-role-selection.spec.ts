@@ -377,3 +377,49 @@ test.describe("G. regression: limit respected in all cases", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Section H: significant second bucket representation
+// ---------------------------------------------------------------------------
+
+test.describe("H. significant second bucket representation", () => {
+  test("T-PR-H1: top two buckets are represented when the second bucket is significant", () => {
+    const jobs = [
+      ...Array.from({ length: 20 }, (_, i) => makeJob(`Account Executive ${i + 1}`, "Sales")),
+      ...Array.from({ length: 15 }, (_, i) => makeJob(`Software Engineer ${i + 1}`, "Engineering")),
+      ...Array.from({ length: 5 }, (_, i) => makeJob(`Product Manager ${i + 1}`, "Product")),
+    ];
+    const result = selectProofRoles(jobs, undefined, {
+      functionalMix: [["Sales", 20], ["Engineering", 15], ["Product", 5]],
+    });
+
+    expect(result.roles.some((role) => role.department === "Sales")).toBe(true);
+    expect(result.roles.some((role) => role.department === "Engineering")).toBe(true);
+    expect(new Set(result.roles.map((role) => role.title)).size).toBe(result.roles.length);
+    expect(result.roles.length).toBeLessThanOrEqual(5);
+  });
+
+  test("T-PR-H2: Ramp-style proof roles include Engineering when Engineering is second with 32 roles", () => {
+    const salesJobs = Array.from({ length: 50 }, (_, i) =>
+      makeJob(`Account Executive ${i + 1}`, "Sales", "ASHBY")
+    );
+    const engineeringJobs = Array.from({ length: 32 }, (_, i) =>
+      makeJob(`Software Engineer ${i + 1}`, "Engineering", "ASHBY")
+    );
+    const operationsJobs = Array.from({ length: 12 }, (_, i) =>
+      makeJob(`Operations Manager ${i + 1}`, "Operations", "ASHBY")
+    );
+    const jobs = [...salesJobs, ...engineeringJobs, ...operationsJobs];
+    const salesNotables = salesJobs.slice(0, 5).map((job) => job.title);
+
+    const result = selectProofRoles(jobs, salesNotables, {
+      functionalMix: [["Sales", 50], ["Engineering", 32], ["Operations", 12]],
+    });
+
+    expect(result.roles.some((role) => role.department === "Sales")).toBe(true);
+    expect(result.roles.some((role) => role.department === "Engineering")).toBe(true);
+    expect(result.roles.filter((role) => role.department === "Engineering").length).toBeGreaterThanOrEqual(1);
+    expect(new Set(result.roles.map((role) => role.title)).size).toBe(result.roles.length);
+    expect(result.roles.length).toBeLessThanOrEqual(5);
+  });
+});

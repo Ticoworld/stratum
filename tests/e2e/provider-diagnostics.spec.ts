@@ -168,9 +168,10 @@ test.describe("provider diagnostics view model", () => {
     expect(lever?.note).not.toBe(workable?.note);
   });
 
-  test("skipped provider note says 'Skipped. Another source already matched.'", () => {
+  test("skipped provider note says the matched source already matched", () => {
     const view = buildProviderDiagnosticsView(
       makeResult({
+        apiSource: "ASHBY",
         providerAttemptSummaries: [
           {
             source: "LEVER",
@@ -185,7 +186,42 @@ test.describe("provider diagnostics view model", () => {
       })
     );
     const lever = view.rows.find((row) => row.source === "LEVER");
-    expect(lever?.note).toBe("Skipped. Another source already matched.");
+    expect(lever?.note).toBe("Skipped. Ashby already matched.");
+  });
+
+  test("skipped providers do not expose scan attempt rows", () => {
+    const view = buildProviderDiagnosticsView(
+      makeResult({
+        apiSource: "ASHBY",
+        providerAttemptSummaries: [
+          {
+            source: "GREENHOUSE",
+            status: "not_attempted_after_match",
+            jobsCount: 0,
+            tokensTried: [],
+            errorMessages: [],
+            usedForBrief: false,
+            note: "Not attempted because Stratum stopped after the first provider returned openings.",
+          },
+        ],
+        providerAttempts: [
+          {
+            source: "GREENHOUSE",
+            token: "",
+            status: "not_attempted_after_match",
+            jobsCount: 0,
+            attemptCount: 1,
+            retryCount: 0,
+            durationMs: 10,
+            providerErrorKind: "none",
+          },
+        ],
+      })
+    );
+
+    const greenhouse = view.rows.find((row) => row.source === "GREENHOUSE");
+    expect(greenhouse?.note).toBe("Skipped. Ashby already matched.");
+    expect(greenhouse?.attempts).toHaveLength(0);
   });
 
   test("not-applicable provider note says 'Not checked for this input.'", () => {

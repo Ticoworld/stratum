@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { encode } from "@auth/core/jwt";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { formatHiringPatternDisplay } from "../../src/lib/briefs/presentation";
 import fixture from "./phase10-fixture.json";
 
 type Persona = {
@@ -108,6 +109,20 @@ async function resolveAndConfirmTarget(page: Page, input: string): Promise<strin
 
 test.describe.configure({ mode: "serial" });
 
+test.describe("hiring pattern display labels", () => {
+  test("Ramp-like hiring mix displays Sales-led, not Broad", () => {
+    expect(formatHiringPatternDisplay([["Sales", 50], ["Engineering", 32], ["Operations", 12]])).toBe("Sales-led");
+  });
+
+  test("Notion-like hiring mix displays Sales-led, not Broad", () => {
+    expect(formatHiringPatternDisplay([["Sales", 70], ["Engineering", 24], ["Product", 8]])).toBe("Sales-led");
+  });
+
+  test("close hiring mix displays Mixed", () => {
+    expect(formatHiringPatternDisplay([["Sales", 25], ["Engineering", 24], ["Product", 12]])).toBe("Mixed");
+  });
+});
+
 test("saved brief reads like a durable artifact and keeps replay context obvious", async ({
   page,
   request,
@@ -135,13 +150,30 @@ test("saved brief reads like a durable artifact and keeps replay context obvious
   await latestBriefLink.click();
   await expect(page.getByText("saved brief", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: targetLabel })).toBeVisible();
+  const hiringPatternChip = page
+    .locator("header")
+    .locator("div")
+    .filter({ has: page.getByText("Hiring pattern", { exact: true }) })
+    .first();
+  await expect(hiringPatternChip).toContainText("Sales-led");
+  await expect(hiringPatternChip).not.toContainText("Broad");
+  await expect(page.getByText("Worth watching")).toHaveCount(0);
+  await expect(page.getByText(/visible roles span/i)).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Executive summary" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Why this matters" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Example openings from the observed board" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Example openings from the observed board" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Hiring mix and geography" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "What changed" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /Example jobs/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Example jobs" })).toHaveCount(1);
   await expect(page.getByRole("heading", { name: /Source and trust/i })).toBeVisible();
+  const sourceTrustSection = page.locator("section").filter({ hasText: "Source and trust" });
+  await expect(sourceTrustSection).toContainText("Source used");
+  await expect(sourceTrustSection).toContainText("Date");
+  await expect(sourceTrustSection).toContainText("Source limit");
+  await expect(sourceTrustSection).toContainText("Ashby only. Not full company coverage.");
+  await expect(sourceTrustSection).not.toContainText("Read strength");
+  await expect(sourceTrustSection).not.toContainText("matched ATS token");
+  await expect(sourceTrustSection).not.toContainText("partially grounded");
   // Plain-language guards: these old labels must not appear
   await expect(page.getByText("Evidence Quality")).not.toBeVisible();
   await expect(page.getByText("Signal Clarity")).not.toBeVisible();
@@ -164,7 +196,17 @@ test("saved brief reads like a durable artifact and keeps replay context obvious
   await expect(
     providerDiagnosticsSection.getByText("Shows source checks and scan details. Share with support if something looks wrong.")
   ).toBeVisible();
-  await expect(providerDiagnosticsSection).toContainText("jobsCount");
-  await expect(providerDiagnosticsSection).toContainText("usedForBrief");
+  await expect(providerDiagnosticsSection).toContainText("Jobs found");
+  await expect(providerDiagnosticsSection).toContainText("Used for this brief");
+  await expect(providerDiagnosticsSection).toContainText("Retries");
+  await expect(providerDiagnosticsSection).toContainText("Scan time");
+  await expect(providerDiagnosticsSection).not.toContainText("jobsCount");
+  await expect(providerDiagnosticsSection).not.toContainText("usedForBrief");
+  await expect(providerDiagnosticsSection).toContainText("Skipped. Ashby already matched.");
+  const skippedProvider = providerDiagnosticsSection
+    .locator("article")
+    .filter({ hasText: "Status: Skipped" })
+    .first();
+  await expect(skippedProvider).not.toContainText("Scan attempts");
   await expect(page.getByRole("link", { name: "Back to watchlist" })).toBeVisible();
 });

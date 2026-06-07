@@ -1,17 +1,15 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, ExternalLink, ShieldCheck, MapPin, Layers, Info, History, ShieldAlert } from "lucide-react";
+import { ArrowLeft, ExternalLink, ShieldCheck, MapPin, Layers, Info, History } from "lucide-react";
 import { buildSignInRedirectPath, requireAuthSession } from "@/lib/auth/session";
 import { getStratumBriefById } from "@/lib/briefs/repository";
-import { buildStratumLimitations, formatSourceLabel } from "@/lib/briefs/presentation";
+import { buildSourceScopeSummary, formatHiringPatternDisplay, formatSourceLabel } from "@/lib/briefs/presentation";
 import { buildProviderDiagnosticsView } from "@/lib/briefs/providerDiagnostics";
 import { buildWhatChangedDisplay } from "@/lib/briefs/whatChangedDisplay";
 import { getWatchlistBriefReplayContext } from "@/lib/watchlists/repository";
 import {
   deriveBriefPublicReadiness,
-  buildApprovedWatchlistSummary,
-  buildWhyThisMattersInterpretation,
   formatHiringMixBucketLabel,
   computeFunctionalMix,
   type ApprovedWatchlistLabel,
@@ -22,7 +20,6 @@ import {
 } from "@/lib/signals/watchlistTaxonomy";
 import { deriveSignalVerdict, type SignalVerdictResult } from "@/lib/signals/signalVerdict";
 import type { StratumResultState } from "@/lib/services/StratumInvestigator";
-import type { AiSignalCluster } from "@/lib/signals/roleEnrichment";
 
 type BriefPageProps = {
   params: Promise<{
@@ -43,16 +40,6 @@ function formatDateTimeValue(value: string | null | undefined): string {
   }).format(date);
 }
 
-function splitIntoSentences(value: string | null | undefined): string[] {
-  if (!value) return [];
-
-  return value
-    .replace(/\s+/g, " ")
-    .split(/(?<=[.!?])\s+/)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
-}
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getGeographySpread(roles: any[]) {
   const counts: Record<string, number> = {};
@@ -65,40 +52,121 @@ function getGeographySpread(roles: any[]) {
     .slice(0, 5);
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getNotableOpenings(roles: any[]) {
-  const signalKeywords = ["senior", "lead", "manager", "director", "head", "staff", "principal", "architect", "vp", "chief"];
-  return [...roles].sort((a, b) => {
-    const aNotable = signalKeywords.some((k) => a.title.toLowerCase().includes(k));
-    const bNotable = signalKeywords.some((k) => b.title.toLowerCase().includes(k));
-    if (aNotable && !bNotable) return -1;
-    if (!aNotable && bNotable) return 1;
-    return 0;
-  });
+function formatBucketForSentence(bucket: string): string {
+  if (bucket === "Sales") return "Sales/GTM";
+  return formatHiringMixBucketLabel(bucket);
 }
 
-/**
- * Thin adapter: delegates to buildWhyThisMattersInterpretation.
- * Kept here so call sites in this file are unchanged.
- */
-function getInterpretation(
-  hiringMix: [string, number][],
-  // rawExplanation was used for AI-generated copy which is no longer needed
-  _rawExplanation: string,
-  confidence: string,
-  totalObserved: number,
-  hasPriorComparison: boolean,
-  signalClusters?: AiSignalCluster[],
-  proofRoleKeys?: string[]
+function buildExecutiveSummarySentences(args: {
+  companyName: string;
+  hiringMix: [string, number][];
+  observedCount: number;
+  sourceLabel: string;
+  hiringPattern: string;
+}): string[] {
+  const { companyName, hiringMix, observedCount, sourceLabel, hiringPattern } = args;
+  if (observedCount <= 0) {
+    return [
+      `Stratum found no open roles on ${sourceLabel}.`,
+      "No hiring pattern is visible from this source.",
+    ];
+  }
+
+  const top = hiringMix[0];
+  const second = hiringMix[1];
+  const foundSentence = `Stratum found ${observedCount} open role${observedCount === 1 ? "" : "s"} on ${sourceLabel}.`;
+
+  if (hiringPattern === "Mixed" || hiringPattern === "No clear lead" || !top) {
+    return [
+      foundSentence,
+      "Hiring is spread across several teams. No single area clearly leads.",
+    ];
+  }
+
+  const topLabel = formatBucketForSentence(top[0]);
+  const secondClause = second
+    ? `, with ${formatBucketForSentence(second[0])} second (${second[1]})`
+    : "";
+  const countSentence = `${topLabel} has the most open roles (${top[1]})${secondClause}.`;
+  const technicalClause =
+    top[0] === "Sales" && second?.[0] === "Engineering"
+      ? "with technical hiring still active"
+      : second?.[0] === "Engineering"
+        ? "with technical roles still active"
+        : "with other teams hiring at lower volume";
+
+  return [
+    foundSentence,
+    countSentence,
+    `${companyName} is hiring most heavily in ${topLabel}, ${technicalClause}.`,
+  ];
+}
+
+function buildWhyThisMattersSentences(args: {
+  hiringMix: [string, number][];
+  hiringPattern: string;
+  hasPriorComparison: boolean;
+}): string[] {
+  const { hiringMix, hiringPattern, hasPriorComparison } = args;
+  const top = hiringMix[0];
+
+  if (!hasPriorComparison) {
+    const sentences = ["This is the first scan. Use it as the starting point."];
+    if (hiringPattern.endsWith("-led") && top) {
+      sentences.push(
+        `${formatBucketForSentence(top[0])} leads the hiring mix. Watch the next scan to see if that push grows or slows down.`
+      );
+    } else {
+      sentences.push("Hiring is spread across several teams. No single area clearly leads.");
+    }
+    sentences.push("The next scan will show if hiring grows, drops, or shifts to another team.");
+    return sentences;
+  }
+
+  if (hiringPattern.endsWith("-led") && top) {
+    return [
+      `${formatBucketForSentence(top[0])} leads the hiring mix.`,
+      "Use the next scan to see whether that push grows, slows down, or shifts to another team.",
+    ];
+  }
+
+  return [
+    "Hiring is spread across several teams. No single area clearly leads.",
+    "Use the next scan to see whether the mix changes.",
+  ];
+}
+
+function formatSignalVerdictHeadline(
+  verdict: SignalVerdictResult,
+  changeSignificance: ChangeSignificance,
+  changeDirection: ChangeDirection
 ): string {
-  return buildWhyThisMattersInterpretation({
-    hiringMix,
-    totalObserved,
-    confidence,
-    hasPriorComparison,
-    signalClusters,
-    proofRoleKeys,
-  });
+  if (verdict.verdict !== "watch") return verdict.headline;
+  if (changeSignificance === "baseline") return "First scan";
+  if (changeSignificance === "limited_comparison") return "Limited history";
+  if (changeSignificance === "minor_change") return "Minor movement";
+  if (changeDirection === "mix_shift") return "Mix shift";
+  if (changeDirection === "geography_shift") return "Geography shift";
+  if (changeDirection === "replacement_churn") return "Replacement churn";
+  if (
+    verdict.headline &&
+    verdict.headline !== "Worth watching" &&
+    verdict.headline !== "Meaningful movement" &&
+    verdict.headline !== "First baseline established"
+  ) {
+    return verdict.headline;
+  }
+  return "Watch next scan";
+}
+
+function formatSignalVerdictReason(
+  verdict: SignalVerdictResult,
+  changeSignificance: ChangeSignificance
+): string {
+  if (verdict.verdict === "watch" && changeSignificance === "baseline") {
+    return "No previous scan to compare yet.";
+  }
+  return verdict.reason;
 }
 
 // --- Components ---
@@ -149,62 +217,43 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
     : null;
 
   const monitoring = replayContext?.monitoring ?? null;
-  const limitations =
-    brief.limitsSnapshot.length > 0 ? brief.limitsSnapshot : buildStratumLimitations(brief.resultSnapshot);
   const allJobs = brief.resultSnapshot?.jobs || [];
   const hasFullData = allJobs.length > 0;
   const roles = brief.proofRolesSnapshot || [];
+  const exampleJobs = roles.slice(0, 5);
   const providerDiagnostics = buildProviderDiagnosticsView(brief.resultSnapshot);
+  const sourceLimit = buildSourceScopeSummary(brief.resultSnapshot);
   
   const hiringMix = computeFunctionalMix(hasFullData ? allJobs : roles);
   const geography = getGeographySpread(hasFullData ? allJobs : roles);
-  const notableOpenings = getNotableOpenings(roles);
+  const hiringPattern = formatHiringPatternDisplay(hiringMix);
 
   // Editorial Hero Logic
   const sourceLabel = formatSourceLabel(brief.atsSourceUsed);
   const observedCount = brief.jobsObservedCount ?? allJobs.length ?? roles.length;
-  const topBucket = hiringMix[0]?.[0];
-  const topBucketLabel = topBucket ? formatHiringMixBucketLabel(topBucket) : null;
+  const heroPattern =
+    hiringPattern.endsWith("-led")
+      ? `${hiringPattern} hiring`
+      : hiringPattern === "Mixed"
+        ? "Mixed hiring"
+        : "Active hiring";
   const heroSentence = observedCount > 0
-    ? `${topBucketLabel ? `${topBucketLabel}-led hiring` : "Active hiring"} from ${observedCount} ${sourceLabel} jobs.`
+    ? `${heroPattern} from ${observedCount} ${sourceLabel} jobs.`
     : "No active hiring signals detected for this company.";
   
-  // Derive proof role keys from the saved snapshot so the cluster scoring
-  // function can apply the proof-overlap bonus for saved briefs.
-  // Uses the same key format as buildEnrichmentRoleKey: id::<source>::<roleId>.
   // If a role has no roleId/jobUrl, it is omitted — scoring degrades gracefully.
-  const proofRoleKeys = roles
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .map((r: any) => {
-      if (r.roleId && r.source) return `id::${r.source}::${r.roleId}`;
-      if (r.jobUrl) return `url::${r.jobUrl}`;
-      return null;
-    })
-    .filter((k: string | null): k is string => k !== null);
-
-  const dynamicSummary = buildApprovedWatchlistSummary({
-    label: brief.watchlistReadLabel as ApprovedWatchlistLabel,
-    jobs: hasFullData ? allJobs : roles,
-    proofRoles: roles,
-    apiSource: brief.atsSourceUsed,
-    watchlistReadConfidence: brief.watchlistReadConfidence as WatchlistConfidenceLevel,
-    companyMatchConfidence: brief.companyMatchConfidence as WatchlistConfidenceLevel,
-    proofRoleGrounding: brief.proofRoleGrounding as WatchlistProofGrounding,
-    hiringMix: hiringMix.map(([department, count]) => ({ department, count, sampleJobs: [] })),
-    signalClusters: brief.resultSnapshot?.signalClusters,
-    proofRoleKeys: proofRoleKeys.length > 0 ? proofRoleKeys : undefined,
-  });
-
-  const summarySentences = splitIntoSentences(dynamicSummary);
-  const interpretationSentences = splitIntoSentences(getInterpretation(
+  const summarySentences = buildExecutiveSummarySentences({
+    companyName: brief.matchedCompanyName,
     hiringMix,
-    brief.watchlistReadExplanation,
-    brief.watchlistReadConfidence,
     observedCount,
-    !!monitoring?.comparisonAvailable,
-    brief.resultSnapshot?.signalClusters,
-    proofRoleKeys.length > 0 ? proofRoleKeys : undefined,
-  ));
+    sourceLabel,
+    hiringPattern,
+  });
+  const interpretationSentences = buildWhyThisMattersSentences({
+    hiringMix,
+    hiringPattern,
+    hasPriorComparison: !!monitoring?.comparisonAvailable,
+  });
   const readiness = deriveBriefPublicReadiness({
     jobsCount: observedCount,
     watchlistReadConfidence: brief.watchlistReadConfidence as WatchlistConfidenceLevel,
@@ -240,6 +289,15 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
         resultState: brief.resultState as StratumResultState,
         jobsObservedCount: observedCount,
       });
+  const signalVerdictHeadline = formatSignalVerdictHeadline(
+    signalVerdict,
+    readiness.changeSignificance,
+    readiness.changeDirection
+  );
+  const signalVerdictReason = formatSignalVerdictReason(
+    signalVerdict,
+    readiness.changeSignificance
+  );
 
   // Verdict display label (e.g. "verify_source" → "VERIFY SOURCE")
   const formatVerdict = (v: string) =>
@@ -280,25 +338,13 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
     }
   };
 
-  const formatSignalClarity = (clarity: string) => {
-    switch (clarity) {
-      case "concentrated": return "Concentrated";
-      case "broad": return "Broad";
-      case "mixed": return "Mixed";
-      case "multi_location": return "Multi-location";
-      case "thin": return "Thin";
-      case "tentative": return "Tentative";
-      default: return clarity;
-    }
-  };
-
   // Support chips: four facts that give context below the verdict.
   // Snapshot and Public Use are demoted — Snapshot moves to "Source and trust"
   // below; Public Use is no longer the hero gate.
   const supportFacts = [
     ["Source", sourceLabel],
     ["Jobs", observedCount.toString()],
-    ["Hiring pattern", formatSignalClarity(readiness.signalClarity)],
+    ["Hiring pattern", hiringPattern],
     ["Change", formatChangeEvent(readiness.changeSignificance, readiness.changeDirection)],
   ] as const;
   const localFallbackAnalysisUsed =
@@ -351,10 +397,10 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
               {formatVerdict(signalVerdict.verdict)}
             </p>
             <p className="text-[14px] font-semibold leading-5" style={{ color: "var(--foreground)" }}>
-              {signalVerdict.headline}
+              {signalVerdictHeadline}
             </p>
             <p className="mt-1 text-[12px] leading-5" style={{ color: "var(--foreground-secondary)" }}>
-              {signalVerdict.reason}
+              {signalVerdictReason}
             </p>
           </div>
 
@@ -387,41 +433,29 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
             <div className="space-y-5">
               <BriefSection title="Executive summary" icon={Info}>
                 <div className="space-y-3">
-                  {summarySentences.length > 0 ? (
-                    summarySentences.map((sentence, idx) => (
-                      <p key={idx} className="text-[15px] leading-7" style={{ color: "var(--foreground)" }}>
-                        {sentence}
-                      </p>
-                    ))
-                  ) : (
-                    <p className="text-[15px] leading-7" style={{ color: "var(--foreground)" }}>
-                      {brief.watchlistReadSummary}
+                  {summarySentences.map((sentence, idx) => (
+                    <p key={idx} className="text-[15px] leading-7" style={{ color: "var(--foreground)" }}>
+                      {sentence}
                     </p>
-                  )}
+                  ))}
                 </div>
               </BriefSection>
 
               <BriefSection title="Why this matters" icon={Layers}>
                 <div className="rounded-2xl border bg-[rgba(59,130,246,0.02)] p-4" style={{ borderColor: "rgba(59,130,246,0.12)" }}>
                   <div className="space-y-2">
-                    {interpretationSentences.length > 0 ? (
-                      interpretationSentences.map((sentence, idx) => (
-                        <p key={idx} className="text-[14px] leading-6" style={{ color: "var(--foreground-secondary)" }}>
-                          {sentence}
-                        </p>
-                      ))
-                    ) : (
-                      <p className="text-[14px] leading-6" style={{ color: "var(--foreground-secondary)" }}>
-                        {getInterpretation(hiringMix, brief.watchlistReadExplanation, brief.watchlistReadConfidence, observedCount, !!monitoring?.comparisonAvailable, brief.resultSnapshot?.signalClusters, proofRoleKeys.length > 0 ? proofRoleKeys : undefined)}
+                    {interpretationSentences.map((sentence, idx) => (
+                      <p key={idx} className="text-[14px] leading-6" style={{ color: "var(--foreground-secondary)" }}>
+                        {sentence}
                       </p>
-                    )}
+                    ))}
                   </div>
                 </div>
               </BriefSection>
 
-              <BriefSection title="Example openings from the observed board" icon={ShieldCheck}>
+              <BriefSection title="Example jobs" icon={ShieldCheck}>
                 <div className="space-y-1.5">
-                  {notableOpenings.map((role, idx) => (
+                  {exampleJobs.map((role, idx) => (
                     <div key={idx} className="group flex items-start gap-3 rounded-xl border bg-[var(--surface)] px-3 py-2.5 transition-colors hover:border-[var(--accent)]" style={{ borderColor: "var(--border)" }}>
                       <div className="mt-0.5 w-8 shrink-0 text-[11px] font-medium tabular-nums" style={{ color: "var(--foreground-muted)" }}>
                         {String(idx + 1).padStart(2, "0")}
@@ -445,7 +479,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                       )}
                     </div>
                   ))}
-                  {notableOpenings.length === 0 && <p className="text-sm opacity-40">No notable openings identified</p>}
+                  {exampleJobs.length === 0 && <p className="text-sm opacity-40">No example jobs available</p>}
                 </div>
               </BriefSection>
             </div>
@@ -536,78 +570,22 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
 
           {/* Bottom Layer: Evidence & Trust */}
           <div className="space-y-5 pt-5 border-t" style={{ borderColor: "var(--border)" }}>
-            <details className="group">
-              <summary className="flex cursor-pointer list-none items-center justify-between transition-colors hover:text-[var(--accent)]" style={{ borderColor: "var(--border)" }}>
-                <div className="flex items-center gap-3">
-                  <h2 className="text-[13px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground)" }}>Example jobs</h2>
-                  <span className="text-[10px] font-medium opacity-45" style={{ color: "var(--foreground-muted)" }}>{roles.length} examples</span>
-                </div>
-                <div className="flex items-center gap-2 text-[11px] font-medium tracking-[0.02em] opacity-25">
-                  <span className="group-open:hidden">Show archive</span>
-                  <span className="hidden group-open:block">Hide archive</span>
-                </div>
-              </summary>
-              <div className="mt-3 space-y-1.5">
-                {roles.map((role, index) => (
-                  <div key={index} className="flex items-center justify-between rounded-lg border px-3 py-2 text-[12px]" style={{ borderColor: "var(--border)" }}>
-                    <div className="flex items-center gap-3 truncate">
-                      <span className="w-5 shrink-0 text-[10px] font-bold opacity-10">#{index + 1}</span>
-                      <span className="font-semibold truncate" style={{ color: "var(--foreground)" }}>{role.title}</span>
-                      <span className="opacity-20">/</span>
-                      <span className="opacity-60 truncate">{role.department}</span>
-                    </div>
-                    {role.jobUrl && (
-                      <a href={role.jobUrl} target="_blank" rel="noreferrer" className="ml-2 shrink-0">
-                        <ExternalLink className="h-3 w-3 opacity-20 hover:opacity-100" />
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </details>
-
-            <details className="group">
-              <summary className="flex cursor-pointer list-none items-center justify-between transition-colors hover:text-[var(--accent)]" style={{ borderColor: "var(--border)" }}>
-                <div className="flex items-center gap-3">
-                  <h2 className="text-[13px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>Source and trust</h2>
-                </div>
-                <div className="flex items-center gap-2 text-[11px] font-medium tracking-[0.02em] opacity-25">
-                  <span className="group-open:hidden">Show details</span>
-                  <span className="hidden group-open:block">Hide details</span>
-                </div>
-              </summary>
-              <div className="mt-4 grid grid-cols-2 gap-x-8 gap-y-4 lg:grid-cols-4">
+            <BriefSection title="Source and trust">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div className="space-y-1">
-                  <p className="text-[10px] font-medium tracking-[0.02em] opacity-45">Snapshot</p>
+                  <p className="text-[10px] font-medium tracking-[0.02em] opacity-45">Source used</p>
+                  <p className="text-[12px] font-medium">{sourceLabel}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[10px] font-medium tracking-[0.02em] opacity-45">Date</p>
                   <p className="text-[12px] font-medium">{formatDateTimeValue(brief.createdAt)}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] font-medium tracking-[0.02em] opacity-45">Read strength</p>
-                  <p className="text-[12px] font-medium capitalize">{brief.watchlistReadConfidence}</p>
+                  <p className="text-[10px] font-medium tracking-[0.02em] opacity-45">Source limit</p>
+                  <p className="text-[12px] font-medium leading-5">{sourceLimit}</p>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-medium tracking-[0.02em] opacity-45">Examples</p>
-                  <p className="text-[12px] font-medium capitalize">{brief.proofRoleGrounding}</p>
-                </div>
-                <div className="space-y-1">
-                   <p className="text-[10px] font-medium tracking-[0.02em] opacity-45">Brief ID</p>
-                   <p className="text-[12px] font-mono opacity-40">{brief.id.slice(0, 12)}</p>
-                </div>
-                {limitations.length > 0 && (
-                  <div className="col-span-full pt-2">
-                    <p className="pb-2 text-[10px] font-medium tracking-[0.02em] opacity-30">Scan notes</p>
-                    <ul className="grid grid-cols-1 gap-1 lg:grid-cols-2">
-                      {limitations.map((l, i) => (
-                        <li key={i} className="flex items-start gap-2 text-[11px] leading-relaxed" style={{ color: "var(--foreground-secondary)" }}>
-                          <ShieldAlert className="h-2.5 w-2.5 mt-0.5 shrink-0 opacity-20" />
-                          {l}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
               </div>
-            </details>
+            </BriefSection>
 
             <details className="group rounded-[24px] border bg-[var(--surface)] p-6 lg:p-7" style={{ borderColor: "var(--border)" }}>
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 transition-colors hover:text-[var(--accent)]">
@@ -653,26 +631,26 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                               color: row.usedForBrief ? "var(--foreground)" : "var(--foreground-secondary)",
                             }}
                           >
-                            {row.usedForBrief ? "Used for brief" : "Not used for brief"}
+                            {row.usedForBrief ? "Used for this brief" : "Not used for this brief"}
                           </div>
                         </div>
 
                         <div className="mt-4 grid grid-cols-1 gap-2 text-[11px] leading-5 sm:grid-cols-2 lg:grid-cols-3">
                           <p style={{ color: "var(--foreground-secondary)" }}>
                             <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                              jobsCount
+                              Jobs found
                             </span>{" "}
                             {row.jobsCount}
                           </p>
                           <p style={{ color: "var(--foreground-secondary)" }}>
                             <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                              usedForBrief
+                              Used for this brief
                             </span>{" "}
                             {row.usedForBrief ? "yes" : "no"}
                           </p>
                           <p className="sm:col-span-2 lg:col-span-3" style={{ color: "var(--foreground-secondary)" }}>
                             <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                              note
+                              Note
                             </span>{" "}
                             {row.note}
                           </p>
@@ -705,7 +683,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                                       {attempt.providerErrorKind ? (
                                         <p style={{ color: "var(--foreground-secondary)" }}>
                                           <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                                            providerErrorKind
+                                            Provider issue
                                           </span>{" "}
                                           {attempt.providerErrorKind}
                                         </p>
@@ -713,7 +691,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                                       {attempt.httpStatus !== null ? (
                                         <p style={{ color: "var(--foreground-secondary)" }}>
                                           <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                                            httpStatus
+                                            HTTP status
                                           </span>{" "}
                                           {attempt.httpStatus}
                                         </p>
@@ -721,7 +699,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                                       {attempt.attemptCount !== null ? (
                                         <p style={{ color: "var(--foreground-secondary)" }}>
                                           <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                                            attemptCount
+                                            Checks
                                           </span>{" "}
                                           {attempt.attemptCount}
                                         </p>
@@ -729,7 +707,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                                       {attempt.retryCount !== null ? (
                                         <p style={{ color: "var(--foreground-secondary)" }}>
                                           <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                                            retryCount
+                                            Retries
                                           </span>{" "}
                                           {attempt.retryCount}
                                         </p>
@@ -737,7 +715,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                                       {attempt.durationMs !== null ? (
                                         <p style={{ color: "var(--foreground-secondary)" }}>
                                           <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                                            durationMs
+                                            Scan time
                                           </span>{" "}
                                           {attempt.durationMs} ms
                                         </p>

@@ -71,10 +71,11 @@ function getProviderStatusFromAttempts(attempts: FetchAttempt[]): FetchAttemptSt
 function getProviderNote(args: {
   status: FetchAttemptStatus;
   jobsCount: number;
+  matchedSource: JobBoardSource | null | undefined;
   sourceInputMode: StratumResult["sourceInputMode"] | undefined;
   requestedSourceHint: StratumResult["requestedSourceHint"] | undefined;
 }): string {
-  const { status, jobsCount, sourceInputMode, requestedSourceHint } = args;
+  const { status, jobsCount, matchedSource, sourceInputMode, requestedSourceHint } = args;
 
   switch (status) {
     case "jobs_found":
@@ -90,7 +91,9 @@ function getProviderNote(args: {
         ? `Not checked. Query pointed directly to ${formatSourceLabel(requestedSourceHint)}.`
         : "Not checked for this input.";
     case "not_attempted_after_match":
-      return "Skipped. Another source already matched.";
+      return matchedSource
+        ? `Skipped. ${formatSourceLabel(matchedSource)} already matched.`
+        : "Skipped. Another source already matched.";
   }
 
   return "No provider diagnostics were stored for this brief.";
@@ -142,13 +145,26 @@ export function buildProviderDiagnosticsView(result: ProviderDiagnosticsResult):
         ? summary.usedForBrief
         : result.apiSource === source && (status === "jobs_found" || status === "zero_jobs");
     const note =
-      summary?.note ??
-      getProviderNote({
-        status,
-        jobsCount,
-        sourceInputMode: result.sourceInputMode,
-        requestedSourceHint: result.requestedSourceHint,
-      });
+      status === "not_attempted_after_match"
+        ? getProviderNote({
+            status,
+            jobsCount,
+            matchedSource: result.apiSource,
+            sourceInputMode: result.sourceInputMode,
+            requestedSourceHint: result.requestedSourceHint,
+          })
+        : summary?.note ??
+          getProviderNote({
+            status,
+            jobsCount,
+            matchedSource: result.apiSource,
+            sourceInputMode: result.sourceInputMode,
+            requestedSourceHint: result.requestedSourceHint,
+          });
+    const actualAttempts = attempts.filter(
+      (attempt) =>
+        attempt.status !== "not_attempted_after_match" && attempt.status !== "not_applicable"
+    );
 
     return [
       {
@@ -159,7 +175,7 @@ export function buildProviderDiagnosticsView(result: ProviderDiagnosticsResult):
         jobsCount,
         usedForBrief,
         note,
-        attempts: attempts.map(getProviderAttemptView),
+        attempts: actualAttempts.map(getProviderAttemptView),
       },
     ];
   });

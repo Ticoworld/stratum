@@ -201,7 +201,9 @@ function buildProviderAttemptSummaries(args: {
             : "Not attempted because it was outside the supported-source path for this query.";
         break;
       case "not_attempted_after_match":
-        note = "Not attempted because Stratum stopped after the first provider returned openings.";
+        note = matchedSource
+          ? `Skipped. ${formatSourceLabel(matchedSource)} already matched.`
+          : "Skipped. Another source already matched.";
         break;
     }
 
@@ -452,17 +454,71 @@ export function selectProofRoles(
 
   const selected: Job[] = [];
   const usedIndexes = new Set<number>();
+  const selectedBucketCounts = new Map<string, number>();
+  const matchedRequestedTitleIndexes = new Set<number>();
   let exactMatches = 0;
   let partialMatches = 0;
   let clusterRoleAdded = false;
 
+  const recordRequestedTitleMatch = (i: number): void => {
+    const selectedTitle = jobTitlesNorm[i];
+    for (let titleIndex = 0; titleIndex < requestedTitles.length; titleIndex++) {
+      if (matchedRequestedTitleIndexes.has(titleIndex)) continue;
+      if (selectedTitle === requestedTitles[titleIndex]) {
+        matchedRequestedTitleIndexes.add(titleIndex);
+        exactMatches++;
+        return;
+      }
+    }
+
+    for (let titleIndex = 0; titleIndex < requestedTitles.length; titleIndex++) {
+      if (matchedRequestedTitleIndexes.has(titleIndex)) continue;
+      const requestedTitle = requestedTitles[titleIndex];
+      if (selectedTitle.includes(requestedTitle) || requestedTitle.includes(selectedTitle)) {
+        matchedRequestedTitleIndexes.add(titleIndex);
+        partialMatches++;
+        return;
+      }
+    }
+  };
+
   const addAt = (i: number): void => {
     selected.push(jobs[i]);
     usedIndexes.add(i);
+    const bucket = jobBuckets[i];
+    selectedBucketCounts.set(bucket, (selectedBucketCounts.get(bucket) ?? 0) + 1);
+    recordRequestedTitleMatch(i);
     if (topClusterKeySet && topClusterKeySet.has(buildEnrichmentRoleKey(jobs[i]))) {
       clusterRoleAdded = true;
     }
   };
+
+  const addFirstAvailableInBucket = (bucket: string): void => {
+    if (selected.length >= limit) return;
+    for (let i = 0; i < jobs.length; i++) {
+      if (!usedIndexes.has(i) && jobBuckets[i] === bucket) {
+        addAt(i);
+        return;
+      }
+    }
+  };
+
+  const totalFromMix = funcMix.reduce((sum, [, count]) => sum + count, 0);
+  const topBucket = funcMix[0]?.[0];
+  const secondBucket = funcMix[1]?.[0];
+  const secondBucketCount = funcMix[1]?.[1] ?? 0;
+
+  if (topBucket) {
+    addFirstAvailableInBucket(topBucket);
+  }
+
+  if (
+    secondBucket &&
+    (secondBucketCount >= 15 ||
+      (totalFromMix > 0 && secondBucketCount / totalFromMix >= 0.2))
+  ) {
+    addFirstAvailableInBucket(secondBucket);
+  }
 
   // -------------------------------------------------------------------------
   // Phase 1: Per-bucket allocation
@@ -472,7 +528,7 @@ export function selectProofRoles(
   //   c. Any remaining roles in this bucket (source order)
   // -------------------------------------------------------------------------
   for (const [bucket, slots] of bucketAlloc.entries()) {
-    let addedForBucket = 0;
+    let addedForBucket = selectedBucketCounts.get(bucket) ?? 0;
 
     // 1a. Cluster roles that belong to this bucket
     if (topCluster && topClusterKeySet) {
@@ -501,7 +557,6 @@ export function selectProofRoles(
       if (found !== -1) {
         addAt(found);
         addedForBucket++;
-        exactMatches++;
         continue;
       }
       // Partial match
@@ -511,7 +566,6 @@ export function selectProofRoles(
         if (t.includes(title) || title.includes(t)) {
           addAt(i);
           addedForBucket++;
-          partialMatches++;
           break;
         }
       }
@@ -554,7 +608,6 @@ export function selectProofRoles(
     }
     if (found !== -1) {
       addAt(found);
-      exactMatches++;
       continue;
     }
     // Partial
@@ -563,7 +616,6 @@ export function selectProofRoles(
       const t = jobTitlesNorm[i];
       if (t.includes(title) || title.includes(t)) {
         addAt(i);
-        partialMatches++;
         break;
       }
     }
