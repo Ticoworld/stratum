@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { Loader2, RotateCcw, Trash2 } from "lucide-react";
+import { buildWatchlistActionCopy } from "@/lib/watchlists/watchlistActionCopy";
 import {
   buildWatchlistDisplayIdentity,
   formatWatchlistDateTime,
   formatWatchlistMetadataLine,
-  formatWatchlistTrackingState,
 } from "@/lib/watchlists/presentation";
 import type { WatchlistOverview } from "@/lib/watchlists/repository";
 import {
@@ -152,19 +152,18 @@ function EntryRow({
     atsSourceUsed: entry.latestAtsSourceUsed,
   });
 
+  const actionCopy = buildWatchlistActionCopy({
+    verdict: entry.latestSignalVerdict,
+    resultState: entry.latestResultState,
+    latestUnreadAlertPriority: entry.latestUnreadAlertPriority,
+    latestWatchlistReadLabel: entry.latestWatchlistReadLabel,
+    latestBriefId: entry.latestBriefId,
+  });
+
   const freshnessLabel = formatWatchlistDateTime(
     entry.latestBriefId || entry.latestResultState ? entry.updatedAt : null,
     "Not checked yet"
   );
-
-  const readLabel =
-    entry.latestWatchlistReadLabel ??
-    formatWatchlistTrackingState({
-      latestBriefId: entry.latestBriefId,
-      latestResultState: entry.latestResultState,
-      latestAtsSourceUsed: entry.latestAtsSourceUsed,
-      isChecking: pendingRefresh,
-    }).headline;
 
   const sourceMeta = formatWatchlistMetadataLine([
     displayIdentity.sourceGrounding.secondary,
@@ -173,13 +172,13 @@ function EntryRow({
 
   return (
     <div
+      data-testid={`watchlist-row-${entry.id}`}
       onClick={() => onSelectEntry(entry.id)}
       className="group flex cursor-pointer items-start gap-4 border-b px-5 py-3.5 last:border-b-0 transition-colors hover:bg-[rgba(16,24,40,0.02)]"
       style={{ borderColor: "var(--border)" }}
     >
-      {/* Company identity */}
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
           <Link
             href={`/watchlists/${watchlistId}/entries/${entry.id}`}
             onClick={(e) => e.stopPropagation()}
@@ -206,71 +205,73 @@ function EntryRow({
               {sourceMeta}
             </span>
           ) : null}
+          <VerdictChip verdict={entry.latestSignalVerdict} />
+        </div>
+        <div className="mt-1.5 min-w-0">
+          <p
+            data-testid="watchlist-row-main-line"
+            className="truncate text-[13px] font-medium leading-5"
+            style={{ color: "var(--foreground)" }}
+            title={actionCopy.mainLine}
+          >
+            {actionCopy.mainLine}
+          </p>
+          <p
+            data-testid="watchlist-row-next-step"
+            className="truncate text-[11px] leading-5"
+            style={{ color: "var(--foreground-secondary)" }}
+            title={actionCopy.nextStep}
+          >
+            {actionCopy.nextStep}
+          </p>
         </div>
       </div>
 
-      {/* Signal: verdict chip + read label */}
-      <div className="hidden min-w-0 flex-[2] items-start gap-2 sm:flex">
-        <VerdictChip verdict={entry.latestSignalVerdict} />
-        <span
-          className="min-w-0 truncate text-[12px] leading-5"
-          style={{ color: "var(--foreground-secondary)" }}
-          title={readLabel}
-        >
-          {readLabel}
-        </span>
-      </div>
-
-      {/* Last checked */}
-      <div className="hidden shrink-0 w-28 text-right lg:block">
-        <span
-          className="text-[12px] tabular-nums"
-          style={{ color: "var(--foreground-muted)" }}
-        >
+      <div className="flex shrink-0 flex-col items-end gap-2">
+        <span className="text-[12px] tabular-nums" style={{ color: "var(--foreground-muted)" }}>
           {freshnessLabel}
         </span>
-      </div>
 
-      {/* Actions */}
-      <div
-        className="flex shrink-0 items-center gap-1.5 text-[11px]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {entry.latestBriefId ? (
-          <Link
-            href={`/briefs/${entry.latestBriefId}`}
-            className="rounded-lg border px-2.5 py-1.5 font-medium transition-colors hover:bg-[rgba(16,24,40,0.04)]"
+        <div
+          className="flex flex-wrap items-center justify-end gap-1.5 text-[11px]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {entry.latestBriefId ? (
+            <Link
+              href={`/briefs/${entry.latestBriefId}`}
+              className="rounded-lg border px-2.5 py-1.5 font-medium transition-colors hover:bg-[rgba(16,24,40,0.04)]"
+              style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
+            >
+              Brief
+            </Link>
+          ) : null}
+          <button
+            onClick={() => onRefreshEntry(entry.id)}
+            disabled={pendingRefresh}
+            aria-busy={pendingRefresh || undefined}
+            className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-medium transition-colors disabled:opacity-40 hover:bg-[rgba(16,24,40,0.04)]"
             style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
           >
-            Brief
-          </Link>
-        ) : null}
-        <button
-          onClick={() => onRefreshEntry(entry.id)}
-          disabled={pendingRefresh}
-          aria-busy={pendingRefresh || undefined}
-          className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-medium transition-colors disabled:opacity-40 hover:bg-[rgba(16,24,40,0.04)]"
-          style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
-        >
-          {pendingRefresh ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <RotateCcw className="h-3 w-3" />
-          )}
-        </button>
-        <button
-          onClick={() => onRemoveEntry(entry.id)}
-          disabled={pendingRemoval}
-          aria-busy={pendingRemoval || undefined}
-          className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-medium transition-colors disabled:opacity-40 hover:bg-[rgba(16,24,40,0.04)]"
-          style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
-        >
-          {pendingRemoval ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <Trash2 className="h-3 w-3" />
-          )}
-        </button>
+            {pendingRefresh ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <RotateCcw className="h-3 w-3" />
+            )}
+          </button>
+          <button
+            onClick={() => onRemoveEntry(entry.id)}
+            disabled={pendingRemoval}
+            aria-busy={pendingRemoval || undefined}
+            className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-medium transition-colors disabled:opacity-40 hover:bg-[rgba(16,24,40,0.04)]"
+            style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
+          >
+            {pendingRemoval ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Trash2 className="h-3 w-3" />
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -287,7 +288,10 @@ export function WatchlistSignalInbox({
   onRemoveEntry,
   onRefreshEntry,
   onSelectEntry,
+  currentTime: _currentTime,
 }: WatchlistSignalInboxProps) {
+  void _currentTime;
+
   if (!watchlist) {
     return (
       <div
@@ -336,6 +340,7 @@ export function WatchlistSignalInbox({
 
   return (
     <section
+      data-testid="watchlist-signal-inbox"
       className="overflow-hidden rounded-[24px] border bg-[var(--surface)]"
       style={{ borderColor: "var(--border)" }}
     >
