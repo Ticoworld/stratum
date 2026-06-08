@@ -4,6 +4,7 @@ export interface WatchlistActionCopyInput {
   latestUnreadAlertPriority?: string | null;
   latestWatchlistReadLabel?: string | null;
   latestBriefId?: string | null;
+  latestObservedJobsCount?: number | null;
 }
 
 export interface WatchlistActionCopy {
@@ -184,6 +185,11 @@ function formatHeadlineForLead(leadLabel: string): string {
   return `${leadLabel.replace(/-led$/, "")} hiring`;
 }
 
+function formatObservedJobsSuffix(count: number | null | undefined): string {
+  if (typeof count !== "number" || !Number.isFinite(count) || count < 0) return "";
+  return `, ${count} ${count === 1 ? "job" : "jobs"}`;
+}
+
 export function buildWatchlistActionCopy(
   args: WatchlistActionCopyInput
 ): WatchlistActionCopy {
@@ -247,8 +253,8 @@ export function buildWatchlistActionCopy(
     return {
       mainLine:
         leadLabel && leadLabel !== "Mixed" && leadLabel !== "No clear lead"
-          ? `${leadLabel} first scan.`
-          : "First scan complete.",
+          ? `${leadLabel} first scan${formatObservedJobsSuffix(args.latestObservedJobsCount)}.`
+          : `First scan${formatObservedJobsSuffix(args.latestObservedJobsCount)}.`,
       nextStep: "Wait for the next scan to see what changed.",
     };
   }

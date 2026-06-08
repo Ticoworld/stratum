@@ -113,6 +113,30 @@ test.describe("buildWatchlistActionCopy", () => {
     expect(copy.nextStep).toBe("Wait for the next scan to see what changed.");
   });
 
+  test("WATCH first scan includes observed job count when available", () => {
+    const copy = buildWatchlistActionCopy({
+      verdict: "watch",
+      latestBriefId: "brief-1",
+      latestWatchlistReadLabel: "Broader product and GTM buildout",
+      latestObservedJobsCount: 111,
+    });
+
+    expect(copy.mainLine).toBe("Sales-led first scan, 111 jobs.");
+    expect(copy.nextStep).toBe("Wait for the next scan to see what changed.");
+  });
+
+  test("WATCH first scan falls back to count without a pattern", () => {
+    const copy = buildWatchlistActionCopy({
+      verdict: "watch",
+      latestBriefId: "brief-1",
+      latestWatchlistReadLabel: null,
+      latestObservedJobsCount: 111,
+    });
+
+    expect(copy.mainLine).toBe("First scan, 111 jobs.");
+    expect(copy.nextStep).toBe("Wait for the next scan to see what changed.");
+  });
+
   test("WATCH with a digest alert returns keep-tracking language", () => {
     const copy = buildWatchlistActionCopy({
       verdict: "watch",
@@ -255,7 +279,9 @@ test.describe("Watchlist signal inbox action copy", () => {
 
     const watchRow = page.getByTestId(`watchlist-row-${seededFixture.rows.watch.entryId}`);
     await expect(watchRow.getByText("WATCH", { exact: true })).toBeVisible();
-    await expect(watchRow.getByTestId("watchlist-row-main-line")).toHaveText("Sales-led first scan.");
+    await expect(watchRow.getByTestId("watchlist-row-main-line")).toHaveText(
+      "Sales-led first scan, 111 jobs."
+    );
     await expect(watchRow.getByTestId("watchlist-row-next-step")).toHaveText(
       "Wait for the next scan to see what changed."
     );

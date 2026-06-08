@@ -132,6 +132,7 @@ async function insertSeedBrief(args: {
   proofRoleGrounding: "exact" | "partial" | "fallback" | "none";
   proofRoleGroundingExplanation: string;
   providerFailures: number;
+  jobsObservedCount?: number;
   createdAt: Date;
 }): Promise<string> {
   const briefId = randomUUID();
@@ -173,7 +174,7 @@ async function insertSeedBrief(args: {
     watchlistReadExplanation: args.watchlistReadExplanation,
     proofRoleGrounding: args.proofRoleGrounding,
     proofRoleGroundingExplanation: args.proofRoleGroundingExplanation,
-    jobsObservedCount: 0,
+    jobsObservedCount: args.jobsObservedCount ?? 0,
     proofRolesSnapshot: [],
     limitsSnapshot: [],
     resultSnapshot,
@@ -360,6 +361,7 @@ async function seedWatchlistActionCopyFixture(runKey: string): Promise<{
     proofRoleGrounding: "exact",
     proofRoleGroundingExplanation: "The read is grounded in the displayed proof roles.",
     providerFailures: 0,
+    jobsObservedCount: 111,
     createdAt: toDate(baseTime - 5 * 60 * 1000),
   });
   await insertSeedEntry({

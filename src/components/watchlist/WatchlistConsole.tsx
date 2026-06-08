@@ -261,6 +261,12 @@ export function WatchlistConsole({
           return;
         }
 
+        const latestObservedJobsCount =
+          refreshData.data?.watchlistMonitoring?.latestStateJobsObservedCount ??
+          (Array.isArray(refreshData.data?.jobs)
+            ? refreshData.data.jobs.length
+            : trackedEntry.latestObservedJobsCount ?? null);
+
         const refreshedEntry: WatchlistOverview["entries"][number] = {
           ...trackedEntry,
           latestBriefId: refreshData.data?.briefId ?? trackedEntry.latestBriefId,
@@ -274,6 +280,7 @@ export function WatchlistConsole({
             refreshData.data?.briefId ? new Date().toISOString() : trackedEntry.latestBriefCreatedAt,
           latestBriefUpdatedAt:
             refreshData.data?.briefId ? new Date().toISOString() : trackedEntry.latestBriefUpdatedAt,
+          latestObservedJobsCount,
           updatedAt: new Date().toISOString(),
         };
         const minimumCheckingWindowMs = 900;

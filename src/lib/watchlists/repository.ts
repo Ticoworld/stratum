@@ -69,6 +69,9 @@ export interface WatchlistEntryOverview {
   /** Phase 6E-4: persisted Signal Verdict from the latest saved brief. Absent
    *  when no brief exists or the brief pre-dates Phase 6E-2. */
   latestSignalVerdict?: string | null;
+  /** Latest saved brief's observed job count, fetched alongside brief summary
+   *  fields for watchlist rows. */
+  latestObservedJobsCount?: number | null;
   /** Phase 6E-4: highest-priority (lowest rank) unread alert_priority across
    *  all unread notification candidates for this entry. Absent when no unread
    *  notifications exist. */
@@ -451,18 +454,28 @@ export async function listWatchlistsWithEntries(tenantId: string): Promise<Watch
     .where(eq(stratumWatchlists.tenantId, tenantId))
     .orderBy(desc(stratumWatchlistEntries.updatedAt));
 
-  // Phase 6E-4: batch-fetch signal verdicts from latest saved briefs.
+  // Batch-fetch latest brief fields used by the watchlist row.
   const latestBriefIds = [
     ...new Set(entries.map((r) => r.entry.latestBriefId).filter((id): id is string => !!id)),
   ];
-  const briefVerdictMap = new Map<string, string | null>();
+  const latestBriefRowMap = new Map<
+    string,
+    { signalVerdict: string | null; jobsObservedCount: number | null }
+  >();
   if (latestBriefIds.length > 0) {
     const briefRows = await db
-      .select({ id: stratumBriefs.id, signalVerdict: stratumBriefs.signalVerdict })
+      .select({
+        id: stratumBriefs.id,
+        signalVerdict: stratumBriefs.signalVerdict,
+        jobsObservedCount: stratumBriefs.jobsObservedCount,
+      })
       .from(stratumBriefs)
       .where(inArray(stratumBriefs.id, latestBriefIds));
     for (const row of briefRows) {
-      briefVerdictMap.set(row.id, row.signalVerdict ?? null);
+      latestBriefRowMap.set(row.id, {
+        signalVerdict: row.signalVerdict ?? null,
+        jobsObservedCount: row.jobsObservedCount ?? null,
+      });
     }
   }
 
@@ -495,7 +508,9 @@ export async function listWatchlistsWithEntries(tenantId: string): Promise<Watch
   for (const row of entries) {
     const mapped = mapEntryRow(row.entry);
     const briefId = row.entry.latestBriefId;
-    mapped.latestSignalVerdict = briefId ? (briefVerdictMap.get(briefId) ?? null) : null;
+    const latestBriefRow = briefId ? latestBriefRowMap.get(briefId) : undefined;
+    mapped.latestSignalVerdict = latestBriefRow?.signalVerdict ?? null;
+    mapped.latestObservedJobsCount = latestBriefRow?.jobsObservedCount ?? null;
     mapped.latestUnreadAlertPriority = unreadAlertPriorityMap.get(row.entry.id) ?? null;
     if (!entriesByWatchlist.has(row.entry.watchlistId)) entriesByWatchlist.set(row.entry.watchlistId, []);
     entriesByWatchlist.get(row.entry.watchlistId)!.push(mapped);

@@ -275,7 +275,7 @@ test("ambiguous source resolution requires an explicit candidate choice", async 
   expect((await createResponse.json()).success).toBeTruthy();
   expect((await refreshResponse.json()).success).toBeTruthy();
   await expect(page.getByRole("link", { name: "Brief", exact: true }).first()).toBeVisible();
-  await expect(page.getByText("Sales-led first scan.", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Sales-led first scan, \d+ jobs?\./)).toBeVisible();
 });
 
 test("watchlists hand off cleanly to saved briefs and back again", async ({ page }) => {
