@@ -79,7 +79,7 @@ function getProviderNote(args: {
 
   switch (status) {
     case "jobs_found":
-      return `Returned ${jobsCount} observed open role${jobsCount === 1 ? "" : "s"} and anchors this brief.`;
+      return `Returned ${jobsCount} observed open role${jobsCount === 1 ? "" : "s"}. Used for this brief.`;
     case "zero_jobs":
       return "Matched this provider but observed zero current openings there at fetch time.";
     case "not_found":

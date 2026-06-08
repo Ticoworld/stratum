@@ -764,7 +764,10 @@ export function deriveCurrentSignalStrength(args: {
   if (args.watchlistReadConfidence === "low" || args.watchlistReadConfidence === "none") {
     blockers.push("Low interpretation confidence.");
   }
-  if (args.proofRoleGrounding === "none" || args.proofRoleGrounding === "fallback") {
+  if (
+    args.proofRoleGrounding === "none" ||
+    (args.proofRoleGrounding === "fallback" && args.jobsCount < 10)
+  ) {
     blockers.push("Proof roles qualify rather than strongly support the read.");
   }
   if (args.label === "Thin hiring signal" || args.label === "Tentative hiring signal") {
@@ -959,12 +962,18 @@ export function deriveEvidenceQuality(args: {
   if (args.jobsCount <= 2) return "weak";
   if (args.companyMatchConfidence === "low" || args.companyMatchConfidence === "none") return "weak";
   if (args.watchlistReadConfidence === "low" || args.watchlistReadConfidence === "none") return "weak";
-  if (args.proofRoleGrounding === "none" || args.proofRoleGrounding === "fallback") return "weak";
+  if (args.proofRoleGrounding === "none") return "weak";
+  if (
+    (args.proofRoleGrounding === "fallback" || args.proofRoleGrounding === "partial") &&
+    args.jobsCount < 10
+  ) {
+    return "weak";
+  }
 
   // Moderate caveats — any single caveat caps the result at moderate
   if (args.jobsCount <= 4) return "moderate";
   if (args.watchlistReadConfidence === "medium") return "moderate";
-  if (args.proofRoleGrounding === "partial") return "moderate";
+  if (args.proofRoleGrounding === "partial" || args.proofRoleGrounding === "fallback") return "moderate";
 
   return "strong";
 }
@@ -1161,8 +1170,11 @@ export function deriveHeroFocusFromHiringMix(
  * StratumInvestigator.ts and tests can reference it without depending on the
  * UI layer. Behavior is identical to the original page.tsx implementation.
  *
- * Priority: Sales → Engineering → Product → Marketing → Finance →
- *           Operations → Leadership → Other (catch-all).
+ * Priority: Sales → People/Talent recruiting → Product → Marketing → Finance →
+ *           Leadership → Engineering → Operations → Other (catch-all).
+ *
+ * People/Talent recruiting signals are checked before Engineering so recruiter
+ * titles that mention "Engineering" do not get misclassified as technical roles.
  */
 export function mapToFunctionalBucket(role: {
   title: string;
@@ -1170,12 +1182,13 @@ export function mapToFunctionalBucket(role: {
 }): string {
   const text = `${role.title} ${role.department || ""}`.toLowerCase();
   if (/\b(sales|account|bdr|sdr|business development|revenue|growth)\b/.test(text)) return "Sales";
-  if (/\b(engineer|developer|software|backend|frontend|fullstack|devops|sre|infrastructure|architect|data|machine learning|ai)\b/.test(text)) return "Engineering";
+  if (/\b(hr|people|talent|recruiter|recruiting)\b/.test(text)) return "Operations";
   if (/\b(product|ux|user experience|ui|owner)\b/.test(text)) return "Product";
   if (/\b(marketing|seo|content|social media|creative|brand|communications|pr)\b/.test(text)) return "Marketing";
   if (/\b(finance|accounting|accountant|controller|tax|audit|billing|payroll)\b/.test(text)) return "Finance";
-  if (/\b(operations|ops|hr|people|talent|recruiter|recruiting|legal|compliance|admin|workplace)\b/.test(text)) return "Operations";
   if (/\b(head of|vp|director|chief|c-level|ceo|cto|cfo|coo|cmo|founder|president)\b/.test(text)) return "Leadership";
+  if (/\b(engineer|developer|software|backend|frontend|fullstack|devops|sre|infrastructure|architect|data|machine learning|ai)\b/.test(text)) return "Engineering";
+  if (/\b(operations|ops|legal|compliance|admin|workplace)\b/.test(text)) return "Operations";
   return "Other";
 }
 

@@ -183,7 +183,7 @@ function buildProviderAttemptSummaries(args: {
     let note = "This provider was not attempted.";
     switch (status) {
       case "jobs_found":
-        note = `Returned ${jobsCount} observed open role${jobsCount === 1 ? "" : "s"} and anchors this brief.`;
+        note = `Returned ${jobsCount} observed open role${jobsCount === 1 ? "" : "s"}. Used for this brief.`;
         break;
       case "zero_jobs":
         note = "Matched this provider but observed zero current openings there at fetch time.";
@@ -993,11 +993,22 @@ function deriveWatchlistReadConfidence(args: {
   if (jobs.length < 3) {
     return {
       level: "low",
-      explanation: `Read confidence is low because only ${jobs.length} observed role${jobs.length === 1 ? "" : "s"} anchor this brief.`,
+      explanation:
+        jobs.length === 1
+          ? "Read confidence is low because only 1 observed role supports this brief."
+          : `Read confidence is low because only ${jobs.length} observed roles support this brief.`,
     };
   }
 
   if (proofRoleSelection.grounding === "fallback") {
+    if (jobs.length >= 10 && (companyMatchConfidence === "high" || companyMatchConfidence === "medium")) {
+      return {
+        level: "medium",
+        explanation:
+          "Read confidence is medium because the board is large enough to support the read even though the displayed examples are only fallback-grounded.",
+      };
+    }
+
     return {
       level: "low",
       explanation: "Read confidence is low because the brief could not be cleanly grounded to model-picked role titles.",

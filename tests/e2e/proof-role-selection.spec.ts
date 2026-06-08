@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { mapToFunctionalBucket } from "../../src/lib/signals/watchlistTaxonomy";
 import { selectProofRoles } from "../../src/lib/services/StratumInvestigator";
 import type { Job } from "../../src/lib/api/boards";
 import type { AiSignalCluster } from "../../src/lib/signals/roleEnrichment";
@@ -419,6 +420,30 @@ test.describe("H. significant second bucket representation", () => {
     expect(result.roles.some((role) => role.department === "Sales")).toBe(true);
     expect(result.roles.some((role) => role.department === "Engineering")).toBe(true);
     expect(result.roles.filter((role) => role.department === "Engineering").length).toBeGreaterThanOrEqual(1);
+    expect(new Set(result.roles.map((role) => role.title)).size).toBe(result.roles.length);
+    expect(result.roles.length).toBeLessThanOrEqual(5);
+  });
+
+  test("T-PR-H3: People/Talent recruiter with Engineering in the title does not satisfy Engineering proof", () => {
+    const salesJobs = Array.from({ length: 50 }, (_, i) =>
+      makeJob(`Account Executive ${i + 1}`, "Sales", "ASHBY")
+    );
+    const engineeringJobs = Array.from({ length: 31 }, (_, i) =>
+      makeJob(`Software Engineer ${i + 1}`, "Engineering", "ASHBY")
+    );
+    const recruiterJob = makeJob("Technical Recruiter | Engineering", "People & Talent", "ASHBY");
+    const jobs = [...salesJobs, recruiterJob, ...engineeringJobs];
+
+    const result = selectProofRoles(jobs, undefined, {
+      functionalMix: [["Sales", 50], ["Engineering", 31], ["Operations", 1]],
+    });
+
+    const engineeringProofTitles = result.roles
+      .filter((role) => mapToFunctionalBucket(role) === "Engineering")
+      .map((role) => role.title);
+
+    expect(engineeringProofTitles.some((title) => title.startsWith("Software Engineer"))).toBe(true);
+    expect(engineeringProofTitles).not.toContain("Technical Recruiter | Engineering");
     expect(new Set(result.roles.map((role) => role.title)).size).toBe(result.roles.length);
     expect(result.roles.length).toBeLessThanOrEqual(5);
   });

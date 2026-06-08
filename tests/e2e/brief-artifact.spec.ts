@@ -160,10 +160,21 @@ test("saved brief reads like a durable artifact and keeps replay context obvious
   await expect(page.getByText("Worth watching")).toHaveCount(0);
   await expect(page.getByText(/visible roles span/i)).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Executive summary" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Why this matters" })).toBeVisible();
+  const whyThisMattersSection = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Why this matters" }) })
+    .first();
+  await expect(whyThisMattersSection).toBeVisible();
+  const whyThisMattersParagraphs = whyThisMattersSection.locator("p");
+  await expect(whyThisMattersParagraphs).toHaveCount(2);
+  await expect(whyThisMattersParagraphs.nth(0)).toHaveText("This is the first scan. Use it as the starting point.");
+  await expect(whyThisMattersParagraphs.nth(1)).toHaveText(
+    "Sales leads the hiring mix. The next scan will show if hiring grows, slows down, or shifts to another team."
+  );
+  await expect(whyThisMattersSection).not.toContainText("Sales/GTM");
   await expect(page.getByRole("heading", { name: "Example openings from the observed board" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Hiring mix and geography" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "What changed" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What changed" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Example jobs" })).toHaveCount(1);
   await expect(page.getByRole("heading", { name: /Source and trust/i })).toBeVisible();
   const sourceTrustSection = page.locator("section").filter({ hasText: "Source and trust" });
@@ -202,11 +213,21 @@ test("saved brief reads like a durable artifact and keeps replay context obvious
   await expect(providerDiagnosticsSection).toContainText("Scan time");
   await expect(providerDiagnosticsSection).not.toContainText("jobsCount");
   await expect(providerDiagnosticsSection).not.toContainText("usedForBrief");
-  await expect(providerDiagnosticsSection).toContainText("Skipped. Ashby already matched.");
+  const usedProvider = providerDiagnosticsSection
+    .locator("article")
+    .filter({ hasText: "Status: Jobs found" })
+    .first();
+  await expect(usedProvider).toContainText("Jobs found");
+  await expect(usedProvider).toContainText("Used for this brief");
+  await expect(usedProvider).toContainText("Used for this brief.");
+  await expect(usedProvider).not.toContainText("anchors this brief");
   const skippedProvider = providerDiagnosticsSection
     .locator("article")
     .filter({ hasText: "Status: Skipped" })
     .first();
+  await expect(skippedProvider).toContainText("Skipped. Ashby already matched.");
+  await expect(skippedProvider).not.toContainText("Jobs found 0");
+  await expect(skippedProvider).not.toContainText("Used for this brief no");
   await expect(skippedProvider).not.toContainText("Scan attempts");
   await expect(page.getByRole("link", { name: "Back to watchlist" })).toBeVisible();
 });

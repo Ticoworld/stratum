@@ -25,7 +25,7 @@ test.describe("provider diagnostics view model", () => {
             tokensTried: ["notion"],
             errorMessages: [],
             usedForBrief: true,
-            note: "Returned 4 observed open roles and anchors this brief.",
+            note: "Returned 4 observed open roles. Used for this brief.",
           },
           {
             source: "LEVER",
@@ -90,7 +90,8 @@ test.describe("provider diagnostics view model", () => {
     expect(greenhouse.statusLabel).toBe("Jobs found");
     expect(greenhouse.jobsCount).toBe(4);
     expect(greenhouse.usedForBrief).toBe(true);
-    expect(greenhouse.note).toContain("anchors this brief");
+    expect(greenhouse.note).toBe("Returned 4 observed open roles. Used for this brief.");
+    expect(greenhouse.note).not.toContain("anchors this brief");
   });
 
   test("includes retry telemetry and error metadata when present", () => {

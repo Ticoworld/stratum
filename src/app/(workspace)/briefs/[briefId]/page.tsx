@@ -53,7 +53,7 @@ function getGeographySpread(roles: any[]) {
 }
 
 function formatBucketForSentence(bucket: string): string {
-  if (bucket === "Sales") return "Sales/GTM";
+  if (bucket === "Sales") return "Sales";
   return formatHiringMixBucketLabel(bucket);
 }
 
@@ -111,15 +111,21 @@ function buildWhyThisMattersSentences(args: {
   const top = hiringMix[0];
 
   if (!hasPriorComparison) {
+    if (hiringPattern.endsWith("-led") && top?.[0] === "Sales") {
+      return [
+        "This is the first scan. Use it as the starting point.",
+        "Sales leads the hiring mix. The next scan will show if hiring grows, slows down, or shifts to another team.",
+      ];
+    }
+
     const sentences = ["This is the first scan. Use it as the starting point."];
     if (hiringPattern.endsWith("-led") && top) {
       sentences.push(
-        `${formatBucketForSentence(top[0])} leads the hiring mix. Watch the next scan to see if that push grows or slows down.`
+        `${formatBucketForSentence(top[0])} leads the hiring mix. The next scan will show if hiring grows, slows down, or shifts to another team.`
       );
     } else {
-      sentences.push("Hiring is spread across several teams. No single area clearly leads.");
+      sentences.push("Hiring is spread across several teams. The next scan will show if hiring grows, slows down, or shifts to another team.");
     }
-    sentences.push("The next scan will show if hiring grows, drops, or shifts to another team.");
     return sentences;
   }
 
@@ -516,57 +522,54 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
           </div>
 
           {/* What Changed */}
-          <BriefSection title="What changed" icon={History}>
-            <div className="rounded-xl border p-3" style={{ borderColor: "var(--border)" }}>
-              {whatChangedDisplay.kind === "archived" && (
-                <p className="text-[13px] leading-6 font-medium" style={{ color: "var(--foreground-secondary)" }}>
-                  No scoped comparison is available for this archived brief. The current watchlist comparison reflects newer briefs.
-                </p>
-              )}
-              {whatChangedDisplay.kind === "baseline" && (
-                <p className="text-[13px] leading-6 font-medium" style={{ color: "var(--foreground-secondary)" }}>
-                  This is the first saved brief for this company. No prior brief yet to compare against.
-                </p>
-              )}
-              {whatChangedDisplay.kind === "weak_caveat" && (
-                <div className="space-y-2">
-                  {whatChangedDisplay.heading && (
-                    <p className="text-[10px] font-semibold tracking-[0.04em] uppercase opacity-50" style={{ color: "var(--foreground-muted)" }}>
-                      {whatChangedDisplay.heading}
-                    </p>
-                  )}
-                  <p className="text-[13px] leading-5 font-medium" style={{ color: "var(--foreground-secondary)" }}>
-                    {whatChangedDisplay.caveat}
+          {whatChangedDisplay.kind !== "baseline" && (
+            <BriefSection title="What changed" icon={History}>
+              <div className="rounded-xl border p-3" style={{ borderColor: "var(--border)" }}>
+                {whatChangedDisplay.kind === "archived" && (
+                  <p className="text-[13px] leading-6 font-medium" style={{ color: "var(--foreground-secondary)" }}>
+                    No scoped comparison is available for this archived brief. The current watchlist comparison reflects newer briefs.
                   </p>
-                  <details className="group">
-                    <summary className="cursor-pointer text-[11px] font-medium tracking-[0.02em] opacity-30 hover:opacity-60">
-                      Show detailed change log
-                    </summary>
-                    <p className="mt-2 text-[12px] leading-5 opacity-60" style={{ color: "var(--foreground-muted)" }}>
-                      {whatChangedDisplay.fullSummary}
+                )}
+                {whatChangedDisplay.kind === "weak_caveat" && (
+                  <div className="space-y-2">
+                    {whatChangedDisplay.heading && (
+                      <p className="text-[10px] font-semibold tracking-[0.04em] uppercase opacity-50" style={{ color: "var(--foreground-muted)" }}>
+                        {whatChangedDisplay.heading}
+                      </p>
+                    )}
+                    <p className="text-[13px] leading-5 font-medium" style={{ color: "var(--foreground-secondary)" }}>
+                      {whatChangedDisplay.caveat}
                     </p>
-                  </details>
-                </div>
-              )}
-              {whatChangedDisplay.kind === "standard" && (
-                <div className="space-y-1.5">
-                  {whatChangedDisplay.heading && (
-                    <p className="text-[10px] font-semibold tracking-[0.04em] uppercase opacity-50" style={{ color: "var(--foreground-muted)" }}>
-                      {whatChangedDisplay.heading}
+                    <details className="group">
+                      <summary className="cursor-pointer text-[11px] font-medium tracking-[0.02em] opacity-30 hover:opacity-60">
+                        Show detailed change log
+                      </summary>
+                      <p className="mt-2 text-[12px] leading-5 opacity-60" style={{ color: "var(--foreground-muted)" }}>
+                        {whatChangedDisplay.fullSummary}
+                      </p>
+                    </details>
+                  </div>
+                )}
+                {whatChangedDisplay.kind === "standard" && (
+                  <div className="space-y-1.5">
+                    {whatChangedDisplay.heading && (
+                      <p className="text-[10px] font-semibold tracking-[0.04em] uppercase opacity-50" style={{ color: "var(--foreground-muted)" }}>
+                        {whatChangedDisplay.heading}
+                      </p>
+                    )}
+                    <p className="text-[14px] leading-6 font-medium" style={{ color: "var(--foreground)" }}>
+                      {whatChangedDisplay.summary}
                     </p>
-                  )}
-                  <p className="text-[14px] leading-6 font-medium" style={{ color: "var(--foreground)" }}>
-                    {whatChangedDisplay.summary}
-                  </p>
-                  {whatChangedDisplay.comparisonStrength !== "standard" && whatChangedDisplay.comparisonStrength !== "unavailable" && (
-                    <p className="text-[10px] font-medium tracking-[0.02em] opacity-40">
-                      Comparison strength: {whatChangedDisplay.comparisonStrength}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          </BriefSection>
+                    {whatChangedDisplay.comparisonStrength !== "standard" && whatChangedDisplay.comparisonStrength !== "unavailable" && (
+                      <p className="text-[10px] font-medium tracking-[0.02em] opacity-40">
+                        Comparison strength: {whatChangedDisplay.comparisonStrength}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </BriefSection>
+          )}
 
           {/* Bottom Layer: Evidence & Trust */}
           <div className="space-y-5 pt-5 border-t" style={{ borderColor: "var(--border)" }}>
@@ -606,129 +609,143 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
               <div className="mt-4">
                 {providerDiagnostics.hasDiagnostics ? (
                   <div className="space-y-3">
-                    {providerDiagnostics.rows.map((row) => (
-                      <article
-                        key={row.source}
-                        className="rounded-2xl border px-4 py-4"
-                        style={{
-                          background: "var(--background)",
-                          borderColor: "var(--border)",
-                        }}
-                      >
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="min-w-0 space-y-1">
-                            <p className="text-[10px] font-medium uppercase tracking-[0.22em]" style={{ color: "var(--foreground-muted)" }}>
-                              {row.sourceLabel}
-                            </p>
-                            <p className="text-[13px] font-medium leading-6" style={{ color: "var(--foreground)" }}>
-                              Status: {row.statusLabel}
-                            </p>
-                          </div>
-                          <div
-                            className="rounded-full border px-3 py-1 text-[11px] font-medium"
-                            style={{
-                              borderColor: "var(--border)",
-                              color: row.usedForBrief ? "var(--foreground)" : "var(--foreground-secondary)",
-                            }}
-                          >
-                            {row.usedForBrief ? "Used for this brief" : "Not used for this brief"}
-                          </div>
-                        </div>
+                    {providerDiagnostics.rows.map((row) => {
+                      const isSkippedProvider = row.status === "not_attempted_after_match";
 
-                        <div className="mt-4 grid grid-cols-1 gap-2 text-[11px] leading-5 sm:grid-cols-2 lg:grid-cols-3">
-                          <p style={{ color: "var(--foreground-secondary)" }}>
-                            <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                              Jobs found
-                            </span>{" "}
-                            {row.jobsCount}
-                          </p>
-                          <p style={{ color: "var(--foreground-secondary)" }}>
-                            <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                              Used for this brief
-                            </span>{" "}
-                            {row.usedForBrief ? "yes" : "no"}
-                          </p>
-                          <p className="sm:col-span-2 lg:col-span-3" style={{ color: "var(--foreground-secondary)" }}>
-                            <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                              Note
-                            </span>{" "}
-                            {row.note}
-                          </p>
-                        </div>
-
-                        {(() => {
-                          const runnableAttempts = row.attempts.filter(
-                            (a) => a.status !== "not_attempted_after_match" && a.status !== "not_applicable"
-                          );
-                          if (runnableAttempts.length === 0) return null;
-                          return (
-                            <div className="mt-4 space-y-2">
+                      return (
+                        <article
+                          key={row.source}
+                          className="rounded-2xl border px-4 py-4"
+                          style={{
+                            background: "var(--background)",
+                            borderColor: "var(--border)",
+                          }}
+                        >
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0 space-y-1">
                               <p className="text-[10px] font-medium uppercase tracking-[0.22em]" style={{ color: "var(--foreground-muted)" }}>
-                                Scan attempts
+                                {row.sourceLabel}
                               </p>
-                              <div className="space-y-2">
-                                {runnableAttempts.map((attempt, index) => (
-                                  <div
-                                    key={`${row.source}-${index}`}
-                                    className="rounded-xl border px-3 py-3"
-                                    style={{
-                                      background: "var(--surface)",
-                                      borderColor: "var(--border)",
-                                    }}
-                                  >
-                                    <p className="text-[11px] font-medium leading-5" style={{ color: "var(--foreground)" }}>
-                                      Check {index + 1}: {attempt.statusLabel}
+                              <p className="text-[13px] font-medium leading-6" style={{ color: "var(--foreground)" }}>
+                                Status: {row.statusLabel}
+                              </p>
+                            </div>
+                            {!isSkippedProvider && (
+                              <div
+                                className="rounded-full border px-3 py-1 text-[11px] font-medium"
+                                style={{
+                                  borderColor: "var(--border)",
+                                  color: row.usedForBrief ? "var(--foreground)" : "var(--foreground-secondary)",
+                                }}
+                              >
+                                {row.usedForBrief ? "Used for this brief" : "Not used for this brief"}
+                              </div>
+                            )}
+                          </div>
+
+                          {isSkippedProvider ? (
+                            <p className="mt-3 text-[11px] leading-5" style={{ color: "var(--foreground-secondary)" }}>
+                              {row.note}
+                            </p>
+                          ) : (
+                            <>
+                              <div className="mt-4 grid grid-cols-1 gap-2 text-[11px] leading-5 sm:grid-cols-2 lg:grid-cols-3">
+                                <p style={{ color: "var(--foreground-secondary)" }}>
+                                  <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                    Jobs found
+                                  </span>{" "}
+                                  {row.jobsCount}
+                                </p>
+                                <p style={{ color: "var(--foreground-secondary)" }}>
+                                  <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                    Used for this brief
+                                  </span>{" "}
+                                  {row.usedForBrief ? "yes" : "no"}
+                                </p>
+                                <p className="sm:col-span-2 lg:col-span-3" style={{ color: "var(--foreground-secondary)" }}>
+                                  <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                    Note
+                                  </span>{" "}
+                                  {row.note}
+                                </p>
+                              </div>
+
+                              {(() => {
+                                const runnableAttempts = row.attempts.filter(
+                                  (a) => a.status !== "not_attempted_after_match" && a.status !== "not_applicable"
+                                );
+                                if (runnableAttempts.length === 0) return null;
+                                return (
+                                  <div className="mt-4 space-y-2">
+                                    <p className="text-[10px] font-medium uppercase tracking-[0.22em]" style={{ color: "var(--foreground-muted)" }}>
+                                      Scan attempts
                                     </p>
-                                    <div className="mt-2 grid grid-cols-1 gap-2 text-[11px] leading-5 sm:grid-cols-2 lg:grid-cols-3">
-                                      {attempt.providerErrorKind ? (
-                                        <p style={{ color: "var(--foreground-secondary)" }}>
-                                          <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                                            Provider issue
-                                          </span>{" "}
-                                          {attempt.providerErrorKind}
-                                        </p>
-                                      ) : null}
-                                      {attempt.httpStatus !== null ? (
-                                        <p style={{ color: "var(--foreground-secondary)" }}>
-                                          <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                                            HTTP status
-                                          </span>{" "}
-                                          {attempt.httpStatus}
-                                        </p>
-                                      ) : null}
-                                      {attempt.attemptCount !== null ? (
-                                        <p style={{ color: "var(--foreground-secondary)" }}>
-                                          <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                                            Checks
-                                          </span>{" "}
-                                          {attempt.attemptCount}
-                                        </p>
-                                      ) : null}
-                                      {attempt.retryCount !== null ? (
-                                        <p style={{ color: "var(--foreground-secondary)" }}>
-                                          <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                                            Retries
-                                          </span>{" "}
-                                          {attempt.retryCount}
-                                        </p>
-                                      ) : null}
-                                      {attempt.durationMs !== null ? (
-                                        <p style={{ color: "var(--foreground-secondary)" }}>
-                                          <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                                            Scan time
-                                          </span>{" "}
-                                          {attempt.durationMs} ms
-                                        </p>
-                                      ) : null}
+                                    <div className="space-y-2">
+                                      {runnableAttempts.map((attempt, index) => (
+                                        <div
+                                          key={`${row.source}-${index}`}
+                                          className="rounded-xl border px-3 py-3"
+                                          style={{
+                                            background: "var(--surface)",
+                                            borderColor: "var(--border)",
+                                          }}
+                                        >
+                                          <p className="text-[11px] font-medium leading-5" style={{ color: "var(--foreground)" }}>
+                                            Check {index + 1}: {attempt.statusLabel}
+                                          </p>
+                                          <div className="mt-2 grid grid-cols-1 gap-2 text-[11px] leading-5 sm:grid-cols-2 lg:grid-cols-3">
+                                            {attempt.providerErrorKind ? (
+                                              <p style={{ color: "var(--foreground-secondary)" }}>
+                                                <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                                  Provider issue
+                                                </span>{" "}
+                                                {attempt.providerErrorKind}
+                                              </p>
+                                            ) : null}
+                                            {attempt.httpStatus !== null ? (
+                                              <p style={{ color: "var(--foreground-secondary)" }}>
+                                                <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                                  HTTP status
+                                                </span>{" "}
+                                                {attempt.httpStatus}
+                                              </p>
+                                            ) : null}
+                                            {attempt.attemptCount !== null ? (
+                                              <p style={{ color: "var(--foreground-secondary)" }}>
+                                                <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                                  Checks
+                                                </span>{" "}
+                                                {attempt.attemptCount}
+                                              </p>
+                                            ) : null}
+                                            {attempt.retryCount !== null ? (
+                                              <p style={{ color: "var(--foreground-secondary)" }}>
+                                                <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                                  Retries
+                                                </span>{" "}
+                                                {attempt.retryCount}
+                                              </p>
+                                            ) : null}
+                                            {attempt.durationMs !== null ? (
+                                              <p style={{ color: "var(--foreground-secondary)" }}>
+                                                <span className="font-medium" style={{ color: "var(--foreground)" }}>
+                                                  Scan time
+                                                </span>{" "}
+                                                {attempt.durationMs} ms
+                                              </p>
+                                            ) : null}
+                                          </div>
+                                        </div>
+                                      ))}
                                     </div>
                                   </div>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </article>
-                    ))}
+                                );
+                              })()}
+                            </>
+                          )}
+                        </article>
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="text-[12px] leading-6" style={{ color: "var(--foreground-muted)" }}>

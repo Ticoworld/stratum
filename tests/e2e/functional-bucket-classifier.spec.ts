@@ -87,6 +87,15 @@ test.describe("6B-2B: mapToFunctionalBucket — functional bucket assignment", (
     expect(mapToFunctionalBucket({ title: "Recruiter", department: "Talent" })).toBe("Operations");
   });
 
+  test("Technical Recruiter | Engineering in People & Talent → Operations", () => {
+    expect(
+      mapToFunctionalBucket({
+        title: "Technical Recruiter | Engineering",
+        department: "People & Talent",
+      })
+    ).toBe("Operations");
+  });
+
   // --- Leadership ---
   test("CEO → Leadership", () => {
     expect(mapToFunctionalBucket({ title: "CEO", department: "Executive" })).toBe("Leadership");
