@@ -55,13 +55,13 @@ function formatActionFailureMessage(action: string, subject: string, detail?: st
 function formatDetailConfidenceLabel(value: string | null | undefined): string {
   switch (value) {
     case "high":
-      return "High confidence";
+      return "Strong support";
     case "medium":
-      return "Medium confidence";
+      return "Moderate support";
     case "low":
-      return "Low confidence";
+      return "Needs review";
     case "none":
-      return "No confidence score";
+      return "No score yet";
     default:
       return "Pending";
   }
@@ -70,9 +70,9 @@ function formatDetailConfidenceLabel(value: string | null | undefined): string {
 function formatDetailBasisLabel(value: WatchlistEntryDetail["monitoring"]["latestStateBasis"]): string {
   switch (value) {
     case "saved_brief":
-      return "Saved brief ready";
+      return "Saved brief";
     case "latest_attempt_only":
-      return "Latest check only";
+      return "Latest check";
     case "none":
     default:
       return "First check pending";
@@ -128,7 +128,6 @@ export function WatchlistEntryDetailPage({
   detail,
   automationStatus,
   canWriteWorkspace,
-  tenantId,
 }: WatchlistEntryDetailPageProps) {
   const router = useRouter();
   const [pendingRefresh, setPendingRefresh] = useState(false);
@@ -149,8 +148,12 @@ export function WatchlistEntryDetailPage({
     isChecking: pendingRefresh,
   });
   const sourceLabel = trackingStatus.sourceLabel;
-  const stateHeadline = trackingStatus.headline;
-  const stateLead = trackingStatus.supportingText ?? "";
+  const stateHeadline =
+    trackingStatus.headline === "Saved brief ready" ? "Saved brief" : trackingStatus.headline;
+  const stateLead =
+    trackingStatus.headline === "Saved brief ready"
+      ? "Latest scan is saved. Open the saved brief for the full summary."
+      : trackingStatus.supportingText ?? "";
   const confidenceLabel = formatDetailConfidenceLabel(detail.monitoring.latestStateWatchlistReadConfidence);
   const basisLabel = formatDetailBasisLabel(detail.monitoring.latestStateBasis);
   const coverageLabel = detail.latestBrief?.sourceCoverageCompleteness
@@ -311,17 +314,17 @@ export function WatchlistEntryDetailPage({
           </section>
 
           <section className="self-start rounded-[22px] border bg-[var(--surface)] p-5 lg:p-6 xl:col-span-4" style={{ borderColor: "var(--border)" }}>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-[11px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
-                  Current state
-                </p>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
+                    Current state
+                  </p>
                 <p className="mt-3 text-[1.5rem] font-semibold tracking-[-0.03em]" style={{ color: "var(--foreground)" }}>
                   {stateHeadline}
                 </p>
                 <p className="mt-2 text-[12px] leading-5" style={{ color: "var(--foreground-secondary)" }}>
-                  {trackingStatus.headline === "Saved brief ready"
-                    ? "Saved brief available."
+                  {stateHeadline === "Saved brief"
+                    ? "Open the saved brief for the full summary."
                     : trackingStatus.headline === "Checking now"
                       ? "Live check active."
                       : trackingStatus.headline === "No supported source found"
@@ -340,7 +343,7 @@ export function WatchlistEntryDetailPage({
             <div className="mt-4 grid gap-3 border-t pt-4 sm:grid-cols-3" style={{ borderColor: "var(--border)" }}>
               <div className="space-y-1">
                 <p className="text-[10px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
-                  Confidence
+                  Read quality
                 </p>
                 <p className="break-words text-[13px] font-semibold" style={{ color: "var(--foreground)" }}>
                   {confidenceLabel}
@@ -348,7 +351,7 @@ export function WatchlistEntryDetailPage({
               </div>
               <div className="space-y-1">
                 <p className="text-[10px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
-                  Proof basis
+                  Evidence basis
                 </p>
                 <p className="break-words text-[13px] font-semibold" style={{ color: "var(--foreground)" }}>
                   {basisLabel}
@@ -428,7 +431,9 @@ export function WatchlistEntryDetailPage({
                 <select
                   id="schedule"
                   value={scheduleCadence}
-                  onChange={(e) => setScheduleCadence(e.target.value as any)}
+                  onChange={(e) =>
+                    setScheduleCadence(e.target.value as WatchlistEntryDetail["entry"]["scheduleCadence"])
+                  }
                   disabled={!canWriteWorkspace}
                   className="h-10 rounded-xl border bg-[var(--surface)] px-3 text-[13px] font-medium transition-all focus:outline-none focus:ring-1 focus:ring-[color:var(--accent)]/35 disabled:cursor-not-allowed disabled:opacity-50"
                   style={{
@@ -467,12 +472,12 @@ export function WatchlistEntryDetailPage({
         <div className="mt-6 space-y-6">
             <section className="rounded-[24px] border bg-[var(--surface)] p-6 lg:p-7" style={{ borderColor: "var(--border)" }}>
               <p className="text-[11px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
-                Latest brief
+                Saved brief
               </p>
               {detail.latestBrief ? (
                 <div className="mt-4 space-y-4">
                   <p className="max-w-[64ch] text-[15px] leading-7" style={{ color: "var(--foreground)" }}>
-                    {detail.latestBrief.watchlistReadSummary || "No saved brief summary yet."}
+                    Open the saved brief for the full summary.
                   </p>
                   <Link
                     href={`/briefs/${detail.latestBrief.id}`}

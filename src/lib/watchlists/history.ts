@@ -23,6 +23,8 @@ export interface WatchlistEntryBriefHistoryItem {
   watchlistReadSummary: string;
   watchlistReadConfidence: ConfidenceLevel;
   proofRoleGrounding: ProofRoleGrounding;
+  sourceInputMode?: string | null;
+  resolutionKind?: string | null;
   jobsObservedCount: number;
   hiringMix: DepartmentBreakdown[];
   /** Chart-consistent functional bucket breakdown from computeFunctionalMix().
@@ -273,6 +275,8 @@ export function toWatchlistEntryBriefHistoryItem(
     watchlistReadSummary: snapshot.watchlistReadSummary,
     watchlistReadConfidence: snapshot.watchlistReadConfidence,
     proofRoleGrounding: snapshot.proofRoleGrounding,
+    sourceInputMode: snapshot.resultSnapshot?.sourceInputMode ?? null,
+    resolutionKind: snapshot.resultSnapshot?.resolutionKind ?? null,
     jobsObservedCount: snapshot.jobsObservedCount ?? 0,
     hiringMix: snapshot.resultSnapshot?.hiringMix ?? [],
     functionalMix: isValidFunctionalMix(snapshot.resultSnapshot?.functionalMix)

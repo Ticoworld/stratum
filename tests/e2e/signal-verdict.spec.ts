@@ -458,6 +458,40 @@ test.describe("watch", () => {
     });
     expect(result.verdict).toBe("watch");
   });
+
+  test("T-WCH10: direct 111-role first scan stays watch even when examples fall back", () => {
+    const result = deriveSignalVerdict({
+      ...strongBase,
+      isDirectSupportedSource: true,
+      jobsObservedCount: 111,
+      changeSignificance: "baseline",
+      changeDirection: "baseline",
+      companyMatchConfidence: "medium",
+      watchlistReadConfidence: "low",
+      proofRoleGrounding: "fallback",
+      evidenceQuality: "weak",
+    });
+
+    expect(result.verdict).toBe("watch");
+    expect(result.reason).toContain("First scan complete");
+  });
+
+  test("T-WCH11: direct 147-role first scan stays watch even with fallback grounding", () => {
+    const result = deriveSignalVerdict({
+      ...strongBase,
+      isDirectSupportedSource: true,
+      jobsObservedCount: 147,
+      changeSignificance: "baseline",
+      changeDirection: "baseline",
+      companyMatchConfidence: "high",
+      watchlistReadConfidence: "low",
+      proofRoleGrounding: "fallback",
+      evidenceQuality: "weak",
+    });
+
+    expect(result.verdict).toBe("watch");
+    expect(result.alertPriority).toBe("digest");
+  });
 });
 
 // ---------------------------------------------------------------------------

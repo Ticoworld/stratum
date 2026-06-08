@@ -25,6 +25,8 @@ export interface BriefVerdictFields {
   companyMatchConfidence: string;
   proofRoleGrounding: string;
   resultState: string;
+  sourceInputMode?: string | null;
+  resolutionKind?: string | null;
 }
 
 /**
@@ -77,5 +79,7 @@ export function deriveVerdictArgs(
     proofRoleGrounding: brief.proofRoleGrounding as WatchlistProofGrounding,
     resultState: brief.resultState as StratumResultState,
     jobsObservedCount: brief.jobsObservedCount,
+    isDirectSupportedSource:
+      brief.sourceInputMode === "supported_source_input" && brief.resolutionKind === "direct",
   };
 }

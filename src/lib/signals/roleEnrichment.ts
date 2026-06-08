@@ -41,6 +41,7 @@ export type AiRoleEnrichmentSeniority =
 export type AiRoleEnrichmentStatus =
   | "complete"
   | "partial"
+  | "timed_out"
   | "failed"
   | "disabled";
 

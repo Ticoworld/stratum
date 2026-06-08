@@ -40,6 +40,7 @@ export interface SignalVerdictArgs {
   companyMatchConfidence: WatchlistConfidenceLevel;
   watchlistReadConfidence: WatchlistConfidenceLevel;
   proofRoleGrounding: WatchlistProofGrounding;
+  isDirectSupportedSource?: boolean;
   resultState: StratumResultState;
   jobsObservedCount: number;
 }
@@ -57,6 +58,7 @@ export function deriveSignalVerdict(args: SignalVerdictArgs): SignalVerdictResul
     companyMatchConfidence,
     watchlistReadConfidence,
     proofRoleGrounding,
+    isDirectSupportedSource = false,
     resultState,
     jobsObservedCount,
   } = args;
@@ -161,6 +163,24 @@ export function deriveSignalVerdict(args: SignalVerdictArgs): SignalVerdictResul
       headline: "No signal",
       reason: "No roles could be grounded to a strategic read.",
       alertPriority: "none",
+    };
+  }
+
+  // Proof-role grounding affects the examples shown to humans, but it should
+  // not down-rank a healthy direct-source first scan with enough jobs to form
+  // a baseline.
+  if (
+    isDirectSupportedSource &&
+    resultState === "supported_provider_matched_with_observed_openings" &&
+    jobsObservedCount >= 10 &&
+    changeSignificance === "baseline" &&
+    (companyMatchConfidence === "high" || companyMatchConfidence === "medium")
+  ) {
+    return {
+      verdict: "watch",
+      headline: "Worth watching",
+      reason: buildWatchReason(args),
+      alertPriority: "digest",
     };
   }
 

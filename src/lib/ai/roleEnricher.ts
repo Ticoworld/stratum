@@ -14,6 +14,14 @@ const BATCH_SIZE = 25;
 const MAX_ROLES = 200;
 const BATCH_TIMEOUT_MS = 25_000;
 
+type GeminiClientLike = NonNullable<ReturnType<typeof getGeminiClient>>;
+
+export interface RoleEnrichmentOptions {
+  client?: GeminiClientLike;
+  totalTimeoutMs?: number;
+  batchTimeoutMs?: number;
+}
+
 export interface RoleEnrichmentResult {
   enrichments: Record<string, AiRoleEnrichment>;
   status: AiRoleEnrichmentStatus;
@@ -152,7 +160,8 @@ Each object: { "roleKey": string, "businessFunction": string, "businessTheme": s
 
 export async function runRoleEnrichment(
   companyName: string,
-  jobs: Job[]
+  jobs: Job[],
+  options?: RoleEnrichmentOptions
 ): Promise<RoleEnrichmentResult> {
   const isEnabled = process.env.STRATUM_ENABLE_ROLE_ENRICHMENT === "1";
   
@@ -174,14 +183,24 @@ export async function runRoleEnrichment(
     },
   });
 
-  if (!isEnabled || jobs.length === 0 || !isGeminiAvailable() || process.env.STRATUM_E2E_DISABLE_GEMINI === "1") {
+  const providedClient = options?.client ?? null;
+  if (!isEnabled || jobs.length === 0) {
     return emptyResult("disabled");
   }
 
-  const client = getGeminiClient();
+  if (!providedClient && (!isGeminiAvailable() || process.env.STRATUM_E2E_DISABLE_GEMINI === "1")) {
+    return emptyResult("disabled");
+  }
+
+  const client = providedClient ?? getGeminiClient();
   if (!client) {
     return emptyResult("disabled");
   }
+
+  const totalTimeoutMs = options?.totalTimeoutMs ?? 25_000;
+  const batchTimeoutMs = options?.batchTimeoutMs ?? BATCH_TIMEOUT_MS;
+  const deadlineAt = Date.now() + totalTimeoutMs;
+  const getRemainingBudgetMs = () => Math.max(0, deadlineAt - Date.now());
 
   const enrichments: Record<string, AiRoleEnrichment> = {};
   
@@ -208,25 +227,34 @@ export async function runRoleEnrichment(
   let batchesFailed = 0;
   let parseFailureCount = 0;
   let rejectedRowCount = 0;
+  let timedOut = false;
 
   async function processBatch(chunk: typeof jobInputs, isRetry = false): Promise<boolean> {
     const expectedKeys = chunk.map(j => j.roleKey);
     const prompt = buildPrompt(companyName, chunk);
 
+    if (getRemainingBudgetMs() <= 0) {
+      timedOut = true;
+      return false;
+    }
+
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), BATCH_TIMEOUT_MS);
-      
-      const response = await client!.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          temperature: 0.1,
-          responseMimeType: "application/json",
-        },
-      });
-      
-      clearTimeout(timeout);
+      const response = await Promise.race([
+        client!.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: prompt,
+          config: {
+            temperature: 0.1,
+            responseMimeType: "application/json",
+          },
+        }),
+        new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(() => {
+            reject(new Error("Role enrichment batch timed out."));
+          }, Math.max(1, Math.min(batchTimeoutMs, getRemainingBudgetMs())));
+        }),
+      ]);
 
       const text = response.text;
       if (!text) {
@@ -259,15 +287,34 @@ export async function runRoleEnrichment(
       return true;
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
+      if (message.toLowerCase().includes("timed out")) {
+        timedOut = true;
+        console.warn(`[Stratum AI-2F] Batch timed out (retry=${isRetry}).`);
+        return false;
+      }
       console.warn(`[Stratum AI-2F] Gemini API call failed (retry=${isRetry}): ${message}`);
       return false;
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
     }
   }
 
   for (const chunk of initialChunks) {
+    if (timedOut || getRemainingBudgetMs() <= 0) {
+      timedOut = true;
+      break;
+    }
+
     const success = await processBatch(chunk);
     
     if (!success) {
+      if (timedOut || getRemainingBudgetMs() <= 0) {
+        timedOut = true;
+        break;
+      }
+
       // AI-2F: Retry once with smaller chunks if the main batch failed
       batchesFailed++;
       console.log(`[Stratum AI-2F] Batch failed. Attempting retry with sub-chunks...`);
@@ -279,6 +326,10 @@ export async function runRoleEnrichment(
       }
 
       for (const subChunk of subChunks) {
+        if (timedOut || getRemainingBudgetMs() <= 0) {
+          timedOut = true;
+          break;
+        }
         const subSuccess = await processBatch(subChunk, true);
         if (!subSuccess) {
           // We don't increment batchesFailed again for sub-chunks to avoid double counting
@@ -291,8 +342,10 @@ export async function runRoleEnrichment(
 
   const enrichedCount = Object.keys(enrichments).length;
   let status: AiRoleEnrichmentStatus = "complete";
-  
-  if (batchesFailed === initialChunks.length && enrichedCount === 0) {
+
+  if (timedOut) {
+    status = "timed_out";
+  } else if (batchesFailed === initialChunks.length && enrichedCount === 0) {
     status = "failed";
   } else if (batchesFailed > 0 || truncated || enrichedCount < jobInputs.length) {
     status = "partial";

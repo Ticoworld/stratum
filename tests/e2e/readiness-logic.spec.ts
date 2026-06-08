@@ -71,6 +71,27 @@ test.describe("Public Readiness Gate Logic", () => {
     expect(result.publicUse).toBe("strong_baseline");
   });
 
+  test("4b. Large direct-source baseline with fallback examples is still public-ready", () => {
+    const result = deriveBriefPublicReadiness({
+      ...defaultArgs,
+      jobsCount: 111,
+      watchlistReadConfidence: "medium",
+      proofRoleGrounding: "fallback",
+      hasComparison: false,
+      hasMaterialChange: false,
+      hasSignificantChange: false,
+      significanceDrivers: [],
+      comparisonStrength: "standard",
+      changeDirection: "baseline",
+    });
+
+    expect(result.evidenceQuality).toBe("moderate");
+    expect(result.currentSignal).not.toBe("weak");
+    expect(result.blockers).toHaveLength(0);
+    expect(result.publicUse).not.toBe("internal_only");
+    expect(result.publicUse).toBe("cautious_baseline");
+  });
+
   test("5. Changed brief with meaningful full-board delta is strong update", () => {
     const result = deriveBriefPublicReadiness(defaultArgs);
     expect(result.currentSignal).toBe("strong");

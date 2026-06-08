@@ -296,8 +296,16 @@ test("watchlists hand off cleanly to saved briefs and back again", async ({ page
   await expect(page).toHaveURL(new RegExp(`/watchlists/${watchlistId}/entries/[^/]+$`));
   await expect(page.getByText("Current state", { exact: true })).toBeVisible();
   await expect(page.getByText("Source and trust", { exact: true })).toBeVisible();
-  await expect(page.getByText("Latest brief", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open saved brief" }).first()).toBeVisible();
+  await expect(
+    page.locator("header").getByText("Open the saved brief for the full summary.", { exact: true })
+  ).toBeVisible();
+  await expect(page.getByText("Read quality", { exact: true })).toBeVisible();
+  await expect(page.getByText("Evidence basis", { exact: true })).toBeVisible();
+  await expect(page.getByText("Saved brief ready")).toHaveCount(0);
+  await expect(page.getByText("Low confidence")).toHaveCount(0);
+  await expect(page.getByText("Proof basis")).toHaveCount(0);
+  await expect(page.getByText("weakly grounded")).toHaveCount(0);
   await expect(page.getByText("Recent activity", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Update frequency")).toBeVisible();
 
@@ -308,7 +316,7 @@ test("watchlists hand off cleanly to saved briefs and back again", async ({ page
   await expect(page.getByRole("heading", { name: "Why this matters" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Example openings from the observed board" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Hiring mix and geography" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "What changed" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What changed" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Example jobs" })).toHaveCount(1);
   await expect(page.getByRole("heading", { name: /Source and trust/i })).toBeVisible();
 

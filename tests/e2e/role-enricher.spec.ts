@@ -227,14 +227,54 @@ test.describe("AI-1B: Role Enrichment", () => {
       const jobs = Array.from({ length: 200 }).map((_, i) => makeJob({ title: i.toString() }));
       const result = await runRoleEnrichment("TestCo", jobs);
       expect(result.batchesAttempted).toBe(8); // 200 / 25
-      expect(["failed", "complete", "partial"]).toContain(result.status);
+      expect(["failed", "complete", "partial", "timed_out"]).toContain(result.status);
     });
 
     test("201 jobs -> truncates to 200, 8 batches, partial status", async () => {
       const jobs = Array.from({ length: 201 }).map((_, i) => makeJob({ title: i.toString() }));
       const result = await runRoleEnrichment("TestCo", jobs);
       expect(result.batchesAttempted).toBe(8);
-      expect(["failed", "partial"]).toContain(result.status);
+      expect(["failed", "partial", "timed_out"]).toContain(result.status);
+    });
+
+    test("batch timeout returns timed_out instead of blocking", async () => {
+      const slowClient = {
+        models: {
+          generateContent: async () =>
+            new Promise<{ text: string }>((resolve) => {
+              setTimeout(() => {
+                resolve({
+                  text: JSON.stringify([
+                    {
+                      roleKey: "key1",
+                      businessFunction: "engineering",
+                      businessTheme: "core_platform",
+                      seniority: "senior",
+                      strategicTags: ["backend"],
+                      evidenceReason: "Fallback response.",
+                      confidence: "high",
+                    },
+                  ]),
+                });
+              }, 100);
+            }),
+        },
+      };
+
+      const result = await runRoleEnrichment(
+        "TestCo",
+        [makeJob({ title: "Engineer" })],
+        {
+          client: slowClient as never,
+          totalTimeoutMs: 30,
+          batchTimeoutMs: 10,
+        }
+      );
+
+      expect(result.status).toBe("timed_out");
+      expect(result.enrichedCount).toBe(0);
+      expect(result.batchesAttempted).toBe(1);
+      expect(result.batchesFailed).toBe(0);
     });
   });
 

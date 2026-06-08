@@ -321,6 +321,42 @@ test.describe("deriveVerdictArgs correctness", () => {
     expect(verdict.alertPriority).toBe("digest");
   });
 
+  test("T-VA1b: direct 111-role first scan stays watch even when proof roles fall back", () => {
+    const args = deriveVerdictArgs(
+      {
+        ...strongBrief,
+        jobsObservedCount: 111,
+        watchlistReadConfidence: "low",
+        proofRoleGrounding: "fallback",
+        sourceInputMode: "supported_source_input",
+        resolutionKind: "direct",
+      },
+      null
+    );
+
+    expect(args.isDirectSupportedSource).toBe(true);
+    const verdict = deriveSignalVerdict(args);
+    expect(verdict.verdict).toBe("watch");
+    expect(verdict.alertPriority).toBe("digest");
+  });
+
+  test("T-VA1c: direct 147-role first scan stays watch even with fallback grounding", () => {
+    const args = deriveVerdictArgs(
+      {
+        ...strongBrief,
+        jobsObservedCount: 147,
+        watchlistReadConfidence: "low",
+        proofRoleGrounding: "fallback",
+        sourceInputMode: "supported_source_input",
+        resolutionKind: "direct",
+      },
+      null
+    );
+
+    expect(args.isDirectSupportedSource).toBe(true);
+    expect(deriveSignalVerdict(args).verdict).toBe("watch");
+  });
+
   test("T-VA2: expansion diff → changeSignificance=meaningful_change, verdict=act", () => {
     const args = deriveVerdictArgs(strongBrief, {
       comparisonAvailable: true,
