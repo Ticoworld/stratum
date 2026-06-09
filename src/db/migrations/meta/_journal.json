@@ -71,6 +71,13 @@
       "when": 1748736000000,
       "tag": "0009_signal_verdict_persistence",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1780967881275,
+      "tag": "0010_lush_mikhail_rasputin",
+      "breakpoints": true
     }
   ]
 }

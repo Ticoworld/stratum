@@ -411,7 +411,7 @@ export function buildWatchlistActionCopy(
       return {
         mainLine:
           hasLeadLabel && leadLabel
-            ? `${formatHeadlineForLead(leadLabel)} first scan${formatObservedJobsSuffix(args.latestObservedJobsCount)}.`
+            ? `${leadLabel} first scan${formatObservedJobsSuffix(args.latestObservedJobsCount)}.`
             : `First scan${formatObservedJobsSuffix(args.latestObservedJobsCount)}.`,
         nextStep: "Wait for the next scan to see what changed.",
       };

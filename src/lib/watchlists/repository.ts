@@ -1,10 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { stratumBriefs } from "@/db/schema/stratumBriefs";
-import { stratumNotificationCandidates } from "@/db/schema/stratumNotificationCandidates";
 import { listStratumBriefsByWatchlistEntryId } from "@/lib/briefs/repository";
-import type { DepartmentBreakdown } from "@/lib/signals/watchlistTaxonomy";
 import {
   buildWatchlistEntryDiff,
   toWatchlistEntryBriefHistoryItem,
@@ -237,32 +235,6 @@ function mapEntryRow(row: typeof stratumWatchlistEntries.$inferSelect): Watchlis
   };
 }
 
-function deriveTopHiringBucket(snapshot: {
-  functionalMix?: [string, number][] | null;
-  hiringMix?: DepartmentBreakdown[] | null;
-} | null | undefined): { bucket: string | null; count: number | null } {
-  const functionalMix = snapshot?.functionalMix;
-  if (Array.isArray(functionalMix) && functionalMix.length > 0) {
-    const [bucket, count] = functionalMix[0] ?? [];
-    return {
-      bucket: typeof bucket === "string" && bucket.trim() ? bucket : null,
-      count: typeof count === "number" && Number.isFinite(count) ? count : null,
-    };
-  }
-
-  const hiringMix = snapshot?.hiringMix;
-  if (Array.isArray(hiringMix) && hiringMix.length > 0) {
-    const sorted = [...hiringMix].sort((a, b) => b.count - a.count);
-    const top = sorted[0];
-    return {
-      bucket: top?.department ?? null,
-      count: typeof top?.count === "number" && Number.isFinite(top.count) ? top.count : null,
-    };
-  }
-
-  return { bucket: null, count: null };
-}
-
 interface BriefComparisonSummary {
   signalVerdict: string | null;
   observedJobsCount: number | null;
@@ -270,22 +242,155 @@ interface BriefComparisonSummary {
   topHiringBucketCount: number | null;
 }
 
-function summarizeBriefRow(brief: {
+interface BriefComparisonSummaryRow {
+  watchlistEntryId: string;
   signalVerdict: string | null;
-  jobsObservedCount: number;
-  resultSnapshot: {
-    functionalMix?: [string, number][] | null;
-    hiringMix?: DepartmentBreakdown[] | null;
-  };
-}): BriefComparisonSummary {
-  const topHiringBucket = deriveTopHiringBucket(brief.resultSnapshot);
+  jobsObservedCount: number | null;
+  topHiringBucket: string | null;
+  topHiringBucketCount: number | null;
+}
 
-  return {
-    signalVerdict: brief.signalVerdict ?? null,
-    observedJobsCount: brief.jobsObservedCount ?? null,
-    topHiringBucket: topHiringBucket.bucket,
-    topHiringBucketCount: topHiringBucket.count,
-  };
+interface UnreadAlertPriorityRow {
+  watchlistEntryId: string;
+  alertPriority: string | null;
+}
+
+function buildUuidListSql(values: string[]) {
+  return sql.join(values.map((value) => sql`${value}::uuid`), sql`, `);
+}
+
+async function listBriefComparisonSummaries(
+  entryIds: string[]
+): Promise<Map<string, BriefComparisonSummary[]>> {
+  const comparisonMap = new Map<string, BriefComparisonSummary[]>();
+  if (entryIds.length === 0) return comparisonMap;
+
+  // Keep the top-bucket derivation inside Postgres so watchlist rows only
+  // fetch the small comparison fields they render, not full brief snapshots.
+  const briefRows = (await db.execute(sql`
+    with ranked_briefs as (
+      select
+        id as brief_id,
+        watchlist_entry_id,
+        signal_verdict,
+        jobs_observed_count,
+        row_number() over (
+          partition by watchlist_entry_id
+          order by created_at desc, updated_at desc, id desc
+        ) as brief_rank
+      from stratum_briefs
+      where watchlist_entry_id in (${buildUuidListSql(entryIds)})
+    ),
+    latest_briefs as (
+      select
+        ranked_briefs.watchlist_entry_id,
+        ranked_briefs.signal_verdict,
+        ranked_briefs.jobs_observed_count,
+        ranked_briefs.brief_rank,
+        stratum_briefs.result_snapshot,
+        case
+          when jsonb_typeof(stratum_briefs.result_snapshot -> 'functionalMix') = 'array'
+          then jsonb_array_length(stratum_briefs.result_snapshot -> 'functionalMix')
+          else 0
+        end as functional_mix_length
+      from ranked_briefs
+      inner join stratum_briefs
+        on stratum_briefs.id = ranked_briefs.brief_id
+      where ranked_briefs.brief_rank <= 2
+    )
+    select
+      latest_briefs.watchlist_entry_id as "watchlistEntryId",
+      latest_briefs.signal_verdict as "signalVerdict",
+      latest_briefs.jobs_observed_count as "jobsObservedCount",
+      case
+        when latest_briefs.functional_mix_length > 0
+        then nullif(latest_briefs.result_snapshot #>> '{functionalMix,0,0}', '')
+        else top_hiring_mix.department
+      end as "topHiringBucket",
+      case
+        when latest_briefs.functional_mix_length > 0 then (
+          case
+            when jsonb_typeof(latest_briefs.result_snapshot #> '{functionalMix,0,1}') = 'number'
+            then (latest_briefs.result_snapshot #>> '{functionalMix,0,1}')::integer
+            else null
+          end
+        )
+        else top_hiring_mix.count
+      end as "topHiringBucketCount"
+    from latest_briefs
+    left join lateral (
+      select
+        mix.elem ->> 'department' as department,
+        case
+          when jsonb_typeof(mix.elem -> 'count') = 'number'
+          then (mix.elem ->> 'count')::integer
+          else null
+        end as count
+      from jsonb_array_elements(
+        case
+          when jsonb_typeof(latest_briefs.result_snapshot -> 'hiringMix') = 'array'
+          then latest_briefs.result_snapshot -> 'hiringMix'
+          else '[]'::jsonb
+        end
+      ) with ordinality as mix(elem, ord)
+      order by
+        case
+          when jsonb_typeof(mix.elem -> 'count') = 'number'
+          then (mix.elem ->> 'count')::integer
+          else null
+        end desc nulls last,
+        mix.ord asc
+      limit 1
+    ) as top_hiring_mix on true
+    order by latest_briefs.watchlist_entry_id asc, latest_briefs.brief_rank asc
+  `)) as unknown as BriefComparisonSummaryRow[];
+
+  for (const row of briefRows) {
+    const current = comparisonMap.get(row.watchlistEntryId) ?? [];
+    current.push({
+      signalVerdict: row.signalVerdict ?? null,
+      observedJobsCount:
+        typeof row.jobsObservedCount === "number" ? row.jobsObservedCount : null,
+      topHiringBucket: row.topHiringBucket ?? null,
+      topHiringBucketCount:
+        typeof row.topHiringBucketCount === "number" ? row.topHiringBucketCount : null,
+    });
+    comparisonMap.set(row.watchlistEntryId, current);
+  }
+
+  return comparisonMap;
+}
+
+async function listUnreadAlertPriorities(entryIds: string[]): Promise<Map<string, string>> {
+  const priorityMap = new Map<string, string>();
+  if (entryIds.length === 0) return priorityMap;
+
+  const unreadPriorityRows = (await db.execute(sql`
+    select distinct on (watchlist_entry_id)
+      watchlist_entry_id as "watchlistEntryId",
+      alert_priority as "alertPriority"
+    from stratum_notification_candidates
+    where watchlist_entry_id in (${buildUuidListSql(entryIds)})
+      and status = 'unread'
+    order by
+      watchlist_entry_id asc,
+      case alert_priority
+        when 'immediate' then 0
+        when 'source_issue' then 1
+        when 'digest' then 2
+        else 3
+      end asc,
+      created_at desc,
+      id desc
+  `)) as unknown as UnreadAlertPriorityRow[];
+
+  for (const row of unreadPriorityRows) {
+    if (row.alertPriority) {
+      priorityMap.set(row.watchlistEntryId, row.alertPriority);
+    }
+  }
+
+  return priorityMap;
 }
 
 export async function getWatchlistEntryOverviewById(
@@ -452,6 +557,32 @@ export async function ensureDefaultWatchlist(tenantId: string): Promise<Watchlis
   return mapWatchlistRow(watchlist, []);
 }
 
+async function listTenantWatchlistsEnsuringDefault(
+  tenantId: string
+): Promise<Array<typeof stratumWatchlists.$inferSelect>> {
+  return (await db.execute(sql`
+    with ensured_default as (
+      insert into stratum_watchlists (id, tenant_id, name, slug)
+      values (
+        ${randomUUID()}::uuid,
+        ${tenantId}::uuid,
+        ${DEFAULT_WATCHLIST_NAME},
+        ${DEFAULT_WATCHLIST_SLUG}
+      )
+      on conflict (tenant_id, slug) do nothing
+    )
+    select
+      id,
+      tenant_id as "tenantId",
+      name,
+      slug,
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+    from stratum_watchlists
+    where tenant_id = ${tenantId}::uuid
+  `)) as unknown as Array<typeof stratumWatchlists.$inferSelect>;
+}
+
 export async function resolveWatchlistByIdOrDefault(
   args: ResolveWatchlistArgs
 ): Promise<WatchlistOverview | null> {
@@ -490,86 +621,25 @@ export async function createWatchlist(args: {
 }
 
 /** Inline priority ranker — avoids importing notifications.ts in repository. */
-function notifPriorityRank(value: string | null | undefined): number {
-  switch (value) {
-    case "immediate":    return 0;
-    case "source_issue": return 1;
-    case "digest":       return 2;
-    default:             return 3;
-  }
-}
-
 export async function listWatchlistsWithEntries(tenantId: string): Promise<WatchlistOverview[]> {
-  await ensureDefaultWatchlist(tenantId);
-
-  const watchlists = await db
-    .select()
-    .from(stratumWatchlists)
-    .where(eq(stratumWatchlists.tenantId, tenantId));
-  const entries = await db
+  const entriesPromise = db
     .select({
       entry: stratumWatchlistEntries,
     })
     .from(stratumWatchlistEntries)
     .innerJoin(stratumWatchlists, eq(stratumWatchlistEntries.watchlistId, stratumWatchlists.id))
     .where(eq(stratumWatchlists.tenantId, tenantId))
-    .orderBy(desc(stratumWatchlistEntries.updatedAt));
+    .orderBy(desc(stratumWatchlistEntries.updatedAt))
+    .execute();
+  const watchlistsPromise = listTenantWatchlistsEnsuringDefault(tenantId);
 
-  // Batch-fetch the latest two briefs per entry so the row can compare the
-  // current scan to the previous scan without any per-row lookups.
-  const briefComparisonMap = new Map<string, BriefComparisonSummary[]>();
+  const [watchlists, entries] = await Promise.all([watchlistsPromise, entriesPromise]);
+
   const entryIds = entries.map((r) => r.entry.id);
-  if (entryIds.length > 0) {
-    const briefRows = await db
-      .select({
-        watchlistEntryId: stratumBriefs.watchlistEntryId,
-        signalVerdict: stratumBriefs.signalVerdict,
-        jobsObservedCount: stratumBriefs.jobsObservedCount,
-        resultSnapshot: stratumBriefs.resultSnapshot,
-      })
-      .from(stratumBriefs)
-      .where(inArray(stratumBriefs.watchlistEntryId, entryIds))
-      .orderBy(
-        asc(stratumBriefs.watchlistEntryId),
-        desc(stratumBriefs.createdAt),
-        desc(stratumBriefs.updatedAt),
-        desc(stratumBriefs.id)
-      );
-
-    for (const row of briefRows) {
-      if (!row.watchlistEntryId) continue;
-
-      const current = briefComparisonMap.get(row.watchlistEntryId) ?? [];
-      if (current.length >= 2) continue;
-
-      current.push(summarizeBriefRow(row));
-      briefComparisonMap.set(row.watchlistEntryId, current);
-    }
-  }
-
-  // Phase 6E-4: batch-fetch highest-priority unread notification per entry.
-  // Entry IDs come from a tenant-scoped query above, so no extra join is needed.
-  const unreadAlertPriorityMap = new Map<string, string>();
-  if (entryIds.length > 0) {
-    const notifRows = await db
-      .select({
-        watchlistEntryId: stratumNotificationCandidates.watchlistEntryId,
-        alertPriority: stratumNotificationCandidates.alertPriority,
-      })
-      .from(stratumNotificationCandidates)
-      .where(
-        and(
-          inArray(stratumNotificationCandidates.watchlistEntryId, entryIds),
-          eq(stratumNotificationCandidates.status, "unread")
-        )
-      );
-    for (const row of notifRows) {
-      const existing = unreadAlertPriorityMap.get(row.watchlistEntryId);
-      if (!existing || notifPriorityRank(row.alertPriority) < notifPriorityRank(existing)) {
-        unreadAlertPriorityMap.set(row.watchlistEntryId, row.alertPriority);
-      }
-    }
-  }
+  const [briefComparisonMap, unreadAlertPriorityMap] = await Promise.all([
+    listBriefComparisonSummaries(entryIds),
+    listUnreadAlertPriorities(entryIds),
+  ]);
 
   const entriesByWatchlist = new Map<string, WatchlistEntryOverview[]>();
   for (const row of entries) {
