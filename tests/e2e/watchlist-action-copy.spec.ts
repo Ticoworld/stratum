@@ -102,6 +102,50 @@ test.describe("buildWatchlistActionCopy", () => {
     expect(copy.nextStep).toBe("Use this for account research or outreach timing.");
   });
 
+  test("ACT later scan uses top bucket growth when available", () => {
+    const copy = buildWatchlistActionCopy({
+      verdict: "act",
+      latestBriefId: "brief-1",
+      latestObservedJobsCount: 68,
+      previousObservedJobsCount: 50,
+      latestTopHiringBucket: "Sales",
+      latestTopHiringBucketCount: 68,
+      previousTopHiringBucket: "Sales",
+      previousTopHiringBucketCount: 50,
+    });
+
+    expect(copy.mainLine).toBe("Sales hiring grew from 50 to 68 jobs.");
+    expect(copy.nextStep).toBe("Use this for account timing.");
+  });
+
+  test("ACT later scan falls back to total growth when the bucket is unknown", () => {
+    const copy = buildWatchlistActionCopy({
+      verdict: "act",
+      latestBriefId: "brief-1",
+      latestObservedJobsCount: 140,
+      previousObservedJobsCount: 111,
+    });
+
+    expect(copy.mainLine).toBe("Hiring grew from 111 to 140 jobs.");
+    expect(copy.nextStep).toBe("Use this for account research.");
+  });
+
+  test("ACT later scan uses top bucket shift when the lead changes", () => {
+    const copy = buildWatchlistActionCopy({
+      verdict: "act",
+      latestBriefId: "brief-1",
+      latestObservedJobsCount: 72,
+      previousObservedJobsCount: 68,
+      latestTopHiringBucket: "Sales",
+      latestTopHiringBucketCount: 34,
+      previousTopHiringBucket: "Engineering",
+      previousTopHiringBucketCount: 36,
+    });
+
+    expect(copy.mainLine).toBe("Hiring shifted from Engineering to Sales.");
+    expect(copy.nextStep).toBe("Check the brief before acting.");
+  });
+
   test("WATCH first scan returns wait-for-next-scan language", () => {
     const copy = buildWatchlistActionCopy({
       verdict: "watch",
@@ -149,6 +193,78 @@ test.describe("buildWatchlistActionCopy", () => {
     expect(copy.nextStep).toBe("Keep tracking.");
   });
 
+  test("WATCH later scan with no previous count keeps tracking", () => {
+    const copy = buildWatchlistActionCopy({
+      verdict: "watch",
+      latestBriefId: "brief-1",
+      latestUnreadAlertPriority: "digest",
+      latestWatchlistReadLabel: "Broader product and GTM buildout",
+    });
+
+    expect(copy.mainLine).toBe("Still watching. No major change yet.");
+    expect(copy.nextStep).toBe("Keep tracking.");
+  });
+
+  test("WATCH later scan with no major change stays simple", () => {
+    const copy = buildWatchlistActionCopy({
+      verdict: "watch",
+      latestBriefId: "brief-1",
+      latestObservedJobsCount: 111,
+      previousObservedJobsCount: 111,
+      latestTopHiringBucket: "Sales",
+      latestTopHiringBucketCount: 50,
+      previousTopHiringBucket: "Sales",
+      previousTopHiringBucketCount: 50,
+    });
+
+    expect(copy.mainLine).toBe("Sales still leads. No major change since last scan.");
+    expect(copy.nextStep).toBe("Keep watching.");
+  });
+
+  test("WATCH later scan with a small shift still names the stable lead", () => {
+    const copy = buildWatchlistActionCopy({
+      verdict: "watch",
+      latestBriefId: "brief-1",
+      latestObservedJobsCount: 112,
+      previousObservedJobsCount: 111,
+      latestTopHiringBucket: "Sales",
+      latestTopHiringBucketCount: 49,
+      previousTopHiringBucket: "Sales",
+      previousTopHiringBucketCount: 50,
+    });
+
+    expect(copy.mainLine).toBe("Sales still leads. No major change since last scan.");
+    expect(copy.nextStep).toBe("Keep watching.");
+  });
+
+  test("WATCH later scan with a smaller change keeps watching", () => {
+    const copy = buildWatchlistActionCopy({
+      verdict: "watch",
+      latestBriefId: "brief-1",
+      latestObservedJobsCount: 68,
+      previousObservedJobsCount: 66,
+      latestTopHiringBucket: "Engineering",
+      latestTopHiringBucketCount: 18,
+      previousTopHiringBucket: "Engineering",
+      previousTopHiringBucketCount: 16,
+    });
+
+    expect(copy.mainLine).toBe("Engineering hiring changed slightly.");
+    expect(copy.nextStep).toBe("Keep watching.");
+  });
+
+  test("WATCH later scan with a total drop keeps watching", () => {
+    const copy = buildWatchlistActionCopy({
+      verdict: "watch",
+      latestBriefId: "brief-1",
+      latestObservedJobsCount: 90,
+      previousObservedJobsCount: 111,
+    });
+
+    expect(copy.mainLine).toBe("Hiring dropped from 111 to 90 jobs.");
+    expect(copy.nextStep).toBe("Keep watching unless the drop matters to your workflow.");
+  });
+
   test("VERIFY SOURCE returns check-source language", () => {
     const copy = buildWatchlistActionCopy({
       verdict: "verify_source",
@@ -181,7 +297,7 @@ test.describe("buildWatchlistActionCopy", () => {
       latestWatchlistReadLabel: "Tentative hiring signal",
     });
 
-    expect(copy.mainLine).toBe("Not enough signal yet.");
+    expect(copy.mainLine).toBe("Not enough hiring data yet.");
     expect(copy.nextStep).toBe("Keep it on the watchlist.");
   });
 
@@ -245,6 +361,10 @@ test.describe("buildWatchlistActionCopy", () => {
       "evidence quality",
       "public use",
       "caveats",
+      "material movement",
+      "proof basis",
+      "baseline still forming",
+      "diff",
     ]) {
       expect(text).not.toContain(banned);
     }
@@ -309,7 +429,9 @@ test.describe("Watchlist signal inbox action copy", () => {
 
     const waitRow = page.getByTestId(`watchlist-row-${seededFixture.rows.wait.entryId}`);
     await expect(waitRow.getByText("WAIT", { exact: true })).toBeVisible();
-    await expect(waitRow.getByTestId("watchlist-row-main-line")).toHaveText("Not enough signal yet.");
+    await expect(waitRow.getByTestId("watchlist-row-main-line")).toHaveText(
+      "Not enough hiring data yet."
+    );
     await expect(waitRow.getByTestId("watchlist-row-next-step")).toHaveText("Keep it on the watchlist.");
 
     const ignoreRow = page.getByTestId(`watchlist-row-${seededFixture.rows.ignore.entryId}`);

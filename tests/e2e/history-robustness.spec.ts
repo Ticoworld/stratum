@@ -2,8 +2,42 @@ import { test, expect } from "@playwright/test";
 import { buildWatchlistEntryDiff, toWatchlistEntryBriefHistoryItem } from "../../src/lib/watchlists/history";
 import { buildWhatChangedDisplay } from "../../src/lib/briefs/whatChangedDisplay";
 
+type BriefHistoryFixture = {
+  id: string;
+  queriedCompanyName: string;
+  matchedCompanyName: string;
+  resultState: string;
+  companyMatchConfidence: string;
+  watchlistReadLabel: string;
+  watchlistReadConfidence: string;
+  jobsObservedCount: number;
+  proofRolesSnapshot?: Array<{
+    title?: string;
+    source?: string;
+    location?: string;
+    department?: string;
+  }>;
+  createdAt: string;
+  resultSnapshot?: {
+    hiringMix?: Array<{ department: string; count: number }>;
+    jobs?: Array<{
+      title?: string;
+      source?: string;
+      location?: string;
+      department?: string;
+    }>;
+  };
+  [key: string]: unknown;
+};
+
+function toBriefHistoryItem(snapshot: BriefHistoryFixture) {
+  return toWatchlistEntryBriefHistoryItem(
+    snapshot as unknown as Parameters<typeof toWatchlistEntryBriefHistoryItem>[0]
+  );
+}
+
 test.describe("History Robustness Tests", () => {
-  const baseSnapshot: any = {
+  const baseSnapshot: BriefHistoryFixture = {
     id: "brief-latest",
     queriedCompanyName: "Test",
     matchedCompanyName: "Test",
@@ -26,8 +60,8 @@ test.describe("History Robustness Tests", () => {
     const legacySnapshot = { ...baseSnapshot };
     delete legacySnapshot.resultSnapshot;
 
-    const latest = toWatchlistEntryBriefHistoryItem(legacySnapshot);
-    const previous = toWatchlistEntryBriefHistoryItem(legacySnapshot);
+    const latest = toBriefHistoryItem(legacySnapshot);
+    const previous = toBriefHistoryItem(legacySnapshot);
 
     const diff = buildWatchlistEntryDiff(latest, previous);
     expect(diff.comparisonStrength).toBe("weak");
@@ -37,10 +71,10 @@ test.describe("History Robustness Tests", () => {
   test("Should not crash when hiringMix is missing inside resultSnapshot", () => {
     const legacySnapshot = { 
       ...baseSnapshot,
-      resultSnapshot: { jobs: baseSnapshot.resultSnapshot.jobs }
+      resultSnapshot: { jobs: baseSnapshot.resultSnapshot?.jobs }
     };
 
-    const latest = toWatchlistEntryBriefHistoryItem(legacySnapshot);
+    const latest = toBriefHistoryItem(legacySnapshot);
     const diff = buildWatchlistEntryDiff(latest, latest);
     expect(diff.comparisonAvailable).toBe(true);
   });
@@ -49,7 +83,7 @@ test.describe("History Robustness Tests", () => {
     const legacySnapshot = { ...baseSnapshot };
     delete legacySnapshot.proofRolesSnapshot;
 
-    const latest = toWatchlistEntryBriefHistoryItem(legacySnapshot);
+    const latest = toBriefHistoryItem(legacySnapshot);
     const diff = buildWatchlistEntryDiff(latest, latest);
     expect(diff.comparisonAvailable).toBe(true);
   });
@@ -64,14 +98,14 @@ test.describe("History Robustness Tests", () => {
       }
     };
 
-    const latest = toWatchlistEntryBriefHistoryItem(badJobSnapshot);
+    const latest = toBriefHistoryItem(badJobSnapshot);
     const diff = buildWatchlistEntryDiff(latest, latest);
     expect(diff.comparisonAvailable).toBe(true);
     expect(diff.hasMaterialChange).toBe(false);
   });
 
   test("Should handle baseline behavior (only one brief)", () => {
-    const latest = toWatchlistEntryBriefHistoryItem(baseSnapshot);
+    const latest = toBriefHistoryItem(baseSnapshot);
     const diff = buildWatchlistEntryDiff(latest, null);
     
     expect(diff.comparisonAvailable).toBe(false);
@@ -84,8 +118,8 @@ test.describe("History Robustness Tests", () => {
     const v2 = { ...baseSnapshot, jobsObservedCount: 10 };
 
     const diff = buildWatchlistEntryDiff(
-      toWatchlistEntryBriefHistoryItem(v2),
-      toWatchlistEntryBriefHistoryItem(v1)
+      toBriefHistoryItem(v2),
+      toBriefHistoryItem(v1)
     );
 
     expect(diff.hasMaterialChange).toBe(true);
@@ -100,7 +134,7 @@ test.describe("History Robustness Tests", () => {
 // ---------------------------------------------------------------------------
 
 test.describe("6B-3A: What Changed display logic", () => {
-  const standardSummary = "Role evidence shrank from 494 observed openings to 477. Observed roles changed: removed Account Executive, AI Sales.";
+  const standardSummary = "Small change since last scan. Jobs moved from 494 to 477. Engineering still leads, with Sales second. A few roles changed, but the overall hiring pattern stayed the same.";
 
   // A. Latest brief: standard display, no heading
   test("A. Latest brief: standard display with no forward-looking heading", () => {

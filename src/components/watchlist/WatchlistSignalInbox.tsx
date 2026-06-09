@@ -159,6 +159,11 @@ function EntryRow({
     latestWatchlistReadLabel: entry.latestWatchlistReadLabel,
     latestBriefId: entry.latestBriefId,
     latestObservedJobsCount: entry.latestObservedJobsCount,
+    previousObservedJobsCount: entry.previousObservedJobsCount,
+    latestTopHiringBucket: entry.latestTopHiringBucket,
+    latestTopHiringBucketCount: entry.latestTopHiringBucketCount,
+    previousTopHiringBucket: entry.previousTopHiringBucket,
+    previousTopHiringBucketCount: entry.previousTopHiringBucketCount,
   });
 
   const freshnessLabel = formatWatchlistDateTime(

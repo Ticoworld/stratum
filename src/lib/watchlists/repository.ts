@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { stratumBriefs } from "@/db/schema/stratumBriefs";
 import { stratumNotificationCandidates } from "@/db/schema/stratumNotificationCandidates";
 import { listStratumBriefsByWatchlistEntryId } from "@/lib/briefs/repository";
+import type { DepartmentBreakdown } from "@/lib/signals/watchlistTaxonomy";
 import {
   buildWatchlistEntryDiff,
   toWatchlistEntryBriefHistoryItem,
@@ -72,6 +73,15 @@ export interface WatchlistEntryOverview {
   /** Latest saved brief's observed job count, fetched alongside brief summary
    *  fields for watchlist rows. */
   latestObservedJobsCount?: number | null;
+  /** Previous saved brief's observed job count, fetched in the same batch as
+   *  the latest saved brief summary fields for row comparisons. */
+  previousObservedJobsCount?: number | null;
+  /** Latest saved brief's top hiring bucket, derived from the chart-friendly
+   *  functional mix when available, falling back to the raw hiring mix. */
+  latestTopHiringBucket?: string | null;
+  latestTopHiringBucketCount?: number | null;
+  previousTopHiringBucket?: string | null;
+  previousTopHiringBucketCount?: number | null;
   /** Phase 6E-4: highest-priority (lowest rank) unread alert_priority across
    *  all unread notification candidates for this entry. Absent when no unread
    *  notifications exist. */
@@ -224,6 +234,57 @@ function mapEntryRow(row: typeof stratumWatchlistEntries.$inferSelect): Watchlis
     latestBriefUpdatedAt: toIsoString(row.latestBriefUpdatedAt),
     createdAt: toIsoString(row.createdAt) ?? new Date().toISOString(),
     updatedAt: toIsoString(row.updatedAt) ?? new Date().toISOString(),
+  };
+}
+
+function deriveTopHiringBucket(snapshot: {
+  functionalMix?: [string, number][] | null;
+  hiringMix?: DepartmentBreakdown[] | null;
+} | null | undefined): { bucket: string | null; count: number | null } {
+  const functionalMix = snapshot?.functionalMix;
+  if (Array.isArray(functionalMix) && functionalMix.length > 0) {
+    const [bucket, count] = functionalMix[0] ?? [];
+    return {
+      bucket: typeof bucket === "string" && bucket.trim() ? bucket : null,
+      count: typeof count === "number" && Number.isFinite(count) ? count : null,
+    };
+  }
+
+  const hiringMix = snapshot?.hiringMix;
+  if (Array.isArray(hiringMix) && hiringMix.length > 0) {
+    const sorted = [...hiringMix].sort((a, b) => b.count - a.count);
+    const top = sorted[0];
+    return {
+      bucket: top?.department ?? null,
+      count: typeof top?.count === "number" && Number.isFinite(top.count) ? top.count : null,
+    };
+  }
+
+  return { bucket: null, count: null };
+}
+
+interface BriefComparisonSummary {
+  signalVerdict: string | null;
+  observedJobsCount: number | null;
+  topHiringBucket: string | null;
+  topHiringBucketCount: number | null;
+}
+
+function summarizeBriefRow(brief: {
+  signalVerdict: string | null;
+  jobsObservedCount: number;
+  resultSnapshot: {
+    functionalMix?: [string, number][] | null;
+    hiringMix?: DepartmentBreakdown[] | null;
+  };
+}): BriefComparisonSummary {
+  const topHiringBucket = deriveTopHiringBucket(brief.resultSnapshot);
+
+  return {
+    signalVerdict: brief.signalVerdict ?? null,
+    observedJobsCount: brief.jobsObservedCount ?? null,
+    topHiringBucket: topHiringBucket.bucket,
+    topHiringBucketCount: topHiringBucket.count,
   };
 }
 
@@ -454,34 +515,40 @@ export async function listWatchlistsWithEntries(tenantId: string): Promise<Watch
     .where(eq(stratumWatchlists.tenantId, tenantId))
     .orderBy(desc(stratumWatchlistEntries.updatedAt));
 
-  // Batch-fetch latest brief fields used by the watchlist row.
-  const latestBriefIds = [
-    ...new Set(entries.map((r) => r.entry.latestBriefId).filter((id): id is string => !!id)),
-  ];
-  const latestBriefRowMap = new Map<
-    string,
-    { signalVerdict: string | null; jobsObservedCount: number | null }
-  >();
-  if (latestBriefIds.length > 0) {
+  // Batch-fetch the latest two briefs per entry so the row can compare the
+  // current scan to the previous scan without any per-row lookups.
+  const briefComparisonMap = new Map<string, BriefComparisonSummary[]>();
+  const entryIds = entries.map((r) => r.entry.id);
+  if (entryIds.length > 0) {
     const briefRows = await db
       .select({
-        id: stratumBriefs.id,
+        watchlistEntryId: stratumBriefs.watchlistEntryId,
         signalVerdict: stratumBriefs.signalVerdict,
         jobsObservedCount: stratumBriefs.jobsObservedCount,
+        resultSnapshot: stratumBriefs.resultSnapshot,
       })
       .from(stratumBriefs)
-      .where(inArray(stratumBriefs.id, latestBriefIds));
+      .where(inArray(stratumBriefs.watchlistEntryId, entryIds))
+      .orderBy(
+        asc(stratumBriefs.watchlistEntryId),
+        desc(stratumBriefs.createdAt),
+        desc(stratumBriefs.updatedAt),
+        desc(stratumBriefs.id)
+      );
+
     for (const row of briefRows) {
-      latestBriefRowMap.set(row.id, {
-        signalVerdict: row.signalVerdict ?? null,
-        jobsObservedCount: row.jobsObservedCount ?? null,
-      });
+      if (!row.watchlistEntryId) continue;
+
+      const current = briefComparisonMap.get(row.watchlistEntryId) ?? [];
+      if (current.length >= 2) continue;
+
+      current.push(summarizeBriefRow(row));
+      briefComparisonMap.set(row.watchlistEntryId, current);
     }
   }
 
   // Phase 6E-4: batch-fetch highest-priority unread notification per entry.
   // Entry IDs come from a tenant-scoped query above, so no extra join is needed.
-  const entryIds = entries.map((r) => r.entry.id);
   const unreadAlertPriorityMap = new Map<string, string>();
   if (entryIds.length > 0) {
     const notifRows = await db
@@ -507,10 +574,16 @@ export async function listWatchlistsWithEntries(tenantId: string): Promise<Watch
   const entriesByWatchlist = new Map<string, WatchlistEntryOverview[]>();
   for (const row of entries) {
     const mapped = mapEntryRow(row.entry);
-    const briefId = row.entry.latestBriefId;
-    const latestBriefRow = briefId ? latestBriefRowMap.get(briefId) : undefined;
-    mapped.latestSignalVerdict = latestBriefRow?.signalVerdict ?? null;
-    mapped.latestObservedJobsCount = latestBriefRow?.jobsObservedCount ?? null;
+    const briefSummaries = briefComparisonMap.get(row.entry.id) ?? [];
+    const latestBriefSummary = briefSummaries[0] ?? null;
+    const previousBriefSummary = briefSummaries[1] ?? null;
+    mapped.latestSignalVerdict = latestBriefSummary?.signalVerdict ?? null;
+    mapped.latestObservedJobsCount = latestBriefSummary?.observedJobsCount ?? null;
+    mapped.previousObservedJobsCount = previousBriefSummary?.observedJobsCount ?? null;
+    mapped.latestTopHiringBucket = latestBriefSummary?.topHiringBucket ?? null;
+    mapped.latestTopHiringBucketCount = latestBriefSummary?.topHiringBucketCount ?? null;
+    mapped.previousTopHiringBucket = previousBriefSummary?.topHiringBucket ?? null;
+    mapped.previousTopHiringBucketCount = previousBriefSummary?.topHiringBucketCount ?? null;
     mapped.latestUnreadAlertPriority = unreadAlertPriorityMap.get(row.entry.id) ?? null;
     if (!entriesByWatchlist.has(row.entry.watchlistId)) entriesByWatchlist.set(row.entry.watchlistId, []);
     entriesByWatchlist.get(row.entry.watchlistId)!.push(mapped);
@@ -964,7 +1037,6 @@ export async function attachBriefToWatchlistEntry(args: {
   scope: TenantScope;
 }): Promise<{ watchlist: WatchlistOverview; entry: WatchlistEntryOverview } | null> {
   assertTenantlessCompatibilityAllowed(args.scope);
-  const tenantId = resolveTenantId(args.scope);
 
   const [entry] = await db
     .select()

@@ -174,6 +174,70 @@ test.describe("Watchlist History Change Detection Logic", () => {
     expect(diff.changes.some(c => c.category === "source_department_activity_changed")).toBe(true);
     expect(diff.changes.some(c => c.label === "Source department activity shifted")).toBe(true);
   });
+
+  test("7. Minor movement summaries stay plain and keep the stable lead", () => {
+    const proofJobs = [
+      mockJob("Sales A", { department: "Sales" }),
+      mockJob("Engineering A", { department: "Engineering" }),
+      mockJob("Marketing A", { department: "Marketing" }),
+      mockJob("Operations A", { department: "Operations" }),
+      mockJob("Product A", { department: "Product" }),
+    ];
+
+    const prev = mockHistoryItem(proofJobs, proofJobs, {
+      jobsObservedCount: 111,
+      functionalMix: [
+        ["Sales", 50],
+        ["Engineering", 27],
+        ["Marketing", 14],
+        ["Operations", 12],
+        ["Product", 8],
+      ],
+    });
+    const latest = mockHistoryItem(proofJobs, proofJobs, {
+      jobsObservedCount: 112,
+      functionalMix: [
+        ["Sales", 49],
+        ["Engineering", 28],
+        ["Marketing", 14],
+        ["Operations", 12],
+        ["Product", 9],
+      ],
+    });
+
+    const diff = buildWatchlistEntryDiff(latest, prev);
+
+    expect(diff.hasSignificantChange).toBe(false);
+    expect(diff.summary).toBe(
+      "Small change since last scan. Jobs moved from 111 to 112. Sales still leads, with Engineering second. A few roles changed, but the overall hiring pattern stayed the same."
+    );
+  });
+
+  test("8. Top bucket shifts use the concise shift summary", () => {
+    const proofJobs = [
+      mockJob("Engineering A", { department: "Engineering" }),
+      mockJob("Sales A", { department: "Sales" }),
+    ];
+
+    const prev = mockHistoryItem(proofJobs, proofJobs, {
+      jobsObservedCount: 19,
+      functionalMix: [
+        ["Engineering", 10],
+        ["Sales", 9],
+      ],
+    });
+    const latest = mockHistoryItem(proofJobs, proofJobs, {
+      jobsObservedCount: 19,
+      functionalMix: [
+        ["Sales", 10],
+        ["Engineering", 9],
+      ],
+    });
+
+    const diff = buildWatchlistEntryDiff(latest, prev);
+
+    expect(diff.summary).toBe("Hiring shifted from Engineering to Sales. Sales now leads the board.");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -218,6 +218,89 @@ function formatMixDiffList(diffs: string[]): string {
   return `${visible.join("; ")}, plus ${remaining} more`;
 }
 
+interface TopBucketSnapshot {
+  topDept: string | null;
+  topCount: number | null;
+  secondDept: string | null;
+  secondCount: number | null;
+}
+
+function getTopTwoDepts(mixMap: Map<string, number>): TopBucketSnapshot {
+  const sorted = Array.from(mixMap.entries()).sort((a, b) => b[1] - a[1]);
+  return {
+    topDept: sorted[0]?.[0] ?? null,
+    topCount: sorted[0]?.[1] ?? null,
+    secondDept: sorted[1]?.[0] ?? null,
+    secondCount: sorted[1]?.[1] ?? null,
+  };
+}
+
+function buildMinorMovementSummary(args: {
+  latestObservedJobsCount: number;
+  previousObservedJobsCount: number;
+  latestTop: TopBucketSnapshot;
+}): string {
+  const parts: string[] = ["Small change since last scan."];
+
+  if (args.latestObservedJobsCount !== args.previousObservedJobsCount) {
+    parts.push(
+      `Jobs moved from ${args.previousObservedJobsCount} to ${args.latestObservedJobsCount}.`
+    );
+  }
+
+  if (args.latestTop.topDept) {
+    const leadSentence = args.latestTop.secondDept
+      ? `${args.latestTop.topDept} still leads, with ${args.latestTop.secondDept} second.`
+      : `${args.latestTop.topDept} still leads.`;
+    parts.push(leadSentence);
+  }
+
+  parts.push(
+    args.latestObservedJobsCount !== args.previousObservedJobsCount
+      ? "A few roles changed, but the overall hiring pattern stayed the same."
+      : "The overall hiring pattern stayed the same."
+  );
+
+  return parts.join(" ");
+}
+
+function buildTopBucketShiftSummary(previousTop: TopBucketSnapshot, latestTop: TopBucketSnapshot): string {
+  if (!previousTop.topDept || !latestTop.topDept) {
+    return "";
+  }
+
+  return `Hiring shifted from ${previousTop.topDept} to ${latestTop.topDept}. ${latestTop.topDept} now leads the board.`;
+}
+
+function buildComparisonSummary(args: {
+  latestObservedJobsCount: number;
+  previousObservedJobsCount: number;
+  latestTop: TopBucketSnapshot;
+  previousTop: TopBucketSnapshot;
+  hasSignificantChange: boolean;
+  detailedSummary: string;
+}): string {
+  const topBucketShift =
+    args.latestTop.topDept &&
+    args.previousTop.topDept &&
+    normalizeText(args.latestTop.topDept) !== normalizeText(args.previousTop.topDept);
+
+  if (topBucketShift) {
+    const shiftSummary = buildTopBucketShiftSummary(args.previousTop, args.latestTop);
+    if (shiftSummary) return shiftSummary;
+  }
+
+  if (!args.hasSignificantChange) {
+    return buildMinorMovementSummary({
+      latestObservedJobsCount: args.latestObservedJobsCount,
+      previousObservedJobsCount: args.previousObservedJobsCount,
+      latestTop: args.latestTop,
+    });
+  }
+
+  return args.detailedSummary;
+}
+
 function buildComparisonNotes(
   latest: WatchlistEntryBriefHistoryItem,
   previous: WatchlistEntryBriefHistoryItem
@@ -437,14 +520,6 @@ export function buildWatchlistEntryDiff(
 
   const totalBoardSize = Math.max(latest.jobsObservedCount, previous.jobsObservedCount);
 
-  const getTopTwoDepts = (mixMap: Map<string, number>) => {
-    const sorted = Array.from(mixMap.entries()).sort((a, b) => b[1] - a[1]);
-    return {
-      topDept: sorted[0]?.[0] || "",
-      topCount: sorted[0]?.[1] || 0,
-      secondCount: sorted[1]?.[1] || 0
-    };
-  };
   const previousTop = getTopTwoDepts(previousMix);
   const latestTop = getTopTwoDepts(latestMix);
 
@@ -460,7 +535,12 @@ export function buildWatchlistEntryDiff(
       const dir = lCount > pCount ? "increased" : "decreased";
       mixDiffs.push(`${dept} openings ${dir} from ${pCount} to ${lCount}`);
 
-      const isNewDominant = latestTop.topDept === dept && previousTop.topDept !== dept && latestTop.topCount > latestTop.secondCount;
+      const isNewDominant =
+        latestTop.topDept === dept &&
+        previousTop.topDept !== dept &&
+        latestTop.topCount !== null &&
+        latestTop.secondCount !== null &&
+        latestTop.topCount > latestTop.secondCount;
       let isMixSignificant = false;
 
       if (totalBoardSize < 10) {
@@ -592,10 +672,19 @@ export function buildWatchlistEntryDiff(
     }
   }
 
-  const summary =
+  const detailedSummary =
     changes.length > 0
       ? changes.map((change) => change.detail).join(" ")
       : "No material change observed between the latest two saved briefs.";
+
+  const summary = buildComparisonSummary({
+    latestObservedJobsCount: latest.jobsObservedCount,
+    previousObservedJobsCount: previous.jobsObservedCount,
+    latestTop,
+    previousTop,
+    hasSignificantChange,
+    detailedSummary,
+  });
 
   return {
     comparisonAvailable: true,

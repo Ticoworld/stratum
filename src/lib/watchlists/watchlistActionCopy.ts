@@ -5,6 +5,11 @@ export interface WatchlistActionCopyInput {
   latestWatchlistReadLabel?: string | null;
   latestBriefId?: string | null;
   latestObservedJobsCount?: number | null;
+  previousObservedJobsCount?: number | null;
+  latestTopHiringBucket?: string | null;
+  latestTopHiringBucketCount?: number | null;
+  previousTopHiringBucket?: string | null;
+  previousTopHiringBucketCount?: number | null;
 }
 
 export interface WatchlistActionCopy {
@@ -190,6 +195,100 @@ function formatObservedJobsSuffix(count: number | null | undefined): string {
   return `, ${count} ${count === 1 ? "job" : "jobs"}`;
 }
 
+function hasNumber(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function hasText(value: string | null | undefined): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function sameText(left: string | null | undefined, right: string | null | undefined): boolean {
+  return normalizeText(left) === normalizeText(right);
+}
+
+const CLEAR_TOP_BUCKET_SHARE_THRESHOLD = 0.35;
+
+interface ComparisonState {
+  latestObservedJobsCount: number | null;
+  previousObservedJobsCount: number | null;
+  latestTopHiringBucket: string | null;
+  latestTopHiringBucketCount: number | null;
+  previousTopHiringBucket: string | null;
+  previousTopHiringBucketCount: number | null;
+  hasComparisonData: boolean;
+  hasTopBucketComparison: boolean;
+  sameTopBucket: boolean;
+}
+
+function buildComparisonState(args: WatchlistActionCopyInput): ComparisonState {
+  const latestObservedJobsCount = hasNumber(args.latestObservedJobsCount)
+    ? args.latestObservedJobsCount
+    : null;
+  const previousObservedJobsCount = hasNumber(args.previousObservedJobsCount)
+    ? args.previousObservedJobsCount
+    : null;
+  const latestTopHiringBucket = hasText(args.latestTopHiringBucket)
+    ? args.latestTopHiringBucket.trim()
+    : null;
+  const latestTopHiringBucketCount = hasNumber(args.latestTopHiringBucketCount)
+    ? args.latestTopHiringBucketCount
+    : null;
+  const previousTopHiringBucket = hasText(args.previousTopHiringBucket)
+    ? args.previousTopHiringBucket.trim()
+    : null;
+  const previousTopHiringBucketCount = hasNumber(args.previousTopHiringBucketCount)
+    ? args.previousTopHiringBucketCount
+    : null;
+
+  return {
+    latestObservedJobsCount,
+    previousObservedJobsCount,
+    latestTopHiringBucket,
+    latestTopHiringBucketCount,
+    previousTopHiringBucket,
+    previousTopHiringBucketCount,
+    hasComparisonData:
+      previousObservedJobsCount !== null ||
+      previousTopHiringBucket !== null ||
+      previousTopHiringBucketCount !== null,
+    hasTopBucketComparison:
+      latestTopHiringBucket !== null &&
+      previousTopHiringBucket !== null &&
+      latestTopHiringBucketCount !== null &&
+      previousTopHiringBucketCount !== null,
+    sameTopBucket:
+      latestTopHiringBucket !== null &&
+      previousTopHiringBucket !== null &&
+      sameText(latestTopHiringBucket, previousTopHiringBucket),
+  };
+}
+
+function hasClearTopBucketLead(comparison: ComparisonState): boolean {
+  if (!comparison.sameTopBucket || !comparison.latestTopHiringBucket) return false;
+
+  const shares: number[] = [];
+
+  if (
+    comparison.latestTopHiringBucketCount !== null &&
+    comparison.latestObservedJobsCount !== null &&
+    comparison.latestObservedJobsCount > 0
+  ) {
+    shares.push(comparison.latestTopHiringBucketCount / comparison.latestObservedJobsCount);
+  }
+
+  if (
+    comparison.previousTopHiringBucketCount !== null &&
+    comparison.previousObservedJobsCount !== null &&
+    comparison.previousObservedJobsCount > 0
+  ) {
+    shares.push(comparison.previousTopHiringBucketCount / comparison.previousObservedJobsCount);
+  }
+
+  if (shares.length === 0) return true;
+  return Math.max(...shares) >= CLEAR_TOP_BUCKET_SHARE_THRESHOLD;
+}
+
 export function buildWatchlistActionCopy(
   args: WatchlistActionCopyInput
 ): WatchlistActionCopy {
@@ -203,16 +302,11 @@ export function buildWatchlistActionCopy(
   const leadLabel = deriveLeadLabel(args.latestWatchlistReadLabel);
   const sourceIssueAlert = args.latestUnreadAlertPriority === "source_issue";
   const actSignal = args.verdict === "act" || args.latestUnreadAlertPriority === "immediate";
-
-  if (actSignal) {
-    return {
-      mainLine:
-        leadLabel && leadLabel !== "Mixed" && leadLabel !== "No clear lead"
-          ? `${formatHeadlineForLead(leadLabel)} increased since last scan.`
-          : "Hiring changed enough to act.",
-      nextStep: "Use this for account research or outreach timing.",
-    };
-  }
+  const comparison = buildComparisonState(args);
+  const hasLeadLabel = leadLabel && leadLabel !== "Mixed" && leadLabel !== "No clear lead";
+  const isFirstScan = !comparison.hasComparisonData && args.latestUnreadAlertPriority !== "digest";
+  const isLaterScanWithoutPreviousCount =
+    !comparison.hasComparisonData && args.latestUnreadAlertPriority === "digest";
 
   if (args.verdict === "verify_source") {
     return {
@@ -228,9 +322,79 @@ export function buildWatchlistActionCopy(
     };
   }
 
+  if (actSignal) {
+    if (comparison.hasComparisonData) {
+      if (
+        comparison.latestTopHiringBucket &&
+        comparison.previousTopHiringBucket &&
+        !comparison.sameTopBucket
+      ) {
+        return {
+          mainLine: `Hiring shifted from ${comparison.previousTopHiringBucket} to ${comparison.latestTopHiringBucket}.`,
+          nextStep: "Check the brief before acting.",
+        };
+      }
+
+      if (
+        comparison.hasTopBucketComparison &&
+        comparison.sameTopBucket &&
+        comparison.latestTopHiringBucket
+      ) {
+        const latestTopCount = comparison.latestTopHiringBucketCount;
+        const previousTopCount = comparison.previousTopHiringBucketCount;
+
+        if (latestTopCount !== null && previousTopCount !== null && latestTopCount > previousTopCount) {
+          return {
+            mainLine: `${comparison.latestTopHiringBucket} hiring grew from ${previousTopCount} to ${latestTopCount} jobs.`,
+            nextStep: "Use this for account timing.",
+          };
+        }
+
+        if (latestTopCount !== null && previousTopCount !== null && latestTopCount < previousTopCount) {
+          return {
+            mainLine: `${comparison.latestTopHiringBucket} hiring dropped from ${previousTopCount} to ${latestTopCount} jobs.`,
+            nextStep: "Use this for account timing.",
+          };
+        }
+      }
+
+      if (
+        comparison.latestObservedJobsCount !== null &&
+        comparison.previousObservedJobsCount !== null
+      ) {
+        if (comparison.latestObservedJobsCount > comparison.previousObservedJobsCount) {
+          return {
+            mainLine: `Hiring grew from ${comparison.previousObservedJobsCount} to ${comparison.latestObservedJobsCount} jobs.`,
+            nextStep: "Use this for account research.",
+          };
+        }
+
+        if (comparison.latestObservedJobsCount < comparison.previousObservedJobsCount) {
+          return {
+            mainLine: `Hiring dropped from ${comparison.previousObservedJobsCount} to ${comparison.latestObservedJobsCount} jobs.`,
+            nextStep: "Use this for account timing.",
+          };
+        }
+      }
+
+      return {
+        mainLine: "Hiring changed enough to act on.",
+        nextStep: "Use this for account timing.",
+      };
+    }
+
+    return {
+      mainLine:
+        hasLeadLabel && leadLabel
+          ? `${formatHeadlineForLead(leadLabel)} increased since last scan.`
+          : "Hiring changed enough to act on.",
+      nextStep: "Use this for account research or outreach timing.",
+    };
+  }
+
   if (args.verdict === "wait") {
     return {
-      mainLine: "Not enough signal yet.",
+      mainLine: "Not enough hiring data yet.",
       nextStep: "Keep it on the watchlist.",
     };
   }
@@ -243,19 +407,91 @@ export function buildWatchlistActionCopy(
   }
 
   if (args.verdict === "watch") {
-    if (args.latestUnreadAlertPriority === "digest") {
+    if (isFirstScan) {
+      return {
+        mainLine:
+          hasLeadLabel && leadLabel
+            ? `${formatHeadlineForLead(leadLabel)} first scan${formatObservedJobsSuffix(args.latestObservedJobsCount)}.`
+            : `First scan${formatObservedJobsSuffix(args.latestObservedJobsCount)}.`,
+        nextStep: "Wait for the next scan to see what changed.",
+      };
+    }
+
+    if (isLaterScanWithoutPreviousCount) {
       return {
         mainLine: "Still watching. No major change yet.",
         nextStep: "Keep tracking.",
       };
     }
 
+    if (comparison.hasComparisonData) {
+      if (
+        comparison.latestObservedJobsCount !== null &&
+        comparison.previousObservedJobsCount !== null &&
+        comparison.latestObservedJobsCount < comparison.previousObservedJobsCount
+      ) {
+        return {
+          mainLine: `Hiring dropped from ${comparison.previousObservedJobsCount} to ${comparison.latestObservedJobsCount} jobs.`,
+          nextStep: "Keep watching unless the drop matters to your workflow.",
+        };
+      }
+
+      if (
+        comparison.latestTopHiringBucket &&
+        comparison.previousTopHiringBucket &&
+        !comparison.sameTopBucket
+      ) {
+        return {
+          mainLine: `Hiring shifted from ${comparison.previousTopHiringBucket} to ${comparison.latestTopHiringBucket}.`,
+          nextStep: "Keep watching.",
+        };
+      }
+
+      if (
+        comparison.sameTopBucket &&
+        comparison.latestTopHiringBucket
+      ) {
+        if (hasClearTopBucketLead(comparison)) {
+          return {
+            mainLine: `${comparison.latestTopHiringBucket} still leads. No major change since last scan.`,
+            nextStep: "Keep watching.",
+          };
+        }
+
+        return {
+          mainLine: `${comparison.latestTopHiringBucket} hiring changed slightly.`,
+          nextStep: "Keep watching.",
+        };
+      }
+
+      if (
+        comparison.latestObservedJobsCount !== null &&
+        comparison.previousObservedJobsCount !== null
+      ) {
+        if (comparison.latestObservedJobsCount === comparison.previousObservedJobsCount) {
+          if (comparison.latestTopHiringBucket) {
+            return {
+              mainLine: `${comparison.latestTopHiringBucket} still leads. No major change since last scan.`,
+              nextStep: "Keep watching.",
+            };
+          }
+
+          return {
+            mainLine: "Still watching. No major change yet.",
+            nextStep: "Keep tracking.",
+          };
+        }
+
+        return {
+          mainLine: "Hiring changed slightly.",
+          nextStep: "Keep watching.",
+        };
+      }
+    }
+
     return {
-      mainLine:
-        leadLabel && leadLabel !== "Mixed" && leadLabel !== "No clear lead"
-          ? `${leadLabel} first scan${formatObservedJobsSuffix(args.latestObservedJobsCount)}.`
-          : `First scan${formatObservedJobsSuffix(args.latestObservedJobsCount)}.`,
-      nextStep: "Wait for the next scan to see what changed.",
+      mainLine: "Still watching. No major change yet.",
+      nextStep: "Keep tracking.",
     };
   }
 

@@ -175,6 +175,29 @@ function formatSignalVerdictReason(
   return verdict.reason;
 }
 
+function buildWhatChangedParagraphs(summary: string): string[] {
+  const trimmed = summary.trim();
+  if (!trimmed.startsWith("Small change since last scan.")) {
+    return [summary];
+  }
+
+  const sentences =
+    trimmed
+      .match(/[^.]+(?:\.|$)/g)
+      ?.map((part) => part.trim())
+      .filter(Boolean) ?? [];
+
+  if (sentences.length === 4) {
+    return [sentences[0], `${sentences[1]} ${sentences[2]}`, sentences[3]];
+  }
+
+  if (sentences.length >= 3) {
+    return sentences;
+  }
+
+  return [summary];
+}
+
 // --- Components ---
 
 function BriefSection({
@@ -550,23 +573,41 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                     </details>
                   </div>
                 )}
-                {whatChangedDisplay.kind === "standard" && (
-                  <div className="space-y-1.5">
-                    {whatChangedDisplay.heading && (
-                      <p className="text-[10px] font-semibold tracking-[0.04em] uppercase opacity-50" style={{ color: "var(--foreground-muted)" }}>
-                        {whatChangedDisplay.heading}
-                      </p>
-                    )}
-                    <p className="text-[14px] leading-6 font-medium" style={{ color: "var(--foreground)" }}>
-                      {whatChangedDisplay.summary}
-                    </p>
-                    {whatChangedDisplay.comparisonStrength !== "standard" && whatChangedDisplay.comparisonStrength !== "unavailable" && (
-                      <p className="text-[10px] font-medium tracking-[0.02em] opacity-40">
-                        Comparison strength: {whatChangedDisplay.comparisonStrength}
-                      </p>
-                    )}
-                  </div>
-                )}
+                {whatChangedDisplay.kind === "standard" && (() => {
+                  const whatChangedParagraphs = buildWhatChangedParagraphs(whatChangedDisplay.summary);
+
+                  return (
+                    <div className="space-y-1.5">
+                      {whatChangedDisplay.heading && (
+                        <p className="text-[10px] font-semibold tracking-[0.04em] uppercase opacity-50" style={{ color: "var(--foreground-muted)" }}>
+                          {whatChangedDisplay.heading}
+                        </p>
+                      )}
+                      {whatChangedParagraphs.length > 1 ? (
+                        <div className="space-y-3">
+                          {whatChangedParagraphs.map((paragraph, index) => (
+                            <p
+                              key={`${index}-${paragraph}`}
+                              className="text-[14px] leading-6 font-medium"
+                              style={{ color: "var(--foreground)" }}
+                            >
+                              {paragraph}
+                            </p>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[14px] leading-6 font-medium" style={{ color: "var(--foreground)" }}>
+                          {whatChangedDisplay.summary}
+                        </p>
+                      )}
+                      {whatChangedDisplay.comparisonStrength !== "standard" && whatChangedDisplay.comparisonStrength !== "unavailable" && (
+                        <p className="text-[10px] font-medium tracking-[0.02em] opacity-40">
+                          Comparison strength: {whatChangedDisplay.comparisonStrength}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </BriefSection>
           )}
