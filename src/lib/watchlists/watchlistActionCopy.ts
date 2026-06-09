@@ -127,6 +127,17 @@ const MIXED_HINTS = [
   "broad multi-function",
 ];
 
+const APPEARANCE_HINTS = [
+  "risk and compliance",
+  "risk",
+  "compliance",
+  "security",
+  "trust",
+  "governance",
+  "legal",
+  "privacy",
+];
+
 function normalizeText(value: string | null | undefined): string {
   return value?.trim().toLowerCase() ?? "";
 }
@@ -205,6 +216,12 @@ function hasText(value: string | null | undefined): value is string {
 
 function sameText(left: string | null | undefined, right: string | null | undefined): boolean {
   return normalizeText(left) === normalizeText(right);
+}
+
+function isAppearanceBucket(label: string | null | undefined): boolean {
+  const normalized = normalizeText(label);
+  if (!normalized) return false;
+  return includesAny(normalized, APPEARANCE_HINTS);
 }
 
 const CLEAR_TOP_BUCKET_SHARE_THRESHOLD = 0.35;
@@ -359,6 +376,18 @@ export function buildWatchlistActionCopy(
       }
 
       if (
+        comparison.latestTopHiringBucket &&
+        isAppearanceBucket(comparison.latestTopHiringBucket) &&
+        comparison.latestTopHiringBucketCount !== null &&
+        (comparison.previousTopHiringBucketCount === null || comparison.previousTopHiringBucketCount === 0)
+      ) {
+        return {
+          mainLine: `${comparison.latestTopHiringBucket} roles appeared.`,
+          nextStep: "Use this for account or competitor research.",
+        };
+      }
+
+      if (
         comparison.latestObservedJobsCount !== null &&
         comparison.previousObservedJobsCount !== null
       ) {
@@ -377,9 +406,16 @@ export function buildWatchlistActionCopy(
         }
       }
 
+      if (comparison.latestTopHiringBucket) {
+        return {
+          mainLine: `${comparison.latestTopHiringBucket} still leads.`,
+          nextStep: "Check the brief before acting.",
+        };
+      }
+
       return {
         mainLine: "Hiring changed enough to act on.",
-        nextStep: "Use this for account timing.",
+        nextStep: "Check the brief before acting.",
       };
     }
 
