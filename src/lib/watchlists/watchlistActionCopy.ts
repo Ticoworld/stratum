@@ -214,6 +214,23 @@ function hasText(value: string | null | undefined): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+/**
+ * Whether a row has any data from a previous scan to compare against.
+ * Exposed so callers (e.g. the daily summary) can detect "first scan" rows
+ * from real fields instead of parsing mainLine copy.
+ */
+export function hasWatchlistComparisonData(args: {
+  previousObservedJobsCount?: number | null;
+  previousTopHiringBucket?: string | null;
+  previousTopHiringBucketCount?: number | null;
+}): boolean {
+  return (
+    hasNumber(args.previousObservedJobsCount) ||
+    hasText(args.previousTopHiringBucket) ||
+    hasNumber(args.previousTopHiringBucketCount)
+  );
+}
+
 function sameText(left: string | null | undefined, right: string | null | undefined): boolean {
   return normalizeText(left) === normalizeText(right);
 }

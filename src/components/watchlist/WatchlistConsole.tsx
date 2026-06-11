@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, ChevronDown, ChevronUp, ExternalLink, Plus } from "lucide-react";
 import { WatchlistSignalInbox } from "@/components/watchlist/WatchlistSignalInbox";
+import { WatchlistDailySummaryPanel } from "@/components/watchlist/WatchlistDailySummaryPanel";
 import { WatchlistWorkspaceSidebar } from "@/components/watchlist/WatchlistWorkspaceSidebar";
 import { Dialog } from "@/components/ui/Dialog";
 import { Drawer } from "@/components/ui/Drawer";
@@ -540,6 +541,11 @@ export function WatchlistConsole({
                 </div>
               </div>
             </header>
+
+            <WatchlistDailySummaryPanel
+              watchlist={activeWatchlist}
+              currentTime={currentTime.getTime()}
+            />
 
             <WatchlistSignalInbox
               watchlist={activeWatchlist}
