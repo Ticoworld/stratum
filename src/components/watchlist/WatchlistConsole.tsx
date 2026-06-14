@@ -7,6 +7,7 @@ import { AlertCircle, ChevronDown, ChevronUp, ExternalLink, Plus } from "lucide-
 import { WatchlistSignalInbox } from "@/components/watchlist/WatchlistSignalInbox";
 import { WatchlistDailySummaryPanel } from "@/components/watchlist/WatchlistDailySummaryPanel";
 import { WatchlistWorkspaceSidebar } from "@/components/watchlist/WatchlistWorkspaceSidebar";
+import { NotificationsInboxLink } from "@/components/notifications/NotificationsInboxLink";
 import { Dialog } from "@/components/ui/Dialog";
 import { Drawer } from "@/components/ui/Drawer";
 import { Button } from "@/components/ui/Button";
@@ -529,7 +530,8 @@ export function WatchlistConsole({
                   </div>
                 </div>
 
-                <div className="xl:justify-self-end">
+                <div className="flex items-center gap-2 xl:justify-self-end">
+                  <NotificationsInboxLink />
                   <button
                     onClick={handleOpenAddDrawer}
                     className="inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold text-white transition-opacity hover:opacity-90"

@@ -499,7 +499,7 @@ export function NotificationsConsole({
                       <div className="space-y-4">
                         <div>
                           <p className="text-[12px] font-medium" style={{ color: "var(--foreground-muted)" }}>
-                            Freshness
+                            Created
                           </p>
                           <p className="mt-1 text-[14px] font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>
                             {formatWatchlistDateTime(notification.createdAt, "Unknown")}

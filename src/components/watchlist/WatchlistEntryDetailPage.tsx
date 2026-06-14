@@ -21,6 +21,7 @@ import {
 import type { WatchlistEntryDetail } from "@/lib/watchlists/repository";
 import { Button } from "@/components/ui/Button";
 import { Toast, type ToastType } from "@/components/ui/Toast";
+import { NotificationsInboxLink } from "@/components/notifications/NotificationsInboxLink";
 
 interface WatchlistEntryDetailPageProps {
   detail: WatchlistEntryDetail;
@@ -290,6 +291,7 @@ export function WatchlistEntryDetailPage({
               </div>
 
               <div className="flex shrink-0 flex-wrap gap-3">
+                <NotificationsInboxLink />
                 <Button
                   onClick={handleRefresh}
                   disabled={pendingRefresh}

@@ -126,7 +126,7 @@ export function buildDevelopmentNotificationInboxPreview(args: {
       summary:
         "Result state changed from No result state to Supported provider matched with observed openings. Saved brief comparison shows broader product and GTM hiring.",
       alertPriority: "immediate",
-      displayTag: "Brief updated",
+      displayTag: "Hiring changed",
       displayMainLine: "Sales hiring grew from 50 to 68 jobs.",
       displayNextStep: "Use this for account timing.",
       createdAt: isoFromNow(18 * 60 * 1000),

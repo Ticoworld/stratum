@@ -53,6 +53,13 @@ export function deriveNotificationTag(notification: NotificationTagInput): strin
     return "Source needs checking";
   }
 
+  // ACT/immediate notifications are always about a hiring change — tag them
+  // as such even when saved_brief_material_change is also present, so the
+  // tag doesn't undersell an immediate signal as a routine "Brief updated".
+  if (notification.alertPriority === "immediate") {
+    return "Hiring changed";
+  }
+
   if (notification.changeTypes.includes("saved_brief_material_change")) {
     return "Brief updated";
   }

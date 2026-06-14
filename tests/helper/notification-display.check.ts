@@ -218,7 +218,7 @@ function makeDiff(overrides: Partial<WatchlistEntryDiff> = {}): WatchlistEntryDi
   assert.deepEqual(displayCopy, {
     mainLine: "Sales hiring grew from 50 to 68 jobs.",
     nextStep: "Use this for account timing.",
-    tag: "Brief updated",
+    tag: "Hiring changed",
   });
 }
 
@@ -460,6 +460,49 @@ function makeDiff(overrides: Partial<WatchlistEntryDiff> = {}): WatchlistEntryDi
       nextStep: draft!.displayNextStep,
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+// 11. deriveNotificationTag priority: immediate/ACT notifications are always
+//     tagged "Hiring changed", even when saved_brief_material_change is also
+//     present. "Brief updated" is reserved for lower-priority digest/watch
+//     updates. refresh_failed and source_issue still win over everything.
+// ---------------------------------------------------------------------------
+{
+  assert.equal(
+    deriveNotificationTag({
+      alertPriority: "immediate",
+      changeTypes: ["result_state_changed", "saved_brief_material_change"],
+    }),
+    "Hiring changed",
+    "immediate priority must be tagged Hiring changed, not Brief updated"
+  );
+
+  assert.equal(
+    deriveNotificationTag({
+      alertPriority: "digest",
+      changeTypes: ["watchlist_read_changed", "saved_brief_material_change"],
+    }),
+    "Brief updated",
+    "digest priority with a material brief change is still Brief updated"
+  );
+
+  assert.equal(
+    deriveNotificationTag({
+      alertPriority: "source_issue",
+      changeTypes: [],
+    }),
+    "Source needs checking"
+  );
+
+  assert.equal(
+    deriveNotificationTag({
+      alertPriority: "immediate",
+      changeTypes: ["refresh_failed", "saved_brief_material_change"],
+    }),
+    "Refresh failed",
+    "refresh_failed always wins regardless of alertPriority"
+  );
 }
 
 console.log("notification-display checks passed.");
