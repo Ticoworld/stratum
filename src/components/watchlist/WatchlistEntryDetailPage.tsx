@@ -506,7 +506,7 @@ export function WatchlistEntryDetailPage({
                     ? detail.diff.summary
                     : detail.attemptHistory.length > 1
                       ? "No material changes detected since the first check."
-                      : "Baseline still forming. No prior check to compare."}
+                      : "First check complete. Nothing to compare yet."}
                 </p>
                 {detail.diff.comparisonStrength === "weak" && (
                   <div className="flex items-start gap-3 rounded-xl border border-amber-500/10 bg-amber-50/20 p-4 text-[13px] text-amber-700/90">

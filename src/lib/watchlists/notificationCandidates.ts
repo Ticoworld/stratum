@@ -1,4 +1,4 @@
-import { getWatchlistEntryDetailById } from "@/lib/watchlists/repository";
+import { getWatchlistEntryDetailById, listBriefComparisonSummaries } from "@/lib/watchlists/repository";
 import {
   createNotificationCandidate,
   getNotificationCandidateByMonitoringEventId,
@@ -125,6 +125,13 @@ export async function captureNotificationCandidateForMonitoringEvent(args: {
     }
   }
 
+  // Point-in-time comparison snapshot, taken now (after the current attempt's
+  // brief, if any, has been saved) so the notification's display copy reflects
+  // exactly what was true at creation — frozen even if later scans move the
+  // entry on to a newer brief.
+  const comparisonMap = await listBriefComparisonSummaries([args.watchlistEntryId]);
+  const [latestComparison, previousComparison] = comparisonMap.get(args.watchlistEntryId) ?? [];
+
   const draft = buildNotificationCandidateDraft({
     currentAttempt,
     previousAttempt,
@@ -133,6 +140,13 @@ export async function captureNotificationCandidateForMonitoringEvent(args: {
     diff: detail.diff,
     currentSignalVerdict,
     previousSignalVerdict,
+    latestBriefId: detail.monitoring.latestBriefId,
+    latestObservedJobsCount: latestComparison?.observedJobsCount ?? null,
+    previousObservedJobsCount: previousComparison?.observedJobsCount ?? null,
+    latestTopHiringBucket: latestComparison?.topHiringBucket ?? null,
+    latestTopHiringBucketCount: latestComparison?.topHiringBucketCount ?? null,
+    previousTopHiringBucket: previousComparison?.topHiringBucket ?? null,
+    previousTopHiringBucketCount: previousComparison?.topHiringBucketCount ?? null,
   });
 
   if (!draft) return null;
@@ -147,6 +161,9 @@ export async function captureNotificationCandidateForMonitoringEvent(args: {
     changeTypes: draft.changeTypes,
     summary: draft.summary,
     alertPriority: draft.alertPriority,
+    displayTag: draft.displayTag,
+    displayMainLine: draft.displayMainLine,
+    displayNextStep: draft.displayNextStep,
     createdAt: new Date(currentAttempt.createdAt),
   });
 }

@@ -9,6 +9,7 @@ import {
   type StratumMonitoringStateBasis,
   type WatchlistMonitoringAttemptHistoryItem,
 } from "@/lib/watchlists/monitoringEvents";
+import { buildNotificationDisplaySnapshot } from "@/lib/watchlists/notificationDisplay";
 
 export type StratumNotificationCandidateKind = "meaningful_monitoring_change";
 export type StratumNotificationCandidateStatus = "unread" | "read" | "dismissed";
@@ -44,6 +45,11 @@ export interface WatchlistNotificationCandidate {
   changeTypes: StratumNotificationChangeType[];
   summary: string;
   alertPriority: StratumNotificationAlertPriority;
+  /** Point-in-time display copy captured when this notification was created.
+   *  Null for legacy rows created before this snapshot existed. */
+  displayTag: string | null;
+  displayMainLine: string | null;
+  displayNextStep: string | null;
   createdAt: string;
   readAt: string | null;
   dismissedAt: string | null;
@@ -57,6 +63,17 @@ export interface WatchlistNotificationInboxItem extends WatchlistNotificationCan
   requestedQuery: string;
   latestMatchedCompanyName: string | null;
   latestBriefId: string | null;
+  /** Fields below mirror the watchlist row's comparison data so notification
+   *  copy can reuse buildWatchlistActionCopy and read like the watchlist row. */
+  latestResultState: string | null;
+  latestWatchlistReadLabel: string | null;
+  latestSignalVerdict: string | null;
+  latestObservedJobsCount: number | null;
+  previousObservedJobsCount: number | null;
+  latestTopHiringBucket: string | null;
+  latestTopHiringBucketCount: number | null;
+  previousTopHiringBucket: string | null;
+  previousTopHiringBucketCount: number | null;
 }
 
 export interface NotificationInboxCounts {
@@ -80,6 +97,10 @@ export interface NotificationCandidateDraft {
   changeTypes: StratumNotificationChangeType[];
   summary: string;
   alertPriority: StratumNotificationAlertPriority;
+  /** Point-in-time display copy to persist alongside this notification. */
+  displayTag: string;
+  displayMainLine: string;
+  displayNextStep: string;
 }
 
 function isoFromNow(offsetMs: number): string {
@@ -105,6 +126,9 @@ export function buildDevelopmentNotificationInboxPreview(args: {
       summary:
         "Result state changed from No result state to Supported provider matched with observed openings. Saved brief comparison shows broader product and GTM hiring.",
       alertPriority: "immediate",
+      displayTag: "Brief updated",
+      displayMainLine: "Sales hiring grew from 50 to 68 jobs.",
+      displayNextStep: "Use this for account timing.",
       createdAt: isoFromNow(18 * 60 * 1000),
       readAt: null,
       dismissedAt: null,
@@ -115,6 +139,15 @@ export function buildDevelopmentNotificationInboxPreview(args: {
       requestedQuery: "https://phase10-home.myworkdayjobs.com/en-US/careers",
       latestMatchedCompanyName: null,
       latestBriefId: "00000000-0000-4000-8000-000000000931",
+      latestResultState: "supported_provider_matched_with_observed_openings",
+      latestWatchlistReadLabel: "Broader product and GTM buildout",
+      latestSignalVerdict: "act",
+      latestObservedJobsCount: 68,
+      previousObservedJobsCount: 50,
+      latestTopHiringBucket: "Sales",
+      latestTopHiringBucketCount: 68,
+      previousTopHiringBucket: "Sales",
+      previousTopHiringBucketCount: 50,
     },
     {
       id: "00000000-0000-4000-8000-000000000902",
@@ -128,6 +161,9 @@ export function buildDevelopmentNotificationInboxPreview(args: {
       summary:
         'Watchlist read changed from "Focused product hiring" to "Broader product and GTM buildout". Saved brief comparison now shows commercial hiring mixed into the same target.',
       alertPriority: "digest",
+      displayTag: "Brief updated",
+      displayMainLine: "Sales still leads. No major change since last scan.",
+      displayNextStep: "Keep watching.",
       createdAt: isoFromNow(2 * 60 * 60 * 1000),
       readAt: null,
       dismissedAt: null,
@@ -138,6 +174,15 @@ export function buildDevelopmentNotificationInboxPreview(args: {
       requestedQuery: "Phase9 History Company",
       latestMatchedCompanyName: "Phase9 History Company",
       latestBriefId: "00000000-0000-4000-8000-000000000932",
+      latestResultState: "supported_provider_matched_with_observed_openings",
+      latestWatchlistReadLabel: "Broader product and GTM buildout",
+      latestSignalVerdict: "watch",
+      latestObservedJobsCount: 95,
+      previousObservedJobsCount: 95,
+      latestTopHiringBucket: "Sales",
+      latestTopHiringBucketCount: 40,
+      previousTopHiringBucket: "Sales",
+      previousTopHiringBucketCount: 38,
     },
     {
       id: "00000000-0000-4000-8000-000000000903",
@@ -151,6 +196,10 @@ export function buildDevelopmentNotificationInboxPreview(args: {
       summary:
         "ATS source changed from No supported ATS source to Greenhouse. Result state changed to supported provider matched with observed openings.",
       alertPriority: "digest",
+      // No stored snapshot — exercises the legacy fallback rendering path.
+      displayTag: null,
+      displayMainLine: null,
+      displayNextStep: null,
       createdAt: isoFromNow(9 * 60 * 60 * 1000),
       readAt: null,
       dismissedAt: null,
@@ -161,6 +210,15 @@ export function buildDevelopmentNotificationInboxPreview(args: {
       requestedQuery: "https://boards.greenhouse.io/harbor-robotics/jobs",
       latestMatchedCompanyName: null,
       latestBriefId: null,
+      latestResultState: "supported_provider_matched_with_observed_openings",
+      latestWatchlistReadLabel: null,
+      latestSignalVerdict: null,
+      latestObservedJobsCount: null,
+      previousObservedJobsCount: null,
+      latestTopHiringBucket: null,
+      latestTopHiringBucketCount: null,
+      previousTopHiringBucket: null,
+      previousTopHiringBucketCount: null,
     },
     {
       id: "00000000-0000-4000-8000-000000000904",
@@ -174,6 +232,9 @@ export function buildDevelopmentNotificationInboxPreview(args: {
       summary:
         "Manual refresh failed and did not replace the current monitoring state: simulated provider timeout during review.",
       alertPriority: "source_issue",
+      displayTag: "Refresh failed",
+      displayMainLine: "Refresh failed.",
+      displayNextStep: "Check the source before using this signal.",
       createdAt: isoFromNow(26 * 60 * 60 * 1000),
       readAt: isoFromNow(23 * 60 * 60 * 1000),
       dismissedAt: null,
@@ -184,6 +245,15 @@ export function buildDevelopmentNotificationInboxPreview(args: {
       requestedQuery: "https://apply.workable.com/north-coast-payments/",
       latestMatchedCompanyName: null,
       latestBriefId: null,
+      latestResultState: null,
+      latestWatchlistReadLabel: null,
+      latestSignalVerdict: null,
+      latestObservedJobsCount: null,
+      previousObservedJobsCount: null,
+      latestTopHiringBucket: null,
+      latestTopHiringBucketCount: null,
+      previousTopHiringBucket: null,
+      previousTopHiringBucketCount: null,
     },
     {
       id: "00000000-0000-4000-8000-000000000905",
@@ -197,6 +267,9 @@ export function buildDevelopmentNotificationInboxPreview(args: {
       summary:
         'Watchlist read changed from "Steady engineering hiring" to "Commercial hiring mixed in with platform roles".',
       alertPriority: "digest",
+      displayTag: "Hiring changed",
+      displayMainLine: "Engineering still leads. No major change since last scan.",
+      displayNextStep: "Keep watching.",
       createdAt: isoFromNow(4 * 24 * 60 * 60 * 1000),
       readAt: isoFromNow(4 * 24 * 60 * 60 * 1000 - 45 * 60 * 1000),
       dismissedAt: isoFromNow(3 * 24 * 60 * 60 * 1000),
@@ -207,6 +280,15 @@ export function buildDevelopmentNotificationInboxPreview(args: {
       requestedQuery: "https://jobs.ashbyhq.com/copper-bridge",
       latestMatchedCompanyName: null,
       latestBriefId: "00000000-0000-4000-8000-000000000935",
+      latestResultState: "supported_provider_matched_with_observed_openings",
+      latestWatchlistReadLabel: "Commercial hiring mixed in with platform roles",
+      latestSignalVerdict: "watch",
+      latestObservedJobsCount: 80,
+      previousObservedJobsCount: 80,
+      latestTopHiringBucket: "Engineering",
+      latestTopHiringBucketCount: 30,
+      previousTopHiringBucket: "Engineering",
+      previousTopHiringBucketCount: 28,
     },
   ];
 
@@ -409,6 +491,15 @@ export function buildNotificationCandidateDraft(args: {
   currentSignalVerdict?: SignalVerdict | null;
   /** Phase 6E-2: signal verdict for the previous brief (null when no prior brief or legacy). */
   previousSignalVerdict?: SignalVerdict | null;
+  /** Snapshot of the entry's brief comparison data as of creation time, used
+   *  to render point-in-time display copy (displayTag/displayMainLine/displayNextStep). */
+  latestBriefId?: string | null;
+  latestObservedJobsCount?: number | null;
+  previousObservedJobsCount?: number | null;
+  latestTopHiringBucket?: string | null;
+  latestTopHiringBucketCount?: number | null;
+  previousTopHiringBucket?: string | null;
+  previousTopHiringBucketCount?: number | null;
 }): NotificationCandidateDraft | null {
   const { currentAttempt, previousAttempt, previousState, currentState, diff } = args;
 
@@ -434,6 +525,9 @@ export function buildNotificationCandidateDraft(args: {
         ? `${originLabel} failed and did not replace the current monitoring state: ${currentAttempt.errorSummary}`
         : `${originLabel} failed and did not replace the current monitoring state.`,
       alertPriority: "source_issue",
+      displayTag: "Refresh failed",
+      displayMainLine: "Refresh failed.",
+      displayNextStep: "Check the source before using this signal.",
     };
   }
 
@@ -490,11 +584,29 @@ export function buildNotificationCandidateDraft(args: {
     return null;
   }
 
+  const displaySnapshot = buildNotificationDisplaySnapshot({
+    alertPriority,
+    changeTypes,
+    verdict: args.currentSignalVerdict ?? null,
+    resultState: currentState.resultState,
+    latestWatchlistReadLabel: currentState.watchlistReadLabel,
+    latestBriefId: args.latestBriefId ?? currentAttempt.relatedBriefId ?? null,
+    latestObservedJobsCount: args.latestObservedJobsCount ?? null,
+    previousObservedJobsCount: args.previousObservedJobsCount ?? null,
+    latestTopHiringBucket: args.latestTopHiringBucket ?? null,
+    latestTopHiringBucketCount: args.latestTopHiringBucketCount ?? null,
+    previousTopHiringBucket: args.previousTopHiringBucket ?? null,
+    previousTopHiringBucketCount: args.previousTopHiringBucketCount ?? null,
+  });
+
   return {
     relatedBriefId: currentAttempt.relatedBriefId ?? null,
     candidateKind: "meaningful_monitoring_change",
     changeTypes,
     summary: summaryParts.join(" "),
     alertPriority,
+    displayTag: displaySnapshot.tag,
+    displayMainLine: displaySnapshot.mainLine,
+    displayNextStep: displaySnapshot.nextStep,
   };
 }

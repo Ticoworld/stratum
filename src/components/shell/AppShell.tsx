@@ -2,12 +2,36 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 const NAV_ITEMS = [
   { href: "/watchlists", label: "Watchlists" },
   { href: "/notifications", label: "Inbox" },
 ] as const;
+
+/** Fired after a notification's read/dismiss state changes so the nav badge can refresh. */
+export const NOTIFICATIONS_UPDATED_EVENT = "stratum:notifications-updated";
+
+function formatUnreadBadge(count: number): string | null {
+  if (count <= 0) return null;
+  if (count > 99) return "99+";
+  return String(count);
+}
+
+function UnreadBadge({ count }: { count: number | null }) {
+  if (count === null) return null;
+  const label = formatUnreadBadge(count);
+  if (!label) return null;
+
+  return (
+    <span
+      className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none"
+      style={{ background: "var(--accent)", color: "var(--background)" }}
+    >
+      {label}
+    </span>
+  );
+}
 
 function getCurrentSection(pathname: string): string {
   if (pathname.startsWith("/support")) return "Support";
@@ -35,6 +59,29 @@ export function AppShell({ children, variant = "full" }: AppShellProps) {
   const currentSection = getCurrentSection(pathname);
   const isMinimal = variant === "minimal";
   const isWide = variant === "wide";
+  const [unreadCount, setUnreadCount] = useState<number | null>(null);
+
+  const loadUnreadCount = useCallback(() => {
+    fetch("/api/notifications/unread-count")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (typeof data?.data?.unreadCount === "number") {
+          setUnreadCount(data.data.unreadCount);
+        }
+      })
+      .catch(() => {
+        // Badge stays hidden if the count can't be loaded.
+      });
+  }, []);
+
+  useEffect(() => {
+    loadUnreadCount();
+  }, [loadUnreadCount, pathname]);
+
+  useEffect(() => {
+    window.addEventListener(NOTIFICATIONS_UPDATED_EVENT, loadUnreadCount);
+    return () => window.removeEventListener(NOTIFICATIONS_UPDATED_EVENT, loadUnreadCount);
+  }, [loadUnreadCount]);
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
@@ -61,7 +108,7 @@ export function AppShell({ children, variant = "full" }: AppShellProps) {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="rounded border px-4 py-3 text-sm transition-colors"
+                    className="flex items-center justify-between gap-2 rounded border px-4 py-3 text-sm transition-colors"
                     aria-current={active ? "page" : undefined}
                     style={{
                       background: active ? "var(--background)" : "transparent",
@@ -70,6 +117,7 @@ export function AppShell({ children, variant = "full" }: AppShellProps) {
                     }}
                   >
                     {item.label}
+                    {item.href === "/notifications" ? <UnreadBadge count={unreadCount} /> : null}
                   </Link>
                 );
               })}
@@ -101,7 +149,7 @@ export function AppShell({ children, variant = "full" }: AppShellProps) {
                     <Link
                       key={item.href}
                       href={item.href}
-                      className="rounded border px-3 py-2 text-xs font-data uppercase tracking-[0.18em] transition-colors"
+                      className="flex items-center gap-1.5 rounded border px-3 py-2 text-xs font-data uppercase tracking-[0.18em] transition-colors"
                       aria-current={active ? "page" : undefined}
                       style={{
                         background: active ? "var(--background)" : "transparent",
@@ -110,6 +158,7 @@ export function AppShell({ children, variant = "full" }: AppShellProps) {
                       }}
                     >
                       {item.label}
+                      {item.href === "/notifications" ? <UnreadBadge count={unreadCount} /> : null}
                     </Link>
                   );
                 })}

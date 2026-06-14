@@ -21,6 +21,12 @@ export interface StratumNotificationCandidateRecord {
   changeTypes: StratumNotificationChangeType[];
   summary: string;
   alertPriority: StratumNotificationAlertPriority;
+  /** Point-in-time display copy captured when this notification was created
+   *  (see displayTag/displayMainLine/displayNextStep below). Null for legacy
+   *  rows created before this snapshot existed. */
+  displayTag: string | null;
+  displayMainLine: string | null;
+  displayNextStep: string | null;
   createdAt: string;
   readAt: string | null;
   dismissedAt: string | null;
@@ -46,6 +52,9 @@ export const stratumNotificationCandidates = pgTable(
     changeTypes: jsonb("change_types").$type<StratumNotificationChangeType[]>().notNull(),
     summary: text("summary").notNull(),
     alertPriority: text("alert_priority").notNull().default("digest"),
+    displayTag: text("display_tag"),
+    displayMainLine: text("display_main_line"),
+    displayNextStep: text("display_next_step"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     readAt: timestamp("read_at", { withTimezone: true }),
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }),

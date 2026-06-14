@@ -6,16 +6,16 @@ import { Loader2 } from "lucide-react";
 import type {
   NotificationInboxCounts,
   StratumNotificationAlertPriority,
-  StratumNotificationChangeType,
   StratumNotificationInboxFilter,
   WatchlistNotificationInboxItem,
 } from "@/lib/watchlists/notifications";
 import {
   formatNotificationAlertPriorityLabel,
-  formatNotificationChangeTypeLabel,
   formatNotificationStatusLabel,
   getNotificationAlertPriorityRank,
 } from "@/lib/watchlists/notifications";
+import { buildNotificationDisplayCopy } from "@/lib/watchlists/notificationDisplay";
+import { NOTIFICATIONS_UPDATED_EVENT } from "@/components/shell/AppShell";
 import {
   buildWatchlistDisplayIdentity,
   formatWatchlistDateTime,
@@ -96,15 +96,6 @@ function getFilterCount(
     case "all":
       return counts.totalCount;
   }
-}
-
-function formatNotificationChangeHeadline(
-  changeTypes: StratumNotificationChangeType[]
-): string {
-  if (changeTypes.length === 0) return "Meaningful change detected";
-  if (changeTypes.length === 1) return formatNotificationChangeTypeLabel(changeTypes[0]);
-
-  return `${formatNotificationChangeTypeLabel(changeTypes[0])} +${changeTypes.length - 1} more`;
 }
 
 function formatNotificationStatusDetail(
@@ -292,6 +283,7 @@ export function NotificationsConsole({
             ? "Inbox item marked as unread."
             : "Inbox item dismissed from the active queue."
       );
+      window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED_EVENT));
     } catch {
       setError("Inbox item could not be updated.");
       setMessage(null);
@@ -321,7 +313,7 @@ export function NotificationsConsole({
                 Important updates
               </h1>
               <p className="mt-2 text-sm leading-6" style={{ color: "var(--foreground-secondary)" }}>
-                Review meaningful monitoring changes across tracked companies.
+                Updates from companies you&apos;re tracking.
               </p>
             </div>
 
@@ -411,7 +403,7 @@ export function NotificationsConsole({
                   identity.meta ??
                     (identity.uncertain ? "Identity unresolved" : identity.sourceGrounding.primary),
                 ]);
-                const changeHeadline = formatNotificationChangeHeadline(notification.changeTypes);
+                const displayCopy = buildNotificationDisplayCopy(notification);
                 const priority = notification.alertPriority ?? "digest";
                 const priorityChip = PRIORITY_CHIP_STYLES[priority];
                 const priorityBorderAccent =
@@ -481,27 +473,27 @@ export function NotificationsConsole({
                       </div>
 
                       <div className="min-w-0">
-                        <p className="text-[12px] font-medium" style={{ color: "var(--foreground-muted)" }}>
-                          {changeHeadline}
-                        </p>
-                        <p className="mt-2 text-sm leading-6" style={{ color: "var(--foreground)" }}>
-                          {notification.summary}
+                        <span
+                          className="inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium"
+                          style={{
+                            borderColor: "var(--border)",
+                            color: "var(--foreground-secondary)",
+                          }}
+                        >
+                          {displayCopy.tag}
+                        </span>
+                        <p className="mt-2 text-sm font-medium leading-6" style={{ color: "var(--foreground)" }}>
+                          {displayCopy.mainLine}
                         </p>
 
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {notification.changeTypes.map((changeType) => (
-                            <span
-                              key={`${notification.id}-${changeType}`}
-                              className="rounded-full border px-2.5 py-1 text-[11px] font-medium"
-                              style={{
-                                borderColor: "var(--border)",
-                                color: "var(--foreground-secondary)",
-                              }}
-                            >
-                              {formatNotificationChangeTypeLabel(changeType)}
-                            </span>
-                          ))}
-                        </div>
+                        {notification.summary && notification.summary !== displayCopy.mainLine ? (
+                          <details className="mt-3 text-[12px]" style={{ color: "var(--foreground-secondary)" }}>
+                            <summary className="cursor-pointer font-medium" style={{ color: "var(--foreground-muted)" }}>
+                              Details
+                            </summary>
+                            <p className="mt-2 leading-5">{notification.summary}</p>
+                          </details>
+                        ) : null}
                       </div>
 
                       <div className="space-y-4">
@@ -520,6 +512,9 @@ export function NotificationsConsole({
                         <div>
                           <p className="text-[12px] font-medium" style={{ color: "var(--foreground-muted)" }}>
                             Next step
+                          </p>
+                          <p className="mt-1 text-[12px] leading-5" style={{ color: "var(--foreground-secondary)" }}>
+                            {displayCopy.nextStep}
                           </p>
                           <div className="mt-2 flex flex-col gap-2 text-[12px]">
                             {previewMode ? (
@@ -553,7 +548,7 @@ export function NotificationsConsole({
                                     color: "var(--foreground-secondary)",
                                   }}
                                 >
-                                  {notification.relatedBriefId ? "Review related brief" : "Open latest brief"}
+                                  Open brief
                                 </span>
                               ) : (
                                 <Link
@@ -564,7 +559,7 @@ export function NotificationsConsole({
                                     color: "var(--foreground-secondary)",
                                   }}
                                 >
-                                  {notification.relatedBriefId ? "Review related brief" : "Open latest brief"}
+                                  Open brief
                                 </Link>
                               )
                             ) : null}

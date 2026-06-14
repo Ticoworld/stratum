@@ -603,6 +603,9 @@ test.describe("sortAndFilterNotifications behavior (via rank helper)", () => {
       changeTypes: ["saved_brief_material_change"],
       summary: "Test summary",
       alertPriority,
+      displayTag: null,
+      displayMainLine: null,
+      displayNextStep: null,
       createdAt,
       readAt: null,
       dismissedAt: null,
@@ -613,6 +616,15 @@ test.describe("sortAndFilterNotifications behavior (via rank helper)", () => {
       requestedQuery: "https://boards.greenhouse.io/test",
       latestMatchedCompanyName: "Test Corp",
       latestBriefId: null,
+      latestResultState: null,
+      latestWatchlistReadLabel: null,
+      latestSignalVerdict: null,
+      latestObservedJobsCount: null,
+      previousObservedJobsCount: null,
+      latestTopHiringBucket: null,
+      latestTopHiringBucketCount: null,
+      previousTopHiringBucket: null,
+      previousTopHiringBucketCount: null,
     };
   }
 

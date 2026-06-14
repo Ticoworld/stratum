@@ -235,7 +235,7 @@ function mapEntryRow(row: typeof stratumWatchlistEntries.$inferSelect): Watchlis
   };
 }
 
-interface BriefComparisonSummary {
+export interface BriefComparisonSummary {
   signalVerdict: string | null;
   observedJobsCount: number | null;
   topHiringBucket: string | null;
@@ -259,7 +259,7 @@ function buildUuidListSql(values: string[]) {
   return sql.join(values.map((value) => sql`${value}::uuid`), sql`, `);
 }
 
-async function listBriefComparisonSummaries(
+export async function listBriefComparisonSummaries(
   entryIds: string[]
 ): Promise<Map<string, BriefComparisonSummary[]>> {
   const comparisonMap = new Map<string, BriefComparisonSummary[]>();

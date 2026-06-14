@@ -19,6 +19,7 @@ import type {
 } from "@/lib/watchlists/notifications";
 import type { StratumMonitoringAttemptOrigin } from "@/lib/watchlists/monitoringEvents";
 import { getNormalizedTrackedTargetName } from "@/lib/watchlists/identity";
+import { listBriefComparisonSummaries, type BriefComparisonSummary } from "@/lib/watchlists/repository";
 import {
   assertTenantlessCompatibilityAllowed,
   resolveTenantId,
@@ -43,6 +44,9 @@ function mapNotificationCandidateRow(
     changeTypes: (row.changeTypes as StratumNotificationChangeType[]) ?? [],
     summary: row.summary,
     alertPriority: (row.alertPriority as StratumNotificationAlertPriority | null) ?? "digest",
+    displayTag: row.displayTag ?? null,
+    displayMainLine: row.displayMainLine ?? null,
+    displayNextStep: row.displayNextStep ?? null,
     createdAt: toIsoString(row.createdAt),
     readAt: row.readAt ? toIsoString(row.readAt) : null,
     dismissedAt: row.dismissedAt ? toIsoString(row.dismissedAt) : null,
@@ -51,17 +55,22 @@ function mapNotificationCandidateRow(
   };
 }
 
-function mapNotificationInboxRow(row: {
-  notification: typeof stratumNotificationCandidates.$inferSelect;
-  entry: typeof stratumWatchlistEntries.$inferSelect;
-  watchlist: typeof stratumWatchlists.$inferSelect;
-}): WatchlistNotificationInboxItem {
+function mapNotificationInboxRow(
+  row: {
+    notification: typeof stratumNotificationCandidates.$inferSelect;
+    entry: typeof stratumWatchlistEntries.$inferSelect;
+    watchlist: typeof stratumWatchlists.$inferSelect;
+  },
+  comparisonMap: Map<string, BriefComparisonSummary[]>
+): WatchlistNotificationInboxItem {
   const candidate = mapNotificationCandidateRow(row.notification);
   const latestMatchedCompanyName =
     getNormalizedTrackedTargetName(
       row.entry.requestedQuery,
       row.entry.latestMatchedCompanyName
     ) ?? null;
+  const comparisons = comparisonMap.get(row.entry.id) ?? [];
+  const [latestComparison, previousComparison] = comparisons;
 
   return {
     ...candidate,
@@ -70,6 +79,15 @@ function mapNotificationInboxRow(row: {
     requestedQuery: row.entry.requestedQuery,
     latestMatchedCompanyName,
     latestBriefId: row.entry.latestBriefId ?? null,
+    latestResultState: row.entry.latestResultState ?? null,
+    latestWatchlistReadLabel: row.entry.latestWatchlistReadLabel ?? null,
+    latestSignalVerdict: latestComparison?.signalVerdict ?? null,
+    latestObservedJobsCount: latestComparison?.observedJobsCount ?? null,
+    previousObservedJobsCount: previousComparison?.observedJobsCount ?? null,
+    latestTopHiringBucket: latestComparison?.topHiringBucket ?? null,
+    latestTopHiringBucketCount: latestComparison?.topHiringBucketCount ?? null,
+    previousTopHiringBucket: previousComparison?.topHiringBucket ?? null,
+    previousTopHiringBucketCount: previousComparison?.topHiringBucketCount ?? null,
   };
 }
 
@@ -111,6 +129,10 @@ export async function createNotificationCandidate(args: {
   changeTypes: StratumNotificationChangeType[];
   summary: string;
   alertPriority?: StratumNotificationAlertPriority;
+  /** Point-in-time display copy to persist alongside this notification. */
+  displayTag: string;
+  displayMainLine: string;
+  displayNextStep: string;
   createdAt?: Date;
 }): Promise<WatchlistNotificationCandidate> {
   assertTenantlessCompatibilityAllowed(args.scope);
@@ -147,6 +169,9 @@ export async function createNotificationCandidate(args: {
       changeTypes: args.changeTypes,
       summary: args.summary.trim().slice(0, 1500),
       alertPriority: args.alertPriority ?? "digest",
+      displayTag: args.displayTag,
+      displayMainLine: args.displayMainLine,
+      displayNextStep: args.displayNextStep,
       createdAt: args.createdAt ?? new Date(),
     })
     .returning();
@@ -231,7 +256,10 @@ export async function listNotificationInboxItems(args: {
           )
           .limit(limit);
 
-  return rows.map((row) => mapNotificationInboxRow(row));
+  const entryIds = [...new Set(rows.map((row) => row.entry.id))];
+  const comparisonMap = await listBriefComparisonSummaries(entryIds);
+
+  return rows.map((row) => mapNotificationInboxRow(row, comparisonMap));
 }
 
 export async function getNotificationInboxItemById(
@@ -261,7 +289,10 @@ export async function getNotificationInboxItemById(
     )
     .limit(1);
 
-  return row ? mapNotificationInboxRow(row) : null;
+  if (!row) return null;
+
+  const comparisonMap = await listBriefComparisonSummaries([row.entry.id]);
+  return mapNotificationInboxRow(row, comparisonMap);
 }
 
 export async function getNotificationInboxCounts(scope: TenantScope): Promise<NotificationInboxCounts> {
