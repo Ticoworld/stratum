@@ -315,7 +315,7 @@ export function WatchlistSignalInbox({
         className="rounded-[24px] border bg-[var(--surface)] p-4 text-[13px] leading-6"
         style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
       >
-        This watchlist is empty. Add a company to start tracking.
+        This watchlist is empty. Use Track company to add your first company.
       </div>
     );
   }

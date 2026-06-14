@@ -136,7 +136,7 @@ const cases: Case[] = [
     },
     expected: {
       mainLine: "No scan yet.",
-      nextStep: "Add or refresh this company to start tracking.",
+      nextStep: "Refresh to run the first check.",
     },
   },
 ];

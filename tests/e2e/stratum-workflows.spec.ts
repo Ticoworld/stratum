@@ -300,8 +300,8 @@ test("watchlists hand off cleanly to saved briefs and back again", async ({ page
   await expect(
     page.locator("header").getByText("Open the saved brief for the full summary.", { exact: true })
   ).toBeVisible();
-  await expect(page.getByText("Read quality", { exact: true })).toBeVisible();
-  await expect(page.getByText("Evidence basis", { exact: true })).toBeVisible();
+  await expect(page.getByText("Confidence", { exact: true })).toBeVisible();
+  await expect(page.getByText("Based on", { exact: true })).toBeVisible();
   await expect(page.getByText("Saved brief ready")).toHaveCount(0);
   await expect(page.getByText("Low confidence")).toHaveCount(0);
   await expect(page.getByText("Proof basis")).toHaveCount(0);

@@ -329,7 +329,7 @@ export function buildWatchlistActionCopy(
   if (!isBriefPresent(args)) {
     return {
       mainLine: "No scan yet.",
-      nextStep: "Add or refresh this company to start tracking.",
+      nextStep: "Refresh to run the first check.",
     };
   }
 
@@ -351,8 +351,8 @@ export function buildWatchlistActionCopy(
 
   if (sourceIssueAlert || args.resultState === "provider_failure") {
     return {
-      mainLine: "Scan problem.",
-      nextStep: "Check source details.",
+      mainLine: "Refresh failed.",
+      nextStep: "Check the source before using this signal.",
     };
   }
 

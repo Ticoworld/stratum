@@ -277,7 +277,7 @@ test.describe("buildWatchlistActionCopy", () => {
     expect(copy.nextStep).toBe("Check the source before using this.");
   });
 
-  test("source issue alert returns scan-problem language", () => {
+  test("source issue alert returns refresh-failed language", () => {
     const copy = buildWatchlistActionCopy({
       verdict: "watch",
       latestBriefId: "brief-1",
@@ -286,8 +286,8 @@ test.describe("buildWatchlistActionCopy", () => {
       resultState: "provider_failure",
     });
 
-    expect(copy.mainLine).toBe("Scan problem.");
-    expect(copy.nextStep).toBe("Check source details.");
+    expect(copy.mainLine).toBe("Refresh failed.");
+    expect(copy.nextStep).toBe("Check the source before using this signal.");
   });
 
   test("WAIT returns not-enough-signal language", () => {
@@ -320,7 +320,7 @@ test.describe("buildWatchlistActionCopy", () => {
     });
 
     expect(copy.mainLine).toBe("No scan yet.");
-    expect(copy.nextStep).toBe("Add or refresh this company to start tracking.");
+    expect(copy.nextStep).toBe("Refresh to run the first check.");
   });
 
   test("returned copy stays free of internal terms", () => {
@@ -424,8 +424,8 @@ test.describe("Watchlist signal inbox action copy", () => {
     );
 
     const sourceAlertRow = page.getByTestId(`watchlist-row-${seededFixture.rows.sourceAlert.entryId}`);
-    await expect(sourceAlertRow.getByText("Scan problem.", { exact: true })).toBeVisible();
-    await expect(sourceAlertRow.getByTestId("watchlist-row-next-step")).toHaveText("Check source details.");
+    await expect(sourceAlertRow.getByText("Refresh failed.", { exact: true })).toBeVisible();
+    await expect(sourceAlertRow.getByTestId("watchlist-row-next-step")).toHaveText("Check the source before using this signal.");
 
     const waitRow = page.getByTestId(`watchlist-row-${seededFixture.rows.wait.entryId}`);
     await expect(waitRow.getByText("WAIT", { exact: true })).toBeVisible();
@@ -442,7 +442,7 @@ test.describe("Watchlist signal inbox action copy", () => {
     const noBriefRow = page.getByTestId(`watchlist-row-${seededFixture.rows.noBrief.entryId}`);
     await expect(noBriefRow.getByTestId("watchlist-row-main-line")).toHaveText("No scan yet.");
     await expect(noBriefRow.getByTestId("watchlist-row-next-step")).toHaveText(
-      "Add or refresh this company to start tracking."
+      "Refresh to run the first check."
     );
     await expect(noBriefRow.getByRole("link", { name: "Brief", exact: true })).toHaveCount(0);
 

@@ -150,7 +150,7 @@ export function WatchlistEntryDetailPage({
   });
   const sourceLabel = trackingStatus.sourceLabel;
   const stateHeadline =
-    trackingStatus.headline === "Saved brief ready" ? "Saved brief" : trackingStatus.headline;
+    trackingStatus.headline === "Saved brief ready" ? "Brief ready" : trackingStatus.headline;
   const stateLead =
     trackingStatus.headline === "Saved brief ready"
       ? "Latest scan is saved. Open the saved brief for the full summary."
@@ -325,10 +325,10 @@ export function WatchlistEntryDetailPage({
                   {stateHeadline}
                 </p>
                 <p className="mt-2 text-[12px] leading-5" style={{ color: "var(--foreground-secondary)" }}>
-                  {stateHeadline === "Saved brief"
+                  {stateHeadline === "Brief ready"
                     ? "Open the saved brief for the full summary."
                     : trackingStatus.headline === "Checking now"
-                      ? "Live check active."
+                      ? "Check in progress."
                       : trackingStatus.headline === "No supported source found"
                         ? "No supported source confirmed yet."
                         : trackingStatus.headline === "Check failed"
@@ -345,7 +345,7 @@ export function WatchlistEntryDetailPage({
             <div className="mt-4 grid gap-3 border-t pt-4 sm:grid-cols-3" style={{ borderColor: "var(--border)" }}>
               <div className="space-y-1">
                 <p className="text-[10px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
-                  Read quality
+                  Confidence
                 </p>
                 <p className="break-words text-[13px] font-semibold" style={{ color: "var(--foreground)" }}>
                   {confidenceLabel}
@@ -353,7 +353,7 @@ export function WatchlistEntryDetailPage({
               </div>
               <div className="space-y-1">
                 <p className="text-[10px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
-                  Evidence basis
+                  Based on
                 </p>
                 <p className="break-words text-[13px] font-semibold" style={{ color: "var(--foreground)" }}>
                   {basisLabel}
@@ -508,7 +508,7 @@ export function WatchlistEntryDetailPage({
                     ? detail.diff.summary
                     : detail.attemptHistory.length > 1
                       ? "No material changes detected since the first check."
-                      : "First check complete. Nothing to compare yet."}
+                      : "First check complete. Future scans will show what changed."}
                 </p>
                 {detail.diff.comparisonStrength === "weak" && (
                   <div className="flex items-start gap-3 rounded-xl border border-amber-500/10 bg-amber-50/20 p-4 text-[13px] text-amber-700/90">
