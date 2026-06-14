@@ -22,6 +22,7 @@ import type { WatchlistEntryDetail } from "@/lib/watchlists/repository";
 import { Button } from "@/components/ui/Button";
 import { Toast, type ToastType } from "@/components/ui/Toast";
 import { NotificationsInboxLink } from "@/components/notifications/NotificationsInboxLink";
+import { NOTIFICATIONS_UPDATED_EVENT } from "@/components/shell/AppShell";
 
 interface WatchlistEntryDetailPageProps {
   detail: WatchlistEntryDetail;
@@ -200,6 +201,7 @@ export function WatchlistEntryDetailPage({
 
       setToastMessage("Refresh completed successfully.");
       setToastType("success");
+      window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED_EVENT));
       router.refresh();
     } catch {
       setToastMessage(formatActionFailureMessage("refresh", displayIdentity.primary || "this company"));

@@ -139,6 +139,19 @@ const cases: Case[] = [
       nextStep: "Refresh to run the first check.",
     },
   },
+  {
+    name: "NO BRIEF, CHECKING NOW",
+    input: {
+      verdict: "watch",
+      latestBriefId: null,
+      latestWatchlistReadLabel: null,
+      isCheckingNow: true,
+    },
+    expected: {
+      mainLine: "First check in progress.",
+      nextStep: "We'll show the result when it finishes.",
+    },
+  },
 ];
 
 for (const testCase of cases) {

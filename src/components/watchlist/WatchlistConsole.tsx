@@ -8,6 +8,7 @@ import { WatchlistSignalInbox } from "@/components/watchlist/WatchlistSignalInbo
 import { WatchlistDailySummaryPanel } from "@/components/watchlist/WatchlistDailySummaryPanel";
 import { WatchlistWorkspaceSidebar } from "@/components/watchlist/WatchlistWorkspaceSidebar";
 import { NotificationsInboxLink } from "@/components/notifications/NotificationsInboxLink";
+import { NOTIFICATIONS_UPDATED_EVENT } from "@/components/shell/AppShell";
 import { Dialog } from "@/components/ui/Dialog";
 import { Drawer } from "@/components/ui/Drawer";
 import { Button } from "@/components/ui/Button";
@@ -294,6 +295,7 @@ export function WatchlistConsole({
         setMessage(null);
         setToastMessage(`"${companyLabel}" added to watchlist and checked.`);
         setToastType("success");
+        window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED_EVENT));
         router.refresh();
       } catch {
         setError(formatActionFailureMessage("complete the first check for", companyLabel));
@@ -444,6 +446,7 @@ export function WatchlistConsole({
       }
 
       setMessage(`Refresh completed for ${entryIdentity.primary}.`);
+      window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED_EVENT));
       router.refresh();
     } catch {
       setError(formatActionFailureMessage("refresh", entryIdentity.primary || "this company"));

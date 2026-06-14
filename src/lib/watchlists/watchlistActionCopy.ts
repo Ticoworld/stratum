@@ -10,6 +10,8 @@ export interface WatchlistActionCopyInput {
   latestTopHiringBucketCount?: number | null;
   previousTopHiringBucket?: string | null;
   previousTopHiringBucketCount?: number | null;
+  /** True while a refresh is in flight for this entry (e.g. the first check after tracking). */
+  isCheckingNow?: boolean | null;
 }
 
 export interface WatchlistActionCopy {
@@ -327,6 +329,13 @@ export function buildWatchlistActionCopy(
   args: WatchlistActionCopyInput
 ): WatchlistActionCopy {
   if (!isBriefPresent(args)) {
+    if (args.isCheckingNow) {
+      return {
+        mainLine: "First check in progress.",
+        nextStep: "We'll show the result when it finishes.",
+      };
+    }
+
     return {
       mainLine: "No scan yet.",
       nextStep: "Refresh to run the first check.",

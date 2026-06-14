@@ -164,6 +164,7 @@ function EntryRow({
     latestTopHiringBucketCount: entry.latestTopHiringBucketCount,
     previousTopHiringBucket: entry.previousTopHiringBucket,
     previousTopHiringBucketCount: entry.previousTopHiringBucketCount,
+    isCheckingNow: pendingRefresh,
   });
 
   const freshnessLabel = formatWatchlistDateTime(
