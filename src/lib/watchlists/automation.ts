@@ -5,9 +5,14 @@ export interface StratumScheduledAutomationStatus {
   summary: string;
 }
 
+export function isRunningOnVercelInfrastructure(): boolean {
+  return (
+    process.env.VERCEL === "1" || process.env.VERCEL === "true" || Boolean(process.env.VERCEL_URL)
+  );
+}
+
 export function getScheduledAutomationStatus(): StratumScheduledAutomationStatus {
-  const runningOnVercel =
-    process.env.VERCEL === "1" || process.env.VERCEL === "true" || Boolean(process.env.VERCEL_URL);
+  const runningOnVercel = isRunningOnVercelInfrastructure();
   const vercelEnv = process.env.VERCEL_ENV?.trim().toLowerCase();
   const vercelTargetEnv = process.env.VERCEL_TARGET_ENV?.trim().toLowerCase();
   const vercelCronActive =

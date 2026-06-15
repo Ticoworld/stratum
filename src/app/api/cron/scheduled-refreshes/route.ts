@@ -12,6 +12,7 @@ import {
   getScheduledAutomationStatus,
   getScheduledCronBatchLimit,
   getScheduledCronSecret,
+  isRunningOnVercelInfrastructure,
 } from "@/lib/watchlists/automation";
 import { runDueScheduledRefreshes } from "@/lib/watchlists/scheduledRefreshRunner";
 
@@ -26,7 +27,12 @@ function isAuthorizedCronRequest(request: NextRequest): boolean {
     return authorization === `Bearer ${cronSecret}`;
   }
 
-  return request.headers.has("x-vercel-cron");
+  // Vercel's edge sets `x-vercel-cron` only on requests it generates for
+  // configured cron jobs, and strips any client-supplied copy of this header.
+  // That guarantee only holds when actually running on Vercel infrastructure,
+  // so off-Vercel deployments without a configured secret must reject the
+  // request rather than trust a header an external caller could forge.
+  return isRunningOnVercelInfrastructure() && request.headers.has("x-vercel-cron");
 }
 
 export async function GET(request: NextRequest) {
