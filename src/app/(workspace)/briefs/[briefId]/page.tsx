@@ -397,9 +397,18 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
         
         {/* Navigation */}
         <div className="mb-1.5 flex items-center justify-between">
-          {monitoring?.watchlistId ? (
+          {monitoring?.watchlistId && monitoring?.entryId ? (
             <Link
-              href={`/watchlists?watchlistId=${monitoring.watchlistId}${monitoring.entryId ? `&entryId=${monitoring.entryId}` : ""}`}
+              href={`/watchlists/${monitoring.watchlistId}/entries/${monitoring.entryId}`}
+              className="inline-flex items-center gap-2 text-[12px] font-medium transition-colors hover:text-[var(--accent)]"
+              style={{ color: "var(--foreground-secondary)" }}
+            >
+              <ArrowLeft className="h-3 w-3" />
+              Back to entry
+            </Link>
+          ) : monitoring?.watchlistId ? (
+            <Link
+              href={`/watchlists?watchlistId=${monitoring.watchlistId}`}
               className="inline-flex items-center gap-2 text-[12px] font-medium transition-colors hover:text-[var(--accent)]"
               style={{ color: "var(--foreground-secondary)" }}
             >
@@ -801,5 +810,4 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
       </div>
     </div>
   );
-;
 }
