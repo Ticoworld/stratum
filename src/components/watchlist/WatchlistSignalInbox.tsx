@@ -316,7 +316,8 @@ export function WatchlistSignalInbox({
         className="rounded-[24px] border bg-[var(--surface)] p-4 text-[13px] leading-6"
         style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
       >
-        This watchlist is empty. Use Track company to add your first company.
+        This watchlist is empty. Use Track company to add your first company. The first check
+        creates a baseline, and future checks show what changed on their careers page.
       </div>
     );
   }

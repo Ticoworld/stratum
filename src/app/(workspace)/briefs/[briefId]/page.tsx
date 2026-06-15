@@ -747,7 +747,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                                             {attempt.providerErrorKind ? (
                                               <p style={{ color: "var(--foreground-secondary)" }}>
                                                 <span className="font-medium" style={{ color: "var(--foreground)" }}>
-                                                  Provider issue
+                                                  Source issue
                                                 </span>{" "}
                                                 {attempt.providerErrorKind}
                                               </p>
@@ -799,7 +799,7 @@ export default async function StratumBriefPage({ params }: BriefPageProps) {
                   </div>
                 ) : (
                   <p className="text-[12px] leading-6" style={{ color: "var(--foreground-muted)" }}>
-                    No provider diagnostics were stored for this brief.
+                    No scan details were stored for this brief.
                   </p>
                 )}
               </div>
