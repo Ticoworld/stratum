@@ -296,7 +296,7 @@ export function NotificationsConsole({
 
   return (
     <div className="min-h-full bg-[var(--background)]">
-      <div className="mx-auto max-w-6xl px-4 py-4 lg:px-6 lg:py-6">
+      <div className="w-full px-3 py-3 lg:px-4 lg:py-4">
         <header
           className="rounded-[22px] border bg-[var(--surface)] px-6 py-4 lg:px-7 lg:py-5"
           style={{ borderColor: "var(--border)" }}
@@ -525,18 +525,18 @@ export function NotificationsConsole({
                                   color: "var(--foreground)",
                                 }}
                               >
-                                Inspect target
+                                Open entry
                               </span>
                             ) : (
                               <Link
-                                href={`/watchlists?watchlistId=${notification.watchlistId}&entryId=${notification.watchlistEntryId}`}
+                                href={`/watchlists/${notification.watchlistId}/entries/${notification.watchlistEntryId}`}
                                 className="rounded-full border px-3 py-2 font-medium transition-colors"
                                 style={{
                                   borderColor: "var(--foreground)",
                                   color: "var(--foreground)",
                                 }}
                               >
-                                Inspect target
+                                Open entry
                               </Link>
                             )}
                             {preferredBriefId ? (

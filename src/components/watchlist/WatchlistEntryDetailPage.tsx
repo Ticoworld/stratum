@@ -258,41 +258,39 @@ export function WatchlistEntryDetailPage({
               Tracked company
             </div>
 
-            <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div className="min-w-0 space-y-3">
-                <h1 className="break-words text-[2.2rem] font-semibold tracking-[-0.04em] lg:text-[2.6rem]" style={{ color: "var(--foreground)" }}>
-                  {displayIdentity.primary}
-                </h1>
+            <div className="mt-3 space-y-4">
+              <h1 className="break-words text-[2.2rem] font-semibold leading-tight tracking-[-0.04em] lg:text-[2.6rem]" style={{ color: "var(--foreground)" }}>
+                {displayIdentity.primary}
+              </h1>
 
-                <div className="grid gap-x-4 gap-y-2 text-[12px] text-[var(--foreground-secondary)] sm:grid-cols-3">
-                  <div className="space-y-0.5">
-                    <p className="text-[10px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
-                      Watchlist
-                    </p>
-                    <p className="break-words font-medium" style={{ color: "var(--foreground)" }}>
-                      {detail.monitoring.watchlistName}
-                    </p>
-                  </div>
-                  <div className="space-y-0.5">
-                    <p className="text-[10px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
-                      Last checked
-                    </p>
-                    <p className="font-medium" style={{ color: "var(--foreground)" }}>
-                      {formatWatchlistDateTime(detail.monitoring.lastMonitoringAttemptAt, "Never")}
-                    </p>
-                  </div>
-                  <div className="space-y-0.5">
-                    <p className="text-[10px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
-                      Source
-                    </p>
-                    <p className="break-words font-medium" style={{ color: "var(--foreground)" }}>
-                      {sourceLabel}
-                    </p>
-                  </div>
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-x-4 gap-y-3 text-[12px] text-[var(--foreground-secondary)]">
+                <div className="space-y-0.5">
+                  <p className="text-[10px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
+                    Watchlist
+                  </p>
+                  <p className="break-words font-medium" style={{ color: "var(--foreground)" }}>
+                    {detail.monitoring.watchlistName}
+                  </p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-[10px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
+                    Last checked
+                  </p>
+                  <p className="font-medium" style={{ color: "var(--foreground)" }}>
+                    {formatWatchlistDateTime(detail.monitoring.lastMonitoringAttemptAt, "Never")}
+                  </p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-[10px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground-muted)" }}>
+                    Source
+                  </p>
+                  <p className="break-words font-medium" style={{ color: "var(--foreground)" }}>
+                    {sourceLabel}
+                  </p>
                 </div>
               </div>
 
-              <div className="flex shrink-0 flex-wrap gap-3">
+              <div className="flex flex-wrap gap-3 pt-1">
                 <NotificationsInboxLink />
                 <Button
                   onClick={handleRefresh}
