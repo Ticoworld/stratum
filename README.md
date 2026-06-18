@@ -23,6 +23,8 @@ Stratum turns those checks into saved briefs and repeatable change records.
 
 ## Features
 
+- Tenant-scoped accounts via Google sign-in (NextAuth), with `owner`/`analyst`/`viewer` workspace roles
+- Viewer role gets read-only access: write controls (track, refresh, remove, schedule, create watchlist) are hidden in the UI and rejected with 403 by the API
 - Target-company watchlists with manual and scheduled refreshes
 - Point-in-time saved briefs with latest-vs-previous comparison
 - In-app notification inbox for meaningful monitoring changes
@@ -49,6 +51,8 @@ Stratum turns those checks into saved briefs and repeatable change records.
 - Framework: Next.js 16 (App Router)
 - UI: React 19 + TypeScript
 - Styling: Tailwind CSS 4
+- Auth: NextAuth v5 (Google provider), tenant-scoped sessions
+- Database: PostgreSQL via `drizzle-orm` / `drizzle-kit`
 - AI: `@google/genai`
 - Tool protocol: `@modelcontextprotocol/sdk` + `zod`
 - Utility libs used in source: `clsx`, `tailwind-merge`, `lucide-react`, `dotenv` (MCP boot)
@@ -86,23 +90,37 @@ CRON_SECRET=your_cron_secret
 STRATUM_SCHEDULED_CRON_SECRET=your_cron_secret
 ```
 
-3. Run the app:
+3. Run database migrations:
+
+```bash
+npm run db:migrate
+```
+
+4. Run the app:
 
 ```bash
 npm run dev
 ```
 
-4. Production commands:
+5. Production commands:
 
 ```bash
 npm run build
 npm run start
 ```
 
-5. Optional MCP server:
+6. Optional MCP server:
 
 ```bash
 npm run mcp
+```
+
+## Development and Verification Commands
+
+```bash
+npx tsc --noEmit     # type check
+npx eslint .         # lint (also available as npm run lint)
+npm run test:e2e     # Playwright e2e suite (requires local pglite/test-route setup; not run in normal review passes)
 ```
 
 ## Project Structure
@@ -110,14 +128,26 @@ npm run mcp
 ```text
 src/
   app/
-    api/analyze-unified/route.ts     # main analysis endpoint
-    globals.css
-    layout.tsx
-    page.tsx                         # renders TruthConsole
+    page.tsx                         # redirects to /watchlists
+    (workspace)/watchlists/page.tsx  # primary watchlist console (server component)
+    (workspace)/briefs/[briefId]/    # saved brief view
+    (workspace)/notifications/       # in-app notification inbox
+    (dossier)/watchlists/[watchlistId]/entries/[entryId]/  # single-entry detail page
+    api/analyze-unified/route.ts     # company check endpoint (used by watchlist refreshes)
+    api/watchlists/                  # create watchlist, track/remove/update entries, intake resolve
+    api/cron/scheduled-refreshes/    # Vercel Cron entry point for automated refreshes
+    api/scheduled-refreshes/run/     # manual/non-Vercel trigger for due refreshes
+    api/notifications/               # notification list/read/unread-count
+    api/auth/[...nextauth]/          # NextAuth session routes
+    api/test/e2e/                    # test-only routes, gated by STRATUM_ENABLE_TEST_ROUTES
   components/
-    truth/TruthConsole.tsx           # primary UI and user flow
-    ui/                              # status bar, modal, skeleton, shared UI components
+    watchlist/                       # WatchlistConsole, sidebar, signal inbox, entry detail page
+    notifications/                   # notification inbox link + console
+    shell/AppShell.tsx               # nav shell used by the (workspace) and (dossier) layouts
+    ui/                              # button, dialog, drawer, input, toast, shared UI components
   lib/
+    auth/session.ts                  # session loading + canWriteWorkspace role gate
+    watchlists/                      # repository, automation/cron status, scheduled refresh runner
     ai/unified-analyzer.ts           # Gemini prompt, call, response parsing
     api/                             # Greenhouse/Lever/Ashby/Workable adapters + retry
     cache/stratum-cache.ts           # in-memory TTL cache
@@ -128,22 +158,20 @@ src/
 scripts/
   test-new-boards.ts                 # ATS integration smoke script
   probe-company-slug.ts              # slug discovery helper
-  list_models.js                     # local model-list script
+  prepare-e2e-db.mjs                 # local pglite bootstrap for Playwright runs
+  run-playwright-e2e.mjs             # `npm run test:e2e` entry point
+  verify-access-control.ts           # manual viewer/owner permission check script
 ```
 
 ## Architecture Overview
 
-### Web request flow
+### Watchlist flow (primary product surface)
 
-1. UI submits company name to `/api/analyze-unified`.
-2. API applies IP rate limit and input validation/sanitization.
-3. API checks in-memory cache.
-4. On cache miss, `StratumInvestigator`:
-   - fetches jobs from ATS sources via `fetchCompanyJobs`
-   - returns an explicit no-jobs result if none found
-   - computes deterministic eng:sales ratio
-   - runs Gemini analysis if jobs exist
-5. API returns normalized JSON payload for UI rendering.
+1. The signed-in user tracks a company from the watchlist console (`WatchlistConsole`), which resolves the input through `/api/watchlists/resolve` and creates an entry via `POST /api/watchlists/[watchlistId]/entries`.
+2. Tracking (and every later refresh) calls `/api/analyze-unified`, which fetches jobs from supported ATS sources, computes the deterministic eng:sales ratio, and runs Gemini analysis when jobs exist.
+3. Each check saves a point-in-time brief and updates the entry's latest-vs-previous comparison; meaningful changes are written to the in-app notification inbox.
+4. Scheduled entries are refreshed automatically by `GET /api/cron/scheduled-refreshes`, invoked by Vercel Cron on the schedule in `vercel.json` (hourly). The route only accepts requests authenticated with `CRON_SECRET`/`STRATUM_SCHEDULED_CRON_SECRET` or, on Vercel infrastructure, the platform's `x-vercel-cron` header. `/api/scheduled-refreshes/run` exists for manually triggering due refreshes outside of Vercel Cron.
+5. Server-derived `canWriteWorkspace(session.role)` (`src/lib/auth/session.ts`) gates all write actions both server-side (API routes return 403 for viewers) and in the UI (write controls are hidden/disabled for viewer-role sessions).
 
 ### MCP flow
 
@@ -172,9 +200,8 @@ scripts/
 
 - Coverage is limited to companies discoverable through the implemented ATS APIs and token mapping logic.
 - The brief-generation cache is in-memory and resets on process restart, even though watchlists, briefs, and notifications are persisted.
-- `scripts/list_models.js` currently contains a hardcoded API key and fails lint under current ESLint rules.
-- `package.json` defines `generate:sentinel`, but `scripts/generate_sentinel.ts` is not present.
-- Test-only routes should not be enabled in production; the repo now gates them on explicit flags plus local-host checks, but deployment hygiene still matters.
+- `package.json` defines `generate:sentinel`, but `scripts/generate_sentinel.ts` is not present in the repo.
+- Test-only routes should not be enabled in production; the repo gates them on explicit flags (`STRATUM_ENABLE_TEST_ROUTES`, `STRATUM_E2E_MODE`) plus local-host checks, but deployment hygiene still matters.
 
 ## Partial Inference Index
 

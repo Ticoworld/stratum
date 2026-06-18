@@ -37,7 +37,7 @@ export interface CompanyIntakeChoice {
   supportStatus: CompanyIntakeSupportStatus;
   explanation: string;
   matchedAs: string | null;
-  source: JobBoardSource;
+  source: JobBoardSource | null;
 }
 
 export interface CompanyIntakeResolution {
@@ -284,7 +284,7 @@ function buildCandidateChoices(args: {
 }): CompanyIntakeChoice[] {
   const { candidateMatches, canonicalCompanyLabel, sourceInputMode, supportStatus, requestedSourceHint, likelyCareersPage } = args;
 
-  const choices = candidateMatches.map((candidate, index) => {
+  const choices: CompanyIntakeChoice[] = candidateMatches.map((candidate, index) => {
     const candidateLikelyCareersPage = buildSourceUrl(candidate.source, candidate.token);
     const confidence: CompanyIntakeConfidence =
       candidate.jobsCount === 0 && candidate.source === "WORKABLE" && sourceInputMode !== "supported_source_input"
@@ -330,7 +330,7 @@ function buildCandidateChoices(args: {
       supportStatus: (supportStatus === "unresolved" ? "unresolved" : "unsupported") as CompanyIntakeSupportStatus,
       explanation: "Detected external careers source URL, but ATS logic is unsupported or hidden.",
       matchedAs: null,
-      source: null as any,
+      source: null,
     });
   }
 

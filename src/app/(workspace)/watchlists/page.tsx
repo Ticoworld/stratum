@@ -6,7 +6,7 @@ import {
   requireAuthSession,
 } from "@/lib/auth/session";
 import { getScheduledAutomationStatus } from "@/lib/watchlists/automation";
-import { getWatchlistEntryDetail, listWatchlistsWithEntries } from "@/lib/watchlists/repository";
+import { listWatchlistsWithEntries } from "@/lib/watchlists/repository";
 
 interface WatchlistsPageProps {
   searchParams: Promise<{

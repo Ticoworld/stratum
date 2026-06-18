@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { encode } from "@auth/core/jwt";
-import { expect, test, type PlaywrightTestArgs, type PlaywrightWorkerArgs } from "@playwright/test";
+import { expect, test, type PlaywrightWorkerArgs } from "@playwright/test";
 import phase10Fixture from "./phase10-fixture.json";
 
 type Persona = {

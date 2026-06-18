@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Gitignored scratch/working directory, not part of the shipped app.
+    "brain/**",
   ]),
 ]);
 

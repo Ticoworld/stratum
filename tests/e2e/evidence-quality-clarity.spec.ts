@@ -2,7 +2,6 @@ import { test, expect } from "@playwright/test";
 import {
   deriveEvidenceQuality,
   deriveSignalClarity,
-  type ApprovedWatchlistLabel,
   type WatchlistConfidenceLevel,
   type WatchlistProofGrounding,
 } from "../../src/lib/signals/watchlistTaxonomy";

@@ -532,6 +532,10 @@ export function WatchlistConsole({
                       <strong style={{ color: "var(--foreground)" }}>{dueScheduledEntryCount}</strong> due now
                     </span>
                   </div>
+
+                  <p className="text-[11px] leading-relaxed" style={{ color: "var(--foreground-muted)" }} title={automationStatus.summary}>
+                    {automationStatus.label}
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-2 xl:justify-self-end">

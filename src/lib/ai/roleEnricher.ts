@@ -317,8 +317,7 @@ export async function runRoleEnrichment(
 
       // AI-2F: Retry once with smaller chunks if the main batch failed
       batchesFailed++;
-      console.log(`[Stratum AI-2F] Batch failed. Attempting retry with sub-chunks...`);
-      
+
       const subChunks: typeof jobInputs[] = [];
       const SUB_BATCH_SIZE = Math.ceil(BATCH_SIZE / 2);
       for (let i = 0; i < chunk.length; i += SUB_BATCH_SIZE) {

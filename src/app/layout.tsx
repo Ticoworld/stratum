@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { AppShell } from "@/components/shell/AppShell";
 import { phase1Env } from "@/lib/env";
 import "./globals.css";
 
