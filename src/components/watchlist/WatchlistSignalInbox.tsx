@@ -21,6 +21,7 @@ interface WatchlistSignalInboxProps {
   pendingRemovalId: string | null;
   pendingRefreshId: string | null;
   currentTime: number | null;
+  canWriteWorkspace: boolean;
   onRemoveEntry: (entryId: string) => void;
   onRefreshEntry: (entryId: string) => void;
   onSelectEntry: (entryId: string) => void;
@@ -134,6 +135,7 @@ function EntryRow({
   watchlistId,
   pendingRefresh,
   pendingRemoval,
+  canWriteWorkspace,
   onRefreshEntry,
   onRemoveEntry,
   onSelectEntry,
@@ -142,6 +144,7 @@ function EntryRow({
   watchlistId: string;
   pendingRefresh: boolean;
   pendingRemoval: boolean;
+  canWriteWorkspace: boolean;
   onRefreshEntry: (id: string) => void;
   onRemoveEntry: (id: string) => void;
   onSelectEntry: (id: string) => void;
@@ -252,32 +255,36 @@ function EntryRow({
               Brief
             </Link>
           ) : null}
-          <button
-            onClick={() => onRefreshEntry(entry.id)}
-            disabled={pendingRefresh}
-            aria-busy={pendingRefresh || undefined}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-medium transition-colors disabled:opacity-40 hover:bg-[rgba(16,24,40,0.04)]"
-            style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
-          >
-            {pendingRefresh ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <RotateCcw className="h-3 w-3" />
-            )}
-          </button>
-          <button
-            onClick={() => onRemoveEntry(entry.id)}
-            disabled={pendingRemoval}
-            aria-busy={pendingRemoval || undefined}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-medium transition-colors disabled:opacity-40 hover:bg-[rgba(16,24,40,0.04)]"
-            style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
-          >
-            {pendingRemoval ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <Trash2 className="h-3 w-3" />
-            )}
-          </button>
+          {canWriteWorkspace && (
+            <>
+              <button
+                onClick={() => onRefreshEntry(entry.id)}
+                disabled={pendingRefresh}
+                aria-busy={pendingRefresh || undefined}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-medium transition-colors disabled:opacity-40 hover:bg-[rgba(16,24,40,0.04)]"
+                style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
+              >
+                {pendingRefresh ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-3 w-3" />
+                )}
+              </button>
+              <button
+                onClick={() => onRemoveEntry(entry.id)}
+                disabled={pendingRemoval}
+                aria-busy={pendingRemoval || undefined}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-medium transition-colors disabled:opacity-40 hover:bg-[rgba(16,24,40,0.04)]"
+                style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
+              >
+                {pendingRemoval ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3 w-3" />
+                )}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -292,6 +299,7 @@ export function WatchlistSignalInbox({
   watchlist,
   pendingRemovalId,
   pendingRefreshId,
+  canWriteWorkspace,
   onRemoveEntry,
   onRefreshEntry,
   onSelectEntry,
@@ -399,6 +407,7 @@ export function WatchlistSignalInbox({
                 watchlistId={watchlist.id}
                 pendingRefresh={pendingRefreshId === entry.id}
                 pendingRemoval={pendingRemovalId === entry.id}
+                canWriteWorkspace={canWriteWorkspace}
                 onRefreshEntry={onRefreshEntry}
                 onRemoveEntry={onRemoveEntry}
                 onSelectEntry={onSelectEntry}

@@ -292,15 +292,17 @@ export function WatchlistEntryDetailPage({
 
               <div className="flex flex-wrap gap-3 pt-1">
                 <NotificationsInboxLink />
-                <Button
-                  onClick={handleRefresh}
-                  disabled={pendingRefresh}
-                  isLoading={pendingRefresh}
-                  className="h-10 px-4 text-[13px] font-semibold"
-                >
-                  <RefreshCcw className="mr-2 h-4 w-4" />
-                  Refresh
-                </Button>
+                {canWriteWorkspace && (
+                  <Button
+                    onClick={handleRefresh}
+                    disabled={pendingRefresh}
+                    isLoading={pendingRefresh}
+                    className="h-10 px-4 text-[13px] font-semibold"
+                  >
+                    <RefreshCcw className="mr-2 h-4 w-4" />
+                    Refresh
+                  </Button>
+                )}
                 {detail.monitoring.latestBriefId && (
                   <Link
                     href={`/briefs/${detail.monitoring.latestBriefId}`}
@@ -469,6 +471,12 @@ export function WatchlistEntryDetailPage({
                   : "Tracking is active."
               : "Automated tracking is disabled."}
           </div>
+
+          {!canWriteWorkspace && (
+            <p className="mt-3 text-[11px] leading-relaxed" style={{ color: "var(--foreground-muted)" }}>
+              Read-only access — you can view tracked companies and briefs, but cannot make changes.
+            </p>
+          )}
         </section>
 
         <div className="mt-6 space-y-6">

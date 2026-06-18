@@ -8,6 +8,7 @@ interface WatchlistWorkspaceSidebarProps {
   watchlists: WatchlistOverview[];
   activeWatchlistId: string | null;
   activeWatchlist: WatchlistOverview | null;
+  canWriteWorkspace: boolean;
   onOpenCreateModal: () => void;
   onClearIntake: () => void;
 }
@@ -15,6 +16,7 @@ interface WatchlistWorkspaceSidebarProps {
 export function WatchlistWorkspaceSidebar({
   watchlists,
   activeWatchlistId,
+  canWriteWorkspace,
   onOpenCreateModal,
   onClearIntake,
 }: WatchlistWorkspaceSidebarProps) {
@@ -28,18 +30,20 @@ export function WatchlistWorkspaceSidebar({
           <p className="text-[11px] font-medium tracking-[0.02em]" style={{ color: "var(--foreground)" }}>
             Watchlists
           </p>
-          <button
-            onClick={() => {
-              onClearIntake();
-              onOpenCreateModal();
-            }}
-            title="Create a new watchlist"
-            className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-xl border px-2.5 text-[12px] font-medium transition-colors hover:bg-zinc-50 hover:text-foreground"
-            style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
-          >
-            <Plus className="h-3 w-3" />
-            New
-          </button>
+          {canWriteWorkspace && (
+            <button
+              onClick={() => {
+                onClearIntake();
+                onOpenCreateModal();
+              }}
+              title="Create a new watchlist"
+              className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-xl border px-2.5 text-[12px] font-medium transition-colors hover:bg-zinc-50 hover:text-foreground"
+              style={{ borderColor: "var(--border)", color: "var(--foreground-secondary)" }}
+            >
+              <Plus className="h-3 w-3" />
+              New
+            </button>
+          )}
         </div>
       </div>
 

@@ -494,6 +494,7 @@ export function WatchlistConsole({
             watchlists={watchlists}
             activeWatchlistId={activeWatchlistId}
             activeWatchlist={activeWatchlist}
+            canWriteWorkspace={canWriteWorkspace}
             onOpenCreateModal={() => setIsCreateModalOpen(true)}
             onClearIntake={clearIntakeResolution}
           />
@@ -535,14 +536,24 @@ export function WatchlistConsole({
 
                 <div className="flex items-center gap-2 xl:justify-self-end">
                   <NotificationsInboxLink />
-                  <button
-                    onClick={handleOpenAddDrawer}
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-                    style={{ background: "var(--accent)" }}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Track company
-                  </button>
+                  {canWriteWorkspace ? (
+                    <button
+                      onClick={handleOpenAddDrawer}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                      style={{ background: "var(--accent)" }}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Track company
+                    </button>
+                  ) : (
+                    <span
+                      className="inline-flex h-10 items-center rounded-xl border px-4 text-[12px] font-medium"
+                      style={{ borderColor: "var(--border)", color: "var(--foreground-muted)" }}
+                      title="You can view tracked companies and briefs, but cannot make changes."
+                    >
+                      Read-only access
+                    </span>
+                  )}
                 </div>
               </div>
             </header>
@@ -558,6 +569,7 @@ export function WatchlistConsole({
               pendingRemovalId={pendingRemovalId}
               pendingRefreshId={pendingRefreshId}
               currentTime={currentTime.getTime()}
+              canWriteWorkspace={canWriteWorkspace}
               onRemoveEntry={handleRemoveEntry}
               onRefreshEntry={handleRefreshEntry}
               onSelectEntry={(entryId) => {
